@@ -343,3 +343,5 @@ All of the following MUST be true before this spec is marked Done:
 - [ ] CHANGELOG.md entries in both repos
 - [ ] `unbound-force/website` issue filed for new CLI commands (`analyze`, `quality`, `report`) and `uf init` gaze-py step
 - [ ] `/review-council` run and all REQUEST CHANGES resolved
+
+<!-- spec-review: passed -->
