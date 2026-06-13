@@ -216,7 +216,7 @@ def test_analyze_directory_json_exit_0() -> None:
 
 
 def test_sc030_report_json_exit_0() -> None:
-    """report <src_path> <tests_path> --format=json exits 0 with valid quality JSON."""
+    """report <src_path> <tests_path> --format=json exits 0 with valid JSON."""
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -224,10 +224,8 @@ def test_sc030_report_json_exit_0() -> None:
     )
     assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}. Output:\n{result.output}"
     data = json.loads(result.output)
-    # report now outputs quality JSON (quality_reports + quality_summary)
-    assert "quality_reports" in data or "results" in data, (
-        f"Expected quality or analysis JSON, got keys: {list(data.keys())}"
-    )
+    assert "version" in data
+    assert "results" in data
 
 
 def test_report_missing_src_exits_1() -> None:
