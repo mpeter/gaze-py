@@ -409,5 +409,77 @@ def test_map_assertions_fallback_when_no_call_detected() -> None:
     assert report.assertion_detection_confidence == 0, (
         f"Expected confidence=0 for fallback path, got {report.assertion_detection_confidence}"
     )
-    # The report must be a well-formed QualityReport (no exception raised)
-    assert isinstance(report.contract_coverage.percentage, float)
+    # Fallback path produces 0% coverage (no call to target detected)
+    assert report.contract_coverage.percentage == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tests for build_test_index (public API, opsx/quality-call-scanning)
+# ---------------------------------------------------------------------------
+
+
+def test_build_test_index_happy_path(tmp_path: Path) -> None:
+    """build_test_index finds function names called in test files.
+
+    Given a valid test file calling foo(), the index maps 'foo' to the file.
+    """
+    from gaze_py.quality import build_test_index
+
+    test_file = tmp_path / "test_example.py"
+    test_file.write_text("def test_something():\n    result = foo(1, 2)\n    assert result == 3\n")
+
+    index, warnings = build_test_index(tmp_path)
+
+    assert "foo" in index, f"Expected 'foo' in index, got keys: {list(index.keys())}"
+    assert len(index["foo"]) == 1
+    assert warnings == []
+
+
+def test_build_test_index_syntax_error_produces_warning(tmp_path: Path) -> None:
+    """build_test_index appends a warning for files with SyntaxError.
+
+    The index is empty (no entries from the broken file) and warnings
+    contains exactly one entry describing the error.
+    """
+    from gaze_py.quality import build_test_index
+
+    test_file = tmp_path / "test_broken.py"
+    test_file.write_text("def test_bad(:\n    pass\n")  # deliberate SyntaxError
+
+    index, warnings = build_test_index(tmp_path)
+
+    assert index == {}, f"Expected empty index for broken file, got: {list(index.keys())}"
+    assert len(warnings) == 1, f"Expected 1 warning, got: {warnings}"
+    assert "test_broken.py" in warnings[0]
+
+
+def test_build_test_index_skips_hidden_directories(tmp_path: Path) -> None:
+    """build_test_index skips files under hidden directories (.hidden/)."""
+    from gaze_py.quality import build_test_index
+
+    hidden_dir = tmp_path / ".hidden"
+    hidden_dir.mkdir()
+    (hidden_dir / "test_secret.py").write_text("def test_x():\n    secret()\n")
+    (tmp_path / "test_visible.py").write_text("def test_y():\n    visible()\n")
+
+    index, warnings = build_test_index(tmp_path)
+
+    assert "visible" in index
+    assert "secret" not in index, "Hidden directory file should have been skipped"
+    assert warnings == []
+
+
+def test_build_test_index_multiple_files(tmp_path: Path) -> None:
+    """build_test_index merges entries from multiple test files."""
+    from gaze_py.quality import build_test_index
+
+    (tmp_path / "test_a.py").write_text("def test_one():\n    alpha()\n")
+    (tmp_path / "test_b.py").write_text("def test_two():\n    alpha()\n    beta()\n")
+
+    index, warnings = build_test_index(tmp_path)
+
+    assert "alpha" in index
+    assert len(index["alpha"]) == 2, "alpha called in 2 files → 2 source entries"
+    assert "beta" in index
+    assert len(index["beta"]) == 1
+    assert warnings == []
