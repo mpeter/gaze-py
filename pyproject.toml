@@ -21,6 +21,7 @@ dev = [
     "ruff>=0.11",
     "mypy>=1.15",
     "jsonschema>=4.18",
+    "types-pyyaml>=6.0.12.20260518",
 ]
 
 [build-system]
@@ -35,6 +36,8 @@ packages = ["src/gaze_py"]
 line-length = 120
 target-version = "py311"
 src = ["src"]
+# Intentionally broken fixture for SC-012 (GazeParseError on syntax error).
+exclude = ["tests/testdata/analysis/syntax_error.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "TCH", "RUF"]

@@ -1,4 +1,5 @@
 """Test fixture: calls function but has no assertions (SC-016)."""
+
 from tests.testdata.quality.src_no_assert import multiply
 
 

@@ -1,4 +1,5 @@
 """Test fixture: covers ErrorReturn via pytest.raises (SC-015)."""
+
 import pytest
 from tests.testdata.quality.src_raises import divide
 

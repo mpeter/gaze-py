@@ -1,4 +1,5 @@
 """Test fixture: covers only ReturnValue, not ErrorReturn (SC-018, 50% coverage)."""
+
 from tests.testdata.quality.src_multi import process
 
 

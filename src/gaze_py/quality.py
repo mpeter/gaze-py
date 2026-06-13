@@ -205,9 +205,7 @@ class AssertionVisitor(ast.NodeVisitor):
             node: The ``ast.With`` node to inspect.
         """
         for item in node.items:
-            if self._is_pytest_raises(item.context_expr) and self._body_calls_target(
-                node.body
-            ):
+            if self._is_pytest_raises(item.context_expr) and self._body_calls_target(node.body):
                 self.result.error_return_covered = True
                 return
         self.generic_visit(node)
@@ -601,9 +599,7 @@ def map_assertions(
     visitor.visit_body(body)
 
     # Compute coverage metrics.
-    contract_coverage = _compute_contract_coverage(
-        visitor.result, target_effects, target_func
-    )
+    contract_coverage = _compute_contract_coverage(visitor.result, target_effects, target_func)
     over_specification = _compute_over_specification(visitor.result)
 
     # Build the target FunctionTarget for the report.

@@ -5,26 +5,24 @@ from __future__ import annotations
 import hashlib
 import time
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
-
+from enum import StrEnum
 
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
 
 
-class SideEffectType(str, Enum):
+class SideEffectType(StrEnum):
     """All 37 side-effect types across 5 tiers."""
 
-    # P0 — Direct return / receiver mutations
+    # P0 - Direct return / receiver mutations
     ReturnValue = "ReturnValue"
     ErrorReturn = "ErrorReturn"
     SentinelError = "SentinelError"
     ReceiverMutation = "ReceiverMutation"
     PointerArgMutation = "PointerArgMutation"
 
-    # P1 — Collection / channel / deferred mutations
+    # P1 - Collection / channel / deferred mutations
     SliceMutation = "SliceMutation"
     MapMutation = "MapMutation"
     GlobalMutation = "GlobalMutation"
@@ -34,7 +32,7 @@ class SideEffectType(str, Enum):
     ChannelClose = "ChannelClose"
     DeferredReturnMutation = "DeferredReturnMutation"
 
-    # P2 — I/O, concurrency, callbacks
+    # P2 - I/O, concurrency, callbacks
     FileSystemWrite = "FileSystemWrite"
     FileSystemDelete = "FileSystemDelete"
     FileSystemMeta = "FileSystemMeta"
@@ -46,7 +44,7 @@ class SideEffectType(str, Enum):
     LogWrite = "LogWrite"
     ContextCancellation = "ContextCancellation"
 
-    # P3 — Stdio, env, sync primitives
+    # P3 - Stdio, env, sync primitives
     StdoutWrite = "StdoutWrite"
     StderrWrite = "StderrWrite"
     EnvVarMutation = "EnvVarMutation"
@@ -57,7 +55,7 @@ class SideEffectType(str, Enum):
     ProcessExit = "ProcessExit"
     RecoverBehavior = "RecoverBehavior"
 
-    # P4 — Unsafe / exotic
+    # P4 - Unsafe / exotic
     ReflectionMutation = "ReflectionMutation"
     UnsafeMutation = "UnsafeMutation"
     CgoCall = "CgoCall"
@@ -66,7 +64,7 @@ class SideEffectType(str, Enum):
     ClosureCaptureMutation = "ClosureCaptureMutation"
 
 
-class Tier(str, Enum):
+class Tier(StrEnum):
     P0 = "P0"
     P1 = "P1"
     P2 = "P2"
@@ -74,20 +72,20 @@ class Tier(str, Enum):
     P4 = "P4"
 
 
-class ClassificationLabel(str, Enum):
+class ClassificationLabel(StrEnum):
     contractual = "contractual"
     incidental = "incidental"
     ambiguous = "ambiguous"
 
 
-class Quadrant(str, Enum):
+class Quadrant(StrEnum):
     Q1_Safe = "Q1_Safe"
     Q2_ComplexButTested = "Q2_ComplexButTested"
     Q3_SimpleButUnderspecified = "Q3_SimpleButUnderspecified"
     Q4_Dangerous = "Q4_Dangerous"
 
 
-class FixStrategy(str, Enum):
+class FixStrategy(StrEnum):
     decompose = "decompose"
     add_tests = "add_tests"
     add_assertions = "add_assertions"
@@ -160,9 +158,9 @@ def _generate_side_effect_id() -> str:
 class FunctionTarget:
     package: str
     function: str
-    receiver: Optional[str] = None
-    signature: Optional[str] = None
-    location: Optional[str] = None
+    receiver: str | None = None
+    signature: str | None = None
+    location: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -178,9 +176,9 @@ class FunctionTarget:
 class Signal:
     source: str
     weight: float
-    source_file: Optional[str] = None
-    excerpt: Optional[str] = None
-    reasoning: Optional[str] = None
+    source_file: str | None = None
+    excerpt: str | None = None
+    reasoning: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -197,7 +195,7 @@ class Classification:
     label: ClassificationLabel
     confidence: int
     signals: list[Signal] = field(default_factory=list)
-    reasoning: Optional[str] = None
+    reasoning: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -215,8 +213,8 @@ class SideEffect:
     tier: Tier
     location: str
     description: str
-    target: Optional[FunctionTarget] = None
-    classification: Optional[Classification] = None
+    target: FunctionTarget | None = None
+    classification: Classification | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -254,7 +252,7 @@ class AnalysisResult:
 
     target: FunctionTarget
     side_effects: list[SideEffect] = field(default_factory=list)
-    metadata: Optional[Metadata] = None
+    metadata: Metadata | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serialisable dict representation."""
@@ -277,7 +275,7 @@ class AssertionMapping:
     Attributes:
         assertion_text: Source text of the assert statement.
         location: File and line reference in ``file.py:line`` format.
-        confidence: Mapping confidence score in the range 0–100.
+        confidence: Mapping confidence score in the range 0-100.
         mapped_effect: The matched ``SideEffectType``, or ``None`` if
             the assertion could not be mapped to any known effect.
         unmapped_reason: Short token explaining why the assertion was
@@ -312,7 +310,7 @@ class ContractCoverage:
 
     Attributes:
         percentage: Fraction of contractual effects covered, expressed
-            as a value in the range 0.0–100.0.
+            as a value in the range 0.0-100.0.
         covered_count: Number of contractual effects that have at least
             one mapped assertion.
         total_contractual: Total number of contractual effects detected
@@ -347,7 +345,7 @@ class OverSpecificationScore:
     Attributes:
         count: Number of assertions that target incidental effects.
         ratio: Fraction of all assertions that are over-specified,
-            in the range 0.0–1.0.
+            in the range 0.0-1.0.
         incidental_assertions: ``AssertionMapping`` entries whose
             ``mapped_effect`` is classified as incidental.
         suggestions: One plain-English suggestion per entry in
@@ -387,7 +385,7 @@ class QualityReport:
             any detected side effect.
         assertion_count: Total number of assert statements found in
             the test function.
-        assertion_detection_confidence: Overall confidence (0–100)
+        assertion_detection_confidence: Overall confidence (0-100)
             that all assertions in the test were detected correctly.
     """
 
@@ -423,11 +421,11 @@ class PackageSummary:
     Attributes:
         total_tests: Total number of test functions analysed.
         average_contract_coverage: Mean contract coverage percentage
-            across all test functions (0.0–100.0).
+            across all test functions (0.0-100.0).
         total_over_specifications: Sum of over-specification counts
             across all test functions.
         assertion_detection_confidence: Mean assertion-detection
-            confidence across all test functions (0–100).
+            confidence across all test functions (0-100).
         worst_coverage_tests: ``QualityReport`` entries for the test
             functions with the lowest contract coverage, sorted
             ascending by ``contract_coverage.percentage``.
@@ -473,7 +471,7 @@ _CONTRACTUAL_TYPES: frozenset[SideEffectType] = frozenset(
 
 
 def is_contractual(effect_type: SideEffectType) -> bool:
-    """Return ``True`` if the side effect type is contractual (P0–P1).
+    """Return ``True`` if the side effect type is contractual (P0-P1).
 
     Contractual effects are expected observable outputs that tests
     should assert on.  Incidental effects are implementation details

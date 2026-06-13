@@ -216,7 +216,7 @@ and `QUALITY_SCHEMA` validated. Ruff and mypy clean on new files.
 **Goal**: `gaze-py analyze`, `gaze-py quality`, `gaze-py report`
 with `--format`, `--coverprofile`, and exit code contract.
 
-- [ ] T018 [S4] Write `tests/test_cli.py` BEFORE expanding cli.py:
+- [x] T018 [S4] Write `tests/test_cli.py` BEFORE expanding cli.py:
   - Tests MUST fail initially
   - Integration tests using `click.testing.CliRunner`
   - Test SC-027 through SC-031 for each subcommand
@@ -225,7 +225,7 @@ with `--format`, `--coverprofile`, and exit code contract.
   - `test_cli_path_traversal_exits_1` (CLI-layer: exit code + message)
   - `test_cli_directory_walk_excludes_hidden` (CLI-layer: dir walk)
 
-- [ ] T019 [S4] Expand `src/gaze_py/cli.py`:
+- [x] T019 [S4] Expand `src/gaze_py/cli.py`:
   - Implement `analyze` subcommand per existing stub:
     preserve all existing flags; add `--format=text|json`;
     validate path with `analyze_path()` before analysis begins
@@ -243,10 +243,10 @@ with `--format`, `--coverprofile`, and exit code contract.
     but not implemented (deferred per plan.md flag disposition)
   - Add `coverage` to runtime dependencies in `pyproject.toml`
 
-- [ ] T020 [P] [S4] Verify all existing tests still pass:
+- [x] T020 [P] [S4] Verify all existing tests still pass:
   `uv run pytest -x --tb=short`
 
-- [ ] T021 [S4] Run full CI parity check:
+- [x] T021 [S4] Run full CI parity check:
   `uv run ruff check .`
   `uv run ruff format --check .`
   `uv run mypy src/`

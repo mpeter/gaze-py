@@ -1,4 +1,5 @@
 """Test fixture: covers ReturnValue via assignment + assert (SC-014)."""
+
 from tests.testdata.quality.src_basic import compute
 
 

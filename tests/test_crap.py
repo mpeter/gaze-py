@@ -31,12 +31,12 @@ class TestCrapScore:
         assert crap_score(42, 100.0) == 42
 
     def test_known_value_50_percent(self) -> None:
-        """complexity=10, coverage=50% → 10² × 0.5³ + 10 = 100×0.125 + 10 = 22.5."""
+        """complexity=10, coverage=50% -> 10^2 * 0.5^3 + 10 = 100*0.125 + 10 = 22.5."""
         result = crap_score(10, 50.0)
         assert result == pytest.approx(22.5)
 
     def test_known_value_75_percent(self) -> None:
-        """complexity=8, coverage=75% → 64 × 0.25³ + 8 = 64×0.015625 + 8 = 9.0."""
+        """complexity=8, coverage=75% -> 64 * 0.25^3 + 8 = 64*0.015625 + 8 = 9.0."""
         result = crap_score(8, 75.0)
         assert result == pytest.approx(9.0)
 
@@ -47,7 +47,7 @@ class TestCrapScore:
 
 
 class TestQuadrantClassification:
-    """Tests for Q1–Q4 quadrant assignment."""
+    """Tests for Q1-Q4 quadrant assignment."""
 
     def test_q1_safe(self) -> None:
         assert classify_quadrant(5.0, 5.0, 30.0, 30.0) == Quadrant.Q1_Safe
@@ -99,9 +99,9 @@ class TestFixStrategy:
 @pytest.mark.parametrize(
     ("complexity", "contract_coverage_pct", "expected"),
     [
-        # SC-020: complexity=5, coverage=0% → 5² × 1³ + 5 = 30
+        # SC-020: complexity=5, coverage=0% -> 5^2 * 1^3 + 5 = 30
         (5, 0.0, 30.0),
-        # SC-021: complexity=5, coverage=100% → 5² × 0³ + 5 = 5
+        # SC-021: complexity=5, coverage=100% -> 5^2 * 0^3 + 5 = 5
         (5, 100.0, 5.0),
     ],
 )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from gaze_py.taxonomy import (
+    TIER_MAP,
     AnalysisResult,
     Classification,
     ClassificationLabel,
@@ -14,7 +15,6 @@ from gaze_py.taxonomy import (
     SideEffectType,
     Signal,
     Tier,
-    TIER_MAP,
     _generate_side_effect_id,
 )
 
@@ -32,16 +32,26 @@ class TestSideEffectTypes:
 
     def test_p1_types(self) -> None:
         p1 = {
-            "SliceMutation", "MapMutation", "GlobalMutation", "WriterOutput",
-            "HTTPResponseWrite", "ChannelSend", "ChannelClose", "DeferredReturnMutation",
+            "SliceMutation",
+            "MapMutation",
+            "GlobalMutation",
+            "WriterOutput",
+            "HTTPResponseWrite",
+            "ChannelSend",
+            "ChannelClose",
+            "DeferredReturnMutation",
         }
         for name in p1:
             assert hasattr(SideEffectType, name), f"Missing P1 type: {name}"
 
     def test_p4_types(self) -> None:
         p4 = {
-            "ReflectionMutation", "UnsafeMutation", "CgoCall",
-            "FinalizerRegistration", "SyncPoolOp", "ClosureCaptureMutation",
+            "ReflectionMutation",
+            "UnsafeMutation",
+            "CgoCall",
+            "FinalizerRegistration",
+            "SyncPoolOp",
+            "ClosureCaptureMutation",
         }
         for name in p4:
             assert hasattr(SideEffectType, name), f"Missing P4 type: {name}"

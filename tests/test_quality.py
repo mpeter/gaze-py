@@ -27,9 +27,6 @@ import pytest
 
 from gaze_py.quality import map_assertions
 from gaze_py.taxonomy import (
-    ContractCoverage,
-    OverSpecificationScore,
-    QualityReport,
     SideEffect,
     SideEffectType,
     Tier,
@@ -90,9 +87,7 @@ def test_sc014_return_value_covered() -> None:
     target_effects = [_make_return_effect()]
     report = map_assertions(test_source, target_effects, "compute")
 
-    assert report.contract_coverage.percentage == 100.0, (
-        f"Expected 100.0%, got {report.contract_coverage.percentage}"
-    )
+    assert report.contract_coverage.percentage == 100.0, f"Expected 100.0%, got {report.contract_coverage.percentage}"
     assert report.contract_coverage.covered_count == 1, (
         f"Expected covered_count=1, got {report.contract_coverage.covered_count}"
     )
@@ -114,9 +109,7 @@ def test_sc015_error_return_covered() -> None:
     target_effects = [_make_error_effect()]
     report = map_assertions(test_source, target_effects, "divide")
 
-    assert report.contract_coverage.percentage == 100.0, (
-        f"Expected 100.0%, got {report.contract_coverage.percentage}"
-    )
+    assert report.contract_coverage.percentage == 100.0, f"Expected 100.0%, got {report.contract_coverage.percentage}"
 
 
 # ---------------------------------------------------------------------------
@@ -135,15 +128,10 @@ def test_sc016_no_assertions_zero_coverage() -> None:
     target_effects = [_make_return_effect()]
     report = map_assertions(test_source, target_effects, "multiply")
 
-    assert report.contract_coverage.percentage == 0.0, (
-        f"Expected 0.0%, got {report.contract_coverage.percentage}"
-    )
-    assert isinstance(report.contract_coverage.gap_hints, list), (
-        "gap_hints must be a list"
-    )
+    assert report.contract_coverage.percentage == 0.0, f"Expected 0.0%, got {report.contract_coverage.percentage}"
+    assert isinstance(report.contract_coverage.gap_hints, list), "gap_hints must be a list"
     assert len(report.contract_coverage.gap_hints) == 1, (
-        f"Expected 1 gap hint (one per uncovered effect), "
-        f"got {len(report.contract_coverage.gap_hints)}"
+        f"Expected 1 gap hint (one per uncovered effect), got {len(report.contract_coverage.gap_hints)}"
     )
 
 
@@ -168,15 +156,10 @@ def test_sc017_over_specification() -> None:
     report = map_assertions(test_source, target_effects, "square")
 
     assert report.contract_coverage.percentage == 100.0, (
-        f"Expected 100.0% (result==16 covers ReturnValue), "
-        f"got {report.contract_coverage.percentage}"
+        f"Expected 100.0% (result==16 covers ReturnValue), got {report.contract_coverage.percentage}"
     )
-    assert report.over_specification.count >= 0, (
-        "over_specification.count must be non-negative"
-    )
-    assert isinstance(report.over_specification.suggestions, list), (
-        "over_specification.suggestions must be a list"
-    )
+    assert report.over_specification.count >= 0, "over_specification.count must be non-negative"
+    assert isinstance(report.over_specification.suggestions, list), "over_specification.suggestions must be a list"
 
 
 # ---------------------------------------------------------------------------
@@ -196,9 +179,7 @@ def test_sc018_partial_coverage_50_percent() -> None:
     target_effects = [_make_return_effect(), _make_error_effect()]
     report = map_assertions(test_source, target_effects, "process")
 
-    assert report.contract_coverage.percentage == 50.0, (
-        f"Expected 50.0%, got {report.contract_coverage.percentage}"
-    )
+    assert report.contract_coverage.percentage == 50.0, f"Expected 50.0%, got {report.contract_coverage.percentage}"
     assert len(report.contract_coverage.gaps) == 1, (
         f"Expected 1 gap (ErrorReturn uncovered), "
         f"got {len(report.contract_coverage.gaps)}: {report.contract_coverage.gaps}"
@@ -222,8 +203,7 @@ def test_sc019_inline_call_covered() -> None:
     report = map_assertions(test_source, target_effects, "negate")
 
     assert report.contract_coverage.percentage == 100.0, (
-        f"Expected 100.0% (inline assert negate(5)==-5 covers ReturnValue), "
-        f"got {report.contract_coverage.percentage}"
+        f"Expected 100.0% (inline assert negate(5)==-5 covers ReturnValue), got {report.contract_coverage.percentage}"
     )
 
 

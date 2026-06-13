@@ -23,8 +23,8 @@ import time
 from pathlib import Path
 
 import pytest
-from gaze_py.analysis import GazeParseError, analyze_module, analyze_path
 
+from gaze_py.analysis import GazeParseError, analyze_module, analyze_path
 from gaze_py.taxonomy import SideEffectType
 
 # ---------------------------------------------------------------------------
@@ -65,9 +65,7 @@ def test_sc001_returns_int() -> None:
     ReturnValue side effect.  No other effect types should be present.
     """
     effects = effects_from_file("returns.py", "returns_int")
-    assert effects == [SideEffectType.ReturnValue], (
-        f"Expected [ReturnValue], got {effects}"
-    )
+    assert effects == [SideEffectType.ReturnValue], f"Expected [ReturnValue], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -82,9 +80,7 @@ def test_sc002_returns_tuple() -> None:
     one ReturnValue side effect — not one per element.
     """
     effects = effects_from_file("returns.py", "returns_tuple")
-    assert effects == [SideEffectType.ReturnValue], (
-        f"Expected [ReturnValue], got {effects}"
-    )
+    assert effects == [SideEffectType.ReturnValue], f"Expected [ReturnValue], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -99,9 +95,7 @@ def test_sc003_raises_value_error() -> None:
     ErrorReturn side effect.
     """
     effects = effects_from_file("raises.py", "raises_value_error")
-    assert effects == [SideEffectType.ErrorReturn], (
-        f"Expected [ErrorReturn], got {effects}"
-    )
+    assert effects == [SideEffectType.ErrorReturn], f"Expected [ErrorReturn], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -116,9 +110,7 @@ def test_sc004_global_mutation() -> None:
     variable MUST produce exactly one GlobalMutation side effect.
     """
     effects = effects_from_file("globals.py", "increment_global")
-    assert effects == [SideEffectType.GlobalMutation], (
-        f"Expected [GlobalMutation], got {effects}"
-    )
+    assert effects == [SideEffectType.GlobalMutation], f"Expected [GlobalMutation], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -133,9 +125,7 @@ def test_sc005_pointer_arg_mutation_update() -> None:
     PointerArgMutation side effect.
     """
     effects = effects_from_file("arg_mutation.py", "update_dict")
-    assert effects == [SideEffectType.PointerArgMutation], (
-        f"Expected [PointerArgMutation], got {effects}"
-    )
+    assert effects == [SideEffectType.PointerArgMutation], f"Expected [PointerArgMutation], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -154,18 +144,12 @@ def test_sc006_receiver_mutation() -> None:
     results = analyze_module(source, str(TESTDATA / "receiver_mutation.py"))
 
     # Find the Counter.increment result by matching both function and receiver
-    increment_results = [
-        r
-        for r in results
-        if r.target.function == "increment" and r.target.receiver == "Counter"
-    ]
+    increment_results = [r for r in results if r.target.function == "increment" and r.target.receiver == "Counter"]
     assert len(increment_results) == 1, (
         f"Expected exactly one result for Counter.increment, got {len(increment_results)}"
     )
     effects = [e.type for e in increment_results[0].side_effects]
-    assert effects == [SideEffectType.ReceiverMutation], (
-        f"Expected [ReceiverMutation], got {effects}"
-    )
+    assert effects == [SideEffectType.ReceiverMutation], f"Expected [ReceiverMutation], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -180,9 +164,7 @@ def test_sc007_stdout_write() -> None:
     StdoutWrite side effect.
     """
     effects = effects_from_file("stdout.py", "prints_hello")
-    assert effects == [SideEffectType.StdoutWrite], (
-        f"Expected [StdoutWrite], got {effects}"
-    )
+    assert effects == [SideEffectType.StdoutWrite], f"Expected [StdoutWrite], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -197,9 +179,7 @@ def test_sc008_pure_function_no_effects() -> None:
     produce any side effects.  This is the zero-false-positive gate.
     """
     effects = effects_from_file("pure.py", "no_effects")
-    assert effects == [], (
-        f"Expected no side effects for pure function, got {effects}"
-    )
+    assert effects == [], f"Expected no side effects for pure function, got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -214,9 +194,7 @@ def test_sc009_stderr_write() -> None:
     side effect.
     """
     effects = effects_from_file("stderr.py", "writes_stderr")
-    assert effects == [SideEffectType.StderrWrite], (
-        f"Expected [StderrWrite], got {effects}"
-    )
+    assert effects == [SideEffectType.StderrWrite], f"Expected [StderrWrite], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -231,9 +209,7 @@ def test_sc010_env_mutation_subscript() -> None:
     MUST produce exactly one EnvVarMutation side effect.
     """
     effects = effects_from_file("env_mutation.py", "set_env_subscript")
-    assert effects == [SideEffectType.EnvVarMutation], (
-        f"Expected [EnvVarMutation], got {effects}"
-    )
+    assert effects == [SideEffectType.EnvVarMutation], f"Expected [EnvVarMutation], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -248,9 +224,7 @@ def test_sc011_env_mutation_call_form() -> None:
     EnvVarMutation side effect — the same type as the subscript form.
     """
     effects = effects_from_file("env_mutation.py", "set_env_update")
-    assert effects == [SideEffectType.EnvVarMutation], (
-        f"Expected [EnvVarMutation], got {effects}"
-    )
+    assert effects == [SideEffectType.EnvVarMutation], f"Expected [EnvVarMutation], got {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -286,9 +260,7 @@ def test_sc013_multi_return_deduplicated() -> None:
     assert effects.count(SideEffectType.ReturnValue) == 1, (
         f"Expected exactly one ReturnValue (deduplicated), got {effects}"
     )
-    assert len(effects) == 1, (
-        f"Expected exactly one total effect, got {len(effects)}: {effects}"
-    )
+    assert len(effects) == 1, f"Expected exactly one total effect, got {len(effects)}: {effects}"
 
 
 # ---------------------------------------------------------------------------
@@ -342,15 +314,9 @@ def test_analyze_path_excludes_hidden_and_pycache(tmp_path: Path) -> None:
     found_functions = {r.target.function for r in results}
 
     # Only ``f`` from normal.py should appear
-    assert "f" in found_functions, (
-        "Expected function 'f' from normal.py to be in results"
-    )
-    assert "g" not in found_functions, (
-        "Function 'g' from .hidden/secret.py MUST be excluded"
-    )
-    assert "h" not in found_functions, (
-        "Function 'h' from __pycache__/cached.py MUST be excluded"
-    )
+    assert "f" in found_functions, "Expected function 'f' from normal.py to be in results"
+    assert "g" not in found_functions, "Function 'g' from .hidden/secret.py MUST be excluded"
+    assert "h" not in found_functions, "Function 'h' from __pycache__/cached.py MUST be excluded"
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +337,4 @@ def test_performance_50_functions() -> None:
     results = analyze_module(source, str(TESTDATA / "large_module.py"))
     elapsed_s = (time.perf_counter_ns() - start) / 1e9
     assert elapsed_s < 2.0, f"analyze_module took {elapsed_s:.2f}s, expected < 2s"
-    assert len(results) == 50, (
-        f"Expected 50 results (one per function), got {len(results)}"
-    )
+    assert len(results) == 50, f"Expected 50 results (one per function), got {len(results)}"

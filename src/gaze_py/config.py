@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -22,7 +21,7 @@ class DocScanConfig:
     """Settings for documentation scanning."""
 
     exclude: list[str] = field(default_factory=lambda: ["vendor/**"])
-    include: Optional[list[str]] = None
+    include: list[str] | None = None
     timeout: str = "30s"
 
 

@@ -1,4 +1,5 @@
 """Test fixture: asserts on internal variable — over-specification (SC-017)."""
+
 from tests.testdata.quality.src_incidental import square
 
 

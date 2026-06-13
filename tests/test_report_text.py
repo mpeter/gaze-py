@@ -26,7 +26,6 @@ from gaze_py.taxonomy import (
     ContractCoverage,
     FunctionTarget,
     OverSpecificationScore,
-    PackageSummary,
     QualityReport,
     SideEffect,
     SideEffectType,
@@ -228,3 +227,47 @@ def test_quality_text_empty_reports() -> None:
     write_quality_text([], out)
     content = out.getvalue()
     assert len(content) > 0
+
+
+# ---------------------------------------------------------------------------
+# Fallback path: monkeypatch _HAS_RICH = False
+# ---------------------------------------------------------------------------
+
+
+def test_analysis_text_fallback_no_rich(
+    analysis_result_with_effects: AnalysisResult,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fallback path: write_analysis_text uses plain text when rich is absent.
+
+    Given _HAS_RICH is patched to False,
+    When write_analysis_text is called,
+    Then output contains the function name and tier labels.
+    """
+    import gaze_py.report.text as text_mod
+
+    monkeypatch.setattr(text_mod, "_HAS_RICH", False)
+    out = io.StringIO()
+    write_analysis_text([analysis_result_with_effects], out)
+    content = out.getvalue()
+    assert "compute" in content
+    assert any(label in content for label in {"P0", "P1", "P2", "P3", "P4"})
+
+
+def test_quality_text_fallback_no_rich(
+    quality_report: QualityReport,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fallback path: write_quality_text uses plain text when rich is absent.
+
+    Given _HAS_RICH is patched to False,
+    When write_quality_text is called,
+    Then output contains coverage percentage.
+    """
+    import gaze_py.report.text as text_mod
+
+    monkeypatch.setattr(text_mod, "_HAS_RICH", False)
+    out = io.StringIO()
+    write_quality_text([quality_report], out)
+    content = out.getvalue()
+    assert "50%" in content
