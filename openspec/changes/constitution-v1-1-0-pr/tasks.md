@@ -55,7 +55,7 @@
 ## 2. CI Gate
 
 - [ ] 2.1 Wait for GitHub Actions `test.yml` to complete on `opsx/constitution-v1.1.0`, or run the full local CI gate: `uv run ruff check . && uv run ruff format --check . && uv run mypy --strict src/ && uv run pytest --cov=gaze --cov-fail-under=85`
-- [ ] 2.1a Note: `uv sync` (without `--frozen`) will succeed even without `pyproject.toml` — steps after it (mypy, pytest) will fail if `src/` does not exist. For this PR, lint and format-check are the only passing gates; mypy and pytest require the `001-initial-port` source files. This is expected and acceptable — CI is partially gated pending that change.
+- [ ] 2.1a Note: `uv sync` (without `--frozen`) will succeed even without `pyproject.toml` — steps after it (mypy, pytest) will fail if `src/` does not exist. For this PR, lint and format-check are the only fully passing gates; mypy and pytest require the `001-initial-port` source files. This partial-gate state is acceptable ONLY while `001-initial-port` has not yet been merged. If `001-initial-port` is abandoned or significantly delayed, this PR MUST NOT be merged until CI is fully green.
 - [ ] 2.2 Confirm all steps are green. If any step fails: fix the flagged file, `git commit --amend` or add a fixup commit, push, and re-check CI before proceeding.
 
 ## 3. Review Council

@@ -29,14 +29,15 @@ Note: although the constitution's Development Workflow section exempts "constitu
 
 ## Impact
 
-- `.specify/memory/constitution.md` — bumped to v1.1.0, two new principles, parent constitution reference
-- `.github/workflows/test.yml` — floating action tags replaced with commit-SHA pins; `uv sync` updated to use `--frozen` for reproducibility
+- `.specify/memory/constitution.md` — bumped to v1.1.1 (MINOR v1.1.0: two new principles, parent constitution reference; PATCH v1.1.1: taxonomy count clarification 37→38)
+- `.github/workflows/test.yml` — floating action tags replaced with commit-SHA pins per Principle VII. Note: `uv sync --frozen` is deferred until `pyproject.toml` + `uv.lock` land in `001-initial-port`.
+- `.github/dependabot.yml` — new: weekly github-actions updates with Conventional Commits prefix
 - No production code, APIs, or test behavior is affected
-- Once merged, the `opsx/constitution-v1.1.0` branch is closed; `main` reflects the ratified v1.1.0 constitution
+- Once merged, the `opsx/constitution-v1.1.0` branch is closed; `main` reflects the ratified v1.1.1 constitution
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` v1.1.0 (the version being ratified by this change).
+Assessed against `.specify/memory/constitution.md` v1.1.1 (the version being ratified by this change).
 
 **Org Constitution (Unbound Force v1.2.0)**
 
@@ -45,7 +46,7 @@ Assessed against `.specify/memory/constitution.md` v1.1.0 (the version being rat
 - **III. Observable Quality**: N/A — this change modifies no machine-parseable JSON output and adds no new observable quality claims.
 - **IV. Testability**: PASS — the spec scenarios are concrete and independently verifiable. The process is auditable via git history, review-council output, and PR record.
 
-**gaze-py Constitution Principles (v1.1.0)**
+**gaze-py Constitution Principles (v1.1.1)**
 
 - **I. Accuracy**: N/A — no analysis code is modified.
 - **II. Minimal Assumptions**: N/A — no analysis behavior is modified.
@@ -53,4 +54,4 @@ Assessed against `.specify/memory/constitution.md` v1.1.0 (the version being rat
 - **IV. Testability**: PASS — spec scenarios are verifiable; the governance process itself is auditable.
 - **V. Porting Contract Supremacy**: N/A — no porting contract surface is affected.
 - **VI. Composability First**: PASS — this change introduces no inter-hero dependencies.
-- **VII. Supply Chain Integrity**: PASS — this change is the vehicle that ratifies Principle VII. The CI SHA pins being committed are the direct implementation of the principle. The `uv sync --frozen` fix ensures CI enforces lock file reproducibility.
+- **VII. Supply Chain Integrity**: PASS — this change is the vehicle that ratifies Principle VII. The CI SHA pins and Dependabot config are the direct implementation of the principle. Lock file enforcement (`uv sync --frozen`) is deferred until `pyproject.toml` + `uv.lock` exist; the deferral is documented in the constitution's SYNC IMPACT REPORT follow-up TODOs.

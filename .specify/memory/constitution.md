@@ -47,9 +47,10 @@
     - Once pyproject.toml is added, run `uv sync --frozen` and commit uv.lock to
       satisfy Principle VII's lock file requirement (currently inapplicable
       as no package manifest exists yet). Track in a dedicated OpenSpec change.
-    - Add Dependabot config (`.github/dependabot.yml`, ecosystem: github-actions)
-      to keep SHA-pinned CI actions current automatically. Track in a dedicated
-      OpenSpec change.
+    - ✅ Dependabot config added: `.github/dependabot.yml` (github-actions, weekly,
+      Conventional Commits prefix, open-pull-requests-limit: 5). Completed in `opsx/constitution-v1.1.0`.
+    - Add `pip` ecosystem entry to `.github/dependabot.yml` when `pyproject.toml` is
+      committed in `001-initial-port`.
     - Reconcile AGENTS.md review-council list to include SRE for CI-touching changes
       and document the Tester-vs-SRE selection rule.
 
