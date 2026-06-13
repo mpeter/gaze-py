@@ -1,166 +1,141 @@
-<!--
-  SYNC IMPACT REPORT
-  ==================
-  Version change: 1.2.0 → 1.3.0 (MINOR: review council gate added)
-  Amendment date: 2026-03-15
-  Feature: review-council-gate
-
-  Added workflow requirements:
-    - Review Council Gate (Development Workflow section)
-      Before submitting a PR, agents must run /review-council and
-      receive APPROVE from all four reviewers. Minimal changes
-      between council approval and PR submission.
-
-  Unchanged principles:
-    - I. Accuracy
-    - II. Minimal Assumptions
-    - III. Actionable Output
-    - IV. Testability
-
-  Unchanged sections:
-    - Governance
-
-  Previous version history:
-    - 1.2.0 (2026-03-15): Added Spec-First Development requirement
-    - 1.1.0 (2026-03-05): Added Principle IV: Testability
-    - 1.0.0 (2026-02-20): Initial ratification with 3 principles
--->
-
-# Gaze Constitution
+# gaze-py Constitution
 
 ## Core Principles
 
 ### I. Accuracy
 
-Gaze MUST correctly identify all observable side effects produced by a
-test target. An observable side effect includes return values, mutations
-to shared state, emitted events, I/O operations, and any other
-externally detectable change.
+gaze-py MUST correctly identify all observable side effects produced by a
+Python function. An observable side effect includes return values, exceptions
+raised, mutations to `self` or argument objects, global state writes, I/O
+operations, and any other externally detectable change.
 
-- Every reported "unasserted change" MUST correspond to a real
-  observable side effect; false positives erode trust and MUST be
-  treated as bugs.
+- Every reported effect MUST correspond to a real observable side effect;
+  false positives erode trust and MUST be treated as bugs.
 - Every actual observable side effect that goes unreported is a false
-  negative; false negatives MUST be tracked, measured, and driven
-  toward zero.
-- Accuracy claims MUST be backed by automated regression tests that
-  cover known-good and known-bad assertion scenarios.
+  negative; false negatives MUST be tracked, measured, and driven toward zero.
+- Accuracy claims MUST be backed by automated regression tests using fixture
+  source files with known expected effects.
+- P0 effects (ReturnValue, ErrorReturn, SentinelError, ReceiverMutation,
+  PointerArgMutation) MUST be detected with zero false negatives and zero
+  false positives per porting contract EC-002.
 
-**Rationale**: The entire value proposition of Gaze depends on users
-trusting its output. Inaccurate results — in either direction — make
-the tool worse than useless.
+**Rationale**: The entire value of gaze-py depends on users trusting its
+output. Inaccurate results — in either direction — make the tool worse than
+useless.
 
 ### II. Minimal Assumptions
 
-Gaze MUST operate with the fewest possible assumptions about the host
-project's language, test framework, or coding style.
+gaze-py MUST operate with the fewest possible assumptions about the host
+project's test framework, coding style, or project structure.
 
-- Analysis MUST NOT require users to annotate or restructure their
-  existing test code unless strictly necessary and clearly documented.
-- When assumptions are unavoidable (e.g., a supported language list),
-  they MUST be explicit in documentation and enforced at analysis
-  entry points — never silently ignored.
-- New language or framework support MUST NOT break or alter behavior
-  for already-supported environments.
+- Analysis MUST NOT require users to annotate or restructure their existing
+  Python code.
+- When assumptions are unavoidable (e.g., supported Python versions,
+  pytest-style test naming), they MUST be explicit in documentation and
+  enforced at analysis entry points — never silently ignored.
+- gaze-py MUST use AST-only analysis. No execution of analyzed code, no
+  import of analyzed modules, no runtime introspection.
 
-**Rationale**: A test-quality tool that demands significant setup or
-convention changes creates friction that discourages adoption. Gaze
-earns trust by working with what already exists.
+**Rationale**: A test-quality tool that demands setup or convention changes
+creates friction. gaze-py earns trust by working with what already exists.
 
 ### III. Actionable Output
 
-Every piece of output Gaze produces MUST guide the user toward a
+Every piece of output gaze-py produces MUST guide the user toward a
 concrete improvement in their test suite.
 
-- Reports MUST identify the specific test, the specific test target,
-  and the specific unasserted observable change — not just aggregate
-  scores.
-- Output formats MUST support both human-readable (terminal/CI logs)
-  and machine-readable (JSON) consumption.
-- Metrics MUST be comparable across runs so users can measure progress
-  over time.
+- Reports MUST identify the specific test, the specific target function,
+  and the specific unasserted contractual effect — not just aggregate scores.
+- Output MUST support both human-readable (text) and machine-readable (JSON)
+  formats. JSON output MUST be schema-compatible with Go gaze per porting
+  contracts EC-004 and OC-002.
+- Metrics MUST be comparable across runs so users can measure progress.
+- Fields that depend on optional capabilities (GazeCRAP, contract coverage,
+  quadrant) MUST be null/absent when the capability has not run — not
+  zero-valued (porting contract OC-003).
 
-**Rationale**: Metrics without actionable detail are vanity numbers.
-Gaze exists to help developers write better tests, and that requires
-telling them exactly what to fix.
+**Rationale**: Metrics without actionable detail are vanity numbers. gaze-py
+exists to help developers write better tests, and that requires telling them
+exactly what to fix.
 
 ### IV. Testability
 
-Every function Gaze analyzes, and every function within Gaze itself,
-MUST be testable in isolation without requiring external services or
-shared mutable state.
+Every function gaze-py analyzes, and every function within gaze-py itself,
+MUST be testable in isolation without requiring external services or shared
+mutable state.
 
-- Test contracts MUST verify observable side effects (return values,
-  state mutations, I/O operations), not implementation details.
-- Coverage strategy (unit vs. integration vs. e2e, with targets) MUST
-  be specified in the implementation plan for all new code.
-- Coverage ratchets MUST be enforced by automated tests; coverage
-  regression MUST be treated as a test failure.
-- Missing coverage strategy in a spec or plan is a CRITICAL-severity
-  finding and MUST be resolved before implementation begins.
+- Test contracts MUST verify observable side effects (return values, raised
+  exceptions, emitted output), not implementation details or private state.
+- Coverage strategy MUST be specified in the implementation plan for all
+  new code. Missing coverage strategy in a spec or plan is a CRITICAL finding
+  and MUST be resolved before implementation begins.
+- Coverage ratchets MUST be enforced by CI; coverage regression MUST be
+  treated as a test failure.
+- Conformance tests MUST reference porting contract IDs (EC-001, CC-001,
+  SC-001, etc.) so the test suite demonstrates compliance.
 
-**Rationale**: Gaze is a test-quality tool. If Gaze's own tests are
-poorly structured, it undermines the credibility of its assessments.
-Testability is a first-class governance concern because untestable
-code cannot be reliably verified, and unverified code cannot be
-trusted — by users or by Gaze itself.
+**Rationale**: gaze-py is a test-quality tool. If its own tests are poorly
+structured, it undermines the credibility of its assessments.
+
+---
 
 ## Development Workflow
 
-- **Spec-First Development**: All changes that modify production code,
-  test code, agent prompts, embedded assets, or CI configuration MUST
-  be preceded by a spec workflow (either the Speckit pipeline under
-  `specs/` or the OpenSpec pipeline under `openspec/changes/`). The
-  spec artifacts (proposal, design, tasks at minimum) MUST exist
-  before implementation begins. This ensures every change has a
-  planning record, a reviewable intent, and a traceable rationale.
-  Exempt from this requirement:
-    - Constitution amendments (governed by the Governance section below)
-    - Trivial fixes: typo corrections, comment-only changes, and
-      single-line formatting fixes that do not alter behavior
-    - Emergency hotfixes: critical production bugs where the fix is
-      a single well-understood correction (must be retroactively
-      documented)
-  When in doubt, use a spec. The cost of an unnecessary spec is
-  minutes; the cost of an unplanned change is rework, drift, and
-  broken CI.
-- **Branching**: All work MUST occur on feature branches. Direct
-  commits to the main branch are prohibited except for trivial
-  documentation fixes.
-- **Code Review**: Every pull request MUST receive at least one
-  approving review before merge.
-- **Review Council Gate**: Before submitting a pull request, agents
-  MUST run the `/review-council` command and receive an APPROVE
-  verdict from all four reviewers (Adversary, Architect, Guard,
-  Tester). Any REQUEST CHANGES findings MUST be resolved before
-  PR submission. There MUST be minimal to no code changes between
-  the council's APPROVE and the PR submission — the council reviews
-  the code that will be submitted, not a draft that changes afterward.
-- **Continuous Integration**: The CI pipeline MUST pass (build, lint,
-  tests) before a pull request is eligible for merge.
-- **Releases**: Follow semantic versioning (MAJOR.MINOR.PATCH).
-  Breaking changes to public APIs or analysis behavior require a
-  MAJOR bump.
-- **Commit Messages**: Use conventional commit format
-  (`type: description`) to enable automated changelog generation.
+- **Spec-First**: All changes that modify production code, test code, agent
+  prompts, embedded assets, or CI configuration MUST be preceded by a spec.
+  Use the Speckit pipeline (`specs/`) for strategic changes (≥ 3 stories or
+  cross-repo). Use the OpenSpec pipeline (`openspec/changes/`) for tactical
+  changes (< 3 stories, single repo). Spec artifacts MUST exist before
+  implementation begins. Exempt: constitution amendments, typo fixes,
+  single-line formatting fixes, emergency hotfixes (retroactively documented).
+
+- **Porting Contracts First**: Before writing any spec, the implementer MUST
+  read `docs/porting/contracts.md`, `docs/porting/requirements.md`, and
+  `docs/porting/taxonomy-reference.md` in the Go gaze repository. These
+  documents are the authoritative source for what gaze-py MUST implement.
+  Any spec that contradicts or ignores the porting contracts MUST be revised
+  before implementation begins.
+
+- **Branching**: All work MUST occur on feature branches. Direct commits to
+  `main` are prohibited except for trivial documentation fixes.
+
+- **Convention Packs**: Agents MUST read `.opencode/uf/packs/python.md` and
+  `.opencode/uf/packs/python-custom.md` before writing or reviewing any
+  Python code. All 15 custom rules (CR-001 through CR-004, plus the rules
+  promoted to the canonical pack) are non-negotiable.
+
+- **Code Review**: Every pull request MUST receive at least one approving
+  review before merge.
+
+- **Review Council Gate**: Before submitting a pull request, agents MUST run
+  `/review-council` and receive APPROVE from all reviewers. Any REQUEST
+  CHANGES findings MUST be resolved before PR submission. There MUST be
+  minimal to no code changes between APPROVE and PR submission.
+
+- **CI Gate**: The CI pipeline (ruff, mypy strict, pytest --cov-fail-under=85)
+  MUST pass before a pull request is eligible for merge.
+
+- **Releases**: Follow semantic versioning (MAJOR.MINOR.PATCH). Breaking
+  changes to public APIs, JSON output schemas, or analysis behavior require
+  a MAJOR bump.
+
+- **Commit Messages**: Use Conventional Commits (`type: description`).
+
+---
 
 ## Governance
 
-This constitution is the highest-authority document for the Gaze
-project. All development practices, pull request reviews, and
-architectural decisions MUST be consistent with the principles defined
-above.
+This constitution is the highest-authority document for gaze-py. All
+development practices, pull request reviews, and architectural decisions
+MUST be consistent with the principles defined above.
 
-- **Amendments**: Any change to this constitution MUST be proposed via
-  pull request, reviewed, and approved before merge. The amendment
-  MUST include a migration plan if it alters or removes existing
-  principles.
-- **Versioning**: The constitution follows semantic versioning:
+- **Amendments**: Any change MUST be proposed via pull request, reviewed,
+  and approved before merge.
+- **Versioning**:
   - MAJOR: Principle removal or incompatible redefinition.
   - MINOR: New principle or materially expanded guidance.
-  - PATCH: Clarifications, wording, or non-semantic refinements.
-- **Compliance Review**: At each planning phase (spec, plan, tasks),
-  the Constitution Check gate MUST verify that the proposed work
-  aligns with all active principles.
+  - PATCH: Clarifications or non-semantic refinements.
+- **Compliance Review**: At each planning phase (spec, plan, tasks), the
+  Constitution Check gate MUST verify alignment with all active principles.
 
-**Version**: 1.3.0 | **Ratified**: 2026-02-20 | **Last Amended**: 2026-03-15
+**Version**: 1.0.0 | **Ratified**: 2026-06-13
