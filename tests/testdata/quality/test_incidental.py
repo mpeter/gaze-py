@@ -1,6 +1,11 @@
-"""Test fixture: asserts on internal variable — over-specification (SC-017)."""
+"""Test fixture: asserts on internal variable — over-specification (SC-017).
 
-from tests.testdata.quality.src_incidental import square
+This file is parsed as AST by the quality engine — it is never executed.
+The import is intentionally absent; the engine detects calls by name, not
+by resolved symbol.
+"""
+
+# ruff: noqa: F821
 
 
 def test_square_overspecified() -> None:
