@@ -210,6 +210,18 @@ Task: "Create [Entity2] model in src/models/[entity2].py"
 
 ---
 
+## Convention Pack Compliance
+
+Before implementing any task, agents MUST have read:
+- `.opencode/uf/packs/python.md` — canonical Python rules (CS-*, AP-*, TC-*, DR-*)
+- `.opencode/uf/packs/python-custom.md` — gaze-py-specific rules (CR-001–004)
+
+Key rules that affect task execution:
+- CR-001: No re-exports from `__init__.py`
+- CR-002: Testdata fixtures are not tests — no imports, no `__init__.py`
+- CR-003: No placeholder values in production output — null not zero
+- CR-004: Test private functions only through public contract
+
 ## Implementation Strategy
 
 ### MVP First (User Story 1 Only)

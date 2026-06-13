@@ -40,7 +40,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] **I. Accuracy**: Do all detection targets have fixture files with known expected effects?
+- [ ] **II. Minimal Assumptions**: Does this feature require users to annotate or restructure code?
+- [ ] **III. Actionable Output**: Does output identify specific test/function/effect? Are unavailable fields null (not zero)?
+- [ ] **IV. Testability**: Is coverage strategy specified? Do conformance tests reference contract IDs?
+- [ ] **V. Porting Contract Supremacy**: Has the implementer read `../gaze/docs/porting/contracts.md`, `requirements.md`, and `taxonomy-reference.md`? Does this spec contradict any porting contract?
 
 ## Project Structure
 
