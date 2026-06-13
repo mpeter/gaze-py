@@ -210,3 +210,5 @@
 - [ ] 9.4 Write minimal `README.md` — installation (local wheel only, NOT PyPI), basic usage (`gazepy analyze <path>`), `--coverage-json` flag explanation, Python 3.11+ requirement
 - [ ] 9.4b Create `CHANGELOG.md` with a `## [0.1.0] — YYYY-MM-DD` entry listing capabilities delivered in this change (R1 side effect detection, R2 classification, R3/R4 CRAP scoring and quadrants, R5 output formatting, gazepy CLI, package infrastructure). Use Keep a Changelog format.
 - [ ] 9.5 Commit on feature branch `opsx/001-initial-port`, push, open PR against `main`
+
+<!-- spec-review: passed -->
