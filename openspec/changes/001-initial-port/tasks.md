@@ -125,7 +125,7 @@
 
 ## 5. Classification Engine (R2)
 
-- [ ] 5.1 Write `tests/test_classifier.py` — tests FIRST (red):
+- [x] 5.1 Write `tests/test_classifier.py` — tests FIRST (red):
   - CC-001: P0 baseline score = 75; P1 = 60; P2-P4 = 50
   - CC-002: Raw score -5 → clamped to 0; raw score 120 → clamped to 100
   - CC-003: Use `@pytest.mark.parametrize` for all 3 label thresholds (contractual/ambiguous/incidental)
@@ -144,13 +144,13 @@
   - CC-005: Naming — contractual prefix does NOT fire for non-implied effect type: function named `GetUser` with a `LogWrite` effect (logging, not implied by `Get*`) → no naming signal with weight=10 for the LogWrite effect
   - CC-006: Every signal has `source` (str) and `weight` (int) fields
   - (Config failure tests are in `tests/test_config.py` — see task 2.5)
-- [ ] 5.2 [P] Write `src/gaze_py/classify/signals/naming.py` — contractual/incidental prefix tables, sentinel special case (+30)
-- [ ] 5.3 [P] Write `src/gaze_py/classify/signals/visibility.py` — exported function (+8), exported return type (+6), exported receiver type (+6), clamped to +20
-- [ ] 5.4 [P] Write `src/gaze_py/classify/signals/docstring.py` — contractual/incidental keyword scan, direct (+15) vs indirect (+5) match; use source IDs `"godoc"` and `"godoc_keyword_indirect"` (NOT "docstring")
-- [ ] 5.5 [P] Write `src/gaze_py/classify/signals/interface.py` — ABC/Protocol base class detection (+30)
-- [ ] 5.6 [P] Write `src/gaze_py/classify/signals/caller.py` — caller count → weight table (0→0, 1→+5, 2-3→+10, 4+→+15)
-- [ ] 5.7 Write `src/gaze_py/classify/engine.py` — `ClassificationEngine.classify(effect, context) -> ClassificationResult`; runs all 5 signals, applies tier boost + contradiction penalty, clamps score [0, 100], assigns label
-- [ ] 5.8 Run `uv run pytest tests/test_classifier.py` — MUST pass; `uv run mypy src/gaze_py/classify/` — MUST pass
+- [x] 5.2 [P] Write `src/gaze_py/classify/signals/naming.py` — contractual/incidental prefix tables, sentinel special case (+30)
+- [x] 5.3 [P] Write `src/gaze_py/classify/signals/visibility.py` — exported function (+8), exported return type (+6), exported receiver type (+6), clamped to +20
+- [x] 5.4 [P] Write `src/gaze_py/classify/signals/docstring.py` — contractual/incidental keyword scan, direct (+15) vs indirect (+5) match; use source IDs `"godoc"` and `"godoc_keyword_indirect"` (NOT "docstring")
+- [x] 5.5 [P] Write `src/gaze_py/classify/signals/interface.py` — ABC/Protocol base class detection (+30)
+- [x] 5.6 [P] Write `src/gaze_py/classify/signals/caller.py` — caller count → weight table (0→0, 1→+5, 2-3→+10, 4+→+15)
+- [x] 5.7 Write `src/gaze_py/classify/engine.py` — `ClassificationEngine.classify(effect, context) -> ClassificationResult`; runs all 5 signals, applies tier boost + contradiction penalty, clamps score [0, 100], assigns label
+- [x] 5.8 Run `uv run pytest tests/test_classifier.py` — MUST pass; `uv run mypy src/gaze_py/classify/` — MUST pass
 
 ## 6. CRAP Scoring (R3 + R4)
 
