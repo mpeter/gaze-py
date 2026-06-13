@@ -46,7 +46,7 @@
 
 ## 4. AST Detector (R1)
 
-- [ ] 4.1 Write testdata fixtures (all in `tests/testdata/analysis/`):
+- [x] 4.1 Write testdata fixtures (all in `tests/testdata/analysis/`):
   - `pure_function.py` — body `pass`, no annotation (also used for no-op effect type tests)
   - `return_value.py` — `return expr` (non-None)
   - `return_value_annotation.py` — `-> Item | None` with `return None` body
@@ -90,7 +90,7 @@
   - `mutex_op.py` — `with lock: ...` where `lock` is a `threading.Lock` parameter
   - `syntax_error.py` — deliberately invalid Python (for failure mode test)
   - `high_complexity.py` — function with multiple `if`/`elif`/`for`/`while` branches to test complexity > 1 (used by scorer tests)
-- [ ] 4.2 Write `tests/test_detector.py` — tests FIRST (red):
+- [x] 4.2 Write `tests/test_detector.py` — tests FIRST (red):
   - EC-002: P0 zero tolerance on each fixture (one test per P0 type; NO disjunctive "or" assertions)
   - EC-002: ReturnValue annotation exception scenario
   - EC-002: Explicit `return None` without annotation → no ReturnValue
@@ -112,8 +112,8 @@
   - Panic/ProcessExit: `raise SystemExit` → Panic; `raise SystemExit(1)` → Panic; `sys.exit()`/`os._exit()`/`os.abort()` → ProcessExit via `@pytest.mark.parametrize`; no overlap
   - PointerArgMutation vs SliceMutation: item assignment → P0; `.append()` → P1
   - No-op coverage: WaitGroupOp, AtomicOp, RecoverBehavior, UnsafeMutation, SyncPoolOp — use `pure_function.py` as input; assert result contains zero effects of each no-op type (use `@pytest.mark.parametrize` over the five type names)
-- [ ] 4.3 Write `src/gaze_py/analysis/complexity.py` — `cyclomatic_complexity(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int`; McCabe algorithm: start at 1, increment for each `ast.If` (covers both if and elif — each elif is a nested ast.If in the orelse field; there is no ast.ElIf node in Python's AST), `ast.For`, `ast.While`, `ast.ExceptHandler`, `ast.With` (each item), `ast.Assert`, boolean `ast.BoolOp` with `ast.And`/`ast.Or` operators, comprehension `if` filters; does NOT recurse into nested function definitions (each function is scored independently). See design.md Cyclomatic Complexity section.
-- [ ] 4.4 Write `src/gaze_py/analysis/detector.py` — two-phase scanning:
+- [x] 4.3 Write `src/gaze_py/analysis/complexity.py` — `cyclomatic_complexity(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int`; McCabe algorithm: start at 1, increment for each `ast.If` (covers both if and elif — each elif is a nested ast.If in the orelse field; there is no ast.ElIf node in Python's AST), `ast.For`, `ast.While`, `ast.ExceptHandler`, `ast.With` (each item), `ast.Assert`, boolean `ast.BoolOp` with `ast.And`/`ast.Or` operators, comprehension `if` filters; does NOT recurse into nested function definitions (each function is scored independently). See design.md Cyclomatic Complexity section.
+- [x] 4.4 Write `src/gaze_py/analysis/detector.py` — two-phase scanning:
   (1) module-level pass for SentinelError via top-level ClassDef with transitive base resolution;
   (2) per-function `FunctionVisitor(ast.NodeVisitor)` for all other types;
   `FileDetector.detect(path, *, root: Path, callers: dict[str, int] | None = None) -> list[FunctionTarget]`;
@@ -121,7 +121,7 @@
   populate `FunctionTarget.complexity` using `complexity.cyclomatic_complexity()`;
   implement all P0 + P1 + feasible P2/P3/P4 types per design.md language mapping table;
   apply ReturnValue heuristic and Panic/ProcessExit disambiguation
-- [ ] 4.5 Run `uv run pytest tests/test_detector.py` — MUST pass; `uv run mypy src/gaze_py/analysis/` — MUST pass
+- [x] 4.5 Run `uv run pytest tests/test_detector.py` — MUST pass; `uv run mypy src/gaze_py/analysis/` — MUST pass
 
 ## 5. Classification Engine (R2)
 
