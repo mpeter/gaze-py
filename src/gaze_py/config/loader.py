@@ -71,17 +71,16 @@ def load_config(start_path: Path) -> GazeConfig:
         current = current.parent
 
     while True:
+        # Check project boundary FIRST — do not read config above the root.
+        if any((current / s).exists() for s in _SENTINELS):
+            candidate = current / ".gaze.yaml"
+            if candidate.exists():
+                return _parse_config(candidate, current)
+            break  # at project root; no config found
+
         candidate = current / ".gaze.yaml"
         if candidate.exists():
-            try:
-                raw = yaml.safe_load(candidate.read_text()) or {}
-            except yaml.YAMLError as e:
-                raise GazeConfigError(f"Failed to parse {candidate}: {e}") from e
-            return _build_config(raw, candidate)
-
-        # Stop at project root sentinel — do not walk above the project root.
-        if any((current / s).exists() for s in _SENTINELS):
-            break
+            return _parse_config(candidate, current)
 
         parent = current.parent
         if parent == current:  # filesystem root reached
@@ -89,6 +88,28 @@ def load_config(start_path: Path) -> GazeConfig:
         current = parent
 
     return GazeConfig()
+
+
+def _parse_config(candidate: Path, _current: Path) -> GazeConfig:
+    """Read and parse a .gaze.yaml file.
+
+    Args:
+        candidate: Path to the .gaze.yaml file.
+        _current: Directory containing the config file (unused; reserved for
+            future use such as relative path resolution).
+
+    Returns:
+        GazeConfig populated from the YAML file.
+
+    Raises:
+        GazeConfigError: When the file cannot be parsed as YAML or a value
+            fails validation.
+    """
+    try:
+        raw = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        raise GazeConfigError(f"Failed to parse {candidate}: {e}") from e
+    return _build_config(raw, candidate)
 
 
 def _to_int(value: object, field: str, path: Path) -> int:

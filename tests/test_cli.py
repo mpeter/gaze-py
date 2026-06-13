@@ -115,6 +115,11 @@ def test_analyze_with_malformed_coverage_json_exits_nonzero() -> None:
             ["analyze", str(_TESTDATA), f"--coverage-json={malformed.resolve()}"],
         )
     assert result.exit_code != 0
+    # TC-008: assert content, not just exit code — error must mention parsing failure
+    out = result.output
+    assert "Error" in out or "parse" in out.lower() or "Failed" in out, (
+        f"Expected parse error message in output, got: {out!r}"
+    )
 
 
 def test_analyze_with_nonexistent_coverage_json_exits_nonzero() -> None:
@@ -125,6 +130,10 @@ def test_analyze_with_nonexistent_coverage_json_exits_nonzero() -> None:
         ["analyze", str(_TESTDATA), "--coverage-json=/nonexistent/coverage.json"],
     )
     assert result.exit_code != 0
+    # TC-008: assert content — error must mention the file does not exist
+    assert "does not exist" in result.output or "Error" in result.output, (
+        f"Expected 'does not exist' or 'Error' in output, got: {result.output!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -134,9 +143,13 @@ def test_analyze_with_nonexistent_coverage_json_exits_nonzero() -> None:
 
 def test_analyze_nonexistent_path_exits_nonzero() -> None:
     """gazepy analyze /nonexistent exits non-zero with error."""
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(cli, ["analyze", "/nonexistent/path"])
     assert result.exit_code != 0
+    # TC-008: assert content — error must mention the path does not exist
+    assert "does not exist" in result.output or "Error" in result.output, (
+        f"Expected 'does not exist' or 'Error' in output, got: {result.output!r}"
+    )
 
 
 def test_analyze_single_file_exits_zero() -> None:

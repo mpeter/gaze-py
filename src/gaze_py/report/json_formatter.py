@@ -18,7 +18,7 @@ from typing import Any
 from gaze_py.taxonomy.models import AnalysisResult
 
 
-def _json_default(obj: Any) -> Any:  # noqa: ANN401
+def _json_default(obj: Any) -> Any:  # noqa: ANN401  # Any is required — json.JSONEncoder.default() protocol uses Any.
     """Custom JSON encoder for types not handled by the default encoder.
 
     Handles:
@@ -81,8 +81,6 @@ def to_json(result: AnalysisResult, *, indent: int = 2) -> str:
         fn_dict["fix_strategy"] = score_dict.get("fix_strategy")
         fn_dict["quadrant"] = score_dict.get("quadrant")
         fn_dict["effect_confidence_range"] = score_dict.get("effect_confidence_range")
-        fn_dict["recommended_actions"] = score_dict.get("recommended_actions")
-
         # Rename "effects" → "side_effects" per OC-002 field naming.
         if "effects" in fn_dict:
             fn_dict["side_effects"] = fn_dict.pop("effects")

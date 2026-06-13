@@ -586,10 +586,10 @@ def test_cc006_signal_has_source_and_weight_fields() -> None:
     )
     assert len(result.signals) > 0
     for signal in result.signals:
-        assert isinstance(signal.source, str)
-        assert len(signal.source) > 0
-        assert isinstance(signal.weight, int)
-        assert signal.weight != 0
+        assert isinstance(signal.source, str) and len(signal.source) > 0, f"Bad source in {signal}"
+        assert isinstance(signal.weight, int) and signal.weight != 0, (
+            f"Zero weight in signal {signal.source!r}"
+        )
 
 
 def test_cc006_canonical_source_identifiers() -> None:
@@ -613,7 +613,9 @@ def test_cc006_canonical_source_identifiers() -> None:
         docstring="Returns the user object.",
     )
     for signal in result.signals:
-        assert signal.source in allowed_sources, f"Unexpected signal source: {signal.source!r}"
+        assert signal.source in allowed_sources, (
+            f"Unexpected signal source: {signal.source!r} — expected one of {allowed_sources}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -644,15 +646,15 @@ def test_classification_result_is_frozen() -> None:
         result.label = "contractual"  # type: ignore[misc]
 
 
-def test_classify_all_effect_types_without_error() -> None:
+@pytest.mark.parametrize("effect_type", list(SideEffectType))
+def test_classify_all_effect_types_without_error(effect_type: SideEffectType) -> None:
     """Engine classifies every SideEffectType without raising."""
     engine = _engine()
+    effect = _make_effect(effect_type)
     target = _make_target()
-    for effect_type in SideEffectType:
-        effect = _make_effect(effect_type)
-        result = engine.classify(effect, target)
-        assert result.label in ("contractual", "ambiguous", "incidental")
-        assert _SCORE_MIN <= result.score <= _SCORE_MAX
+    result = engine.classify(effect, target)
+    assert result.label in ("contractual", "ambiguous", "incidental")
+    assert _SCORE_MIN <= result.score <= _SCORE_MAX
 
 
 # ---------------------------------------------------------------------------

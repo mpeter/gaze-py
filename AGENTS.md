@@ -13,10 +13,10 @@ side effects in Python functions using AST-only analysis, classifies them as
 contractual or incidental, and computes CRAP and GazeCRAP scores.
 
 - **Language**: Python 3.11+
-- **Package**: `gaze` (PyPI and import path)
+- **Package**: `gaze-py` (PyPI name); `gaze_py` (import path)
 - **Binary**: `gazepy`
 - **License**: Apache 2.0
-- **Layout**: `src/` layout — all source under `src/gaze/`, tests under `tests/`
+- **Layout**: `src/` layout — all source under `src/gaze_py/`, tests under `tests/`
 - **Porting authority**: `../gaze/docs/porting/` — contracts.md, requirements.md,
   taxonomy-reference.md are the authoritative ground truth for what to implement
 
@@ -79,7 +79,7 @@ Use the skill tool to load a skill when a task matches its description.
 
 ```text
 gaze-py/
-├── src/gaze/             # All package source (src/ layout)
+├── src/gaze_py/          # All package source (src/ layout)
 │   ├── __init__.py       # __version__ only
 │   ├── taxonomy/         # Domain types: SideEffect, FunctionTarget, etc.
 │   ├── analysis/         # AST side-effect detection engine
@@ -114,12 +114,12 @@ uv sync
 uv run pytest -m "not slow"
 
 # Full CI gate
-uv run ruff check . && uv run ruff format --check . && uv run mypy src/ && uv run pytest --cov=gaze --cov-fail-under=85
+uv run ruff check . && uv run ruff format --check . && uv run mypy src/ && uv run pytest --cov=gaze_py --cov-fail-under=85
 
 # Run the CLI
 uv run gazepy --help
-uv run gazepy analyze src/gaze/ --format=text
-uv run gazepy report src/gaze/ tests/ --format=json
+uv run gazepy analyze src/gaze_py/ --format=text
+uv run gazepy report src/gaze_py/ tests/ --format=json
 
 # Build wheel
 uv build

@@ -121,7 +121,7 @@ def test_oc002_json_function_has_required_fields() -> None:
     assert "contract_coverage" in fn
     assert "fix_strategy" in fn
     assert "quadrant" in fn
-    assert "recommended_actions" in fn
+    # Note: recommended_actions lives at summary level, not function level (OC-002)
 
 
 def test_oc002_json_summary_has_threshold_fields() -> None:
@@ -173,13 +173,9 @@ def test_oc002_recommended_actions_entry_keys() -> None:
     assert "crap" in action
 
 
-def test_oc002_no_camel_case_field_names() -> None:
-    """OC-002: No camelCase field names in JSON output."""
-    result = _make_result()
-    output = to_json(result)
-
-    # Check for common camelCase patterns
-    camel_case_patterns = [
+@pytest.mark.parametrize(
+    "camel_pattern",
+    [
         "lineCoverage",
         "gazeCrap",
         "contractCoverage",
@@ -188,9 +184,13 @@ def test_oc002_no_camel_case_field_names() -> None:
         "functionCount",
         "crapLoad",
         "crapThreshold",
-    ]
-    for pattern in camel_case_patterns:
-        assert pattern not in output, f"Found camelCase field: {pattern!r}"
+    ],
+)
+def test_oc002_no_camel_case_field_names(camel_pattern: str) -> None:
+    """OC-002: No camelCase field names in JSON output."""
+    result = _make_result()
+    output = to_json(result)
+    assert camel_pattern not in output, f"Found camelCase field: {camel_pattern!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -363,3 +363,19 @@ def test_text_output_is_plain_string() -> None:
     # No rich markup characters
     assert "[bold" not in output
     assert "[red" not in output
+
+
+def test_text_output_renders_known_complexity() -> None:
+    """to_text() renders the actual complexity value as a number."""
+    import re
+
+    _known_complexity = 7
+    target = _make_target(complexity=_known_complexity)
+    result = _make_result(targets=[target])
+    output = to_text(result)
+    assert "complexity=" in output
+    # Verify the value is actually the known integer, not just the key
+    assert re.search(r"complexity=\d+", output), f"Expected complexity=<int> in: {output}"
+    assert f"complexity={_known_complexity}" in output, (
+        f"Expected complexity={_known_complexity} in: {output}"
+    )
