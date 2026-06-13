@@ -1,7 +1,7 @@
 ---
 pack_id: python-custom
 language: Python
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Custom Rules: Python (gaze-py)
@@ -31,16 +31,16 @@ symbols from `__init__.py` to create a shorter import alias.
 - Nothing else
 
 ```python
-# WRONG — src/gaze_py/__init__.py
-from gaze_py.taxonomy import SideEffect  # creates a second import path
+# WRONG — src/gaze/__init__.py
+from gaze.taxonomy import SideEffect  # creates a second import path
 __all__ = ["SideEffect"]
 
 # CORRECT — callers import from the canonical location
-from gaze_py.taxonomy import SideEffect
+from gaze.taxonomy import SideEffect
 ```
 
 This makes the dependency graph explicit and prevents hidden coupling between
-subpackages. It also ensures that `import gaze_py` does not transitively
+subpackages. It also ensures that `import gaze` does not transitively
 import the entire package.
 
 ---
@@ -111,7 +111,7 @@ the test MUST include a comment explaining why:
 # Testing _iter_test_functions directly because map_assertions() requires
 # a real filesystem path and an AnalysisResult; constructing both for a
 # two-line class-method scenario would obscure what is being tested.
-from gaze_py.quality import _iter_test_functions
+from gaze.quality import _iter_test_functions
 ```
 
 Without this comment, the test will be rejected in review. Private function

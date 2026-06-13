@@ -1,6 +1,60 @@
 <!--
   SYNC IMPACT REPORT
   ==================
+  Version change: 1.1.0 → 1.1.1
+  Amendment date: 2026-06-13
+
+  Clarification (PATCH):
+    Principle V — corrected effect taxonomy count from 37 to 38.
+    The porting contracts contain a documentation bug: contracts.md EC-001
+    Count column says "5" for P4 while listing 6 names; both documents state
+    "37 total" in their headers but enumeration of all named rows yields 38
+    (P0=5 + P1=8 + P2=10 + P3=9 + P4=6 = 38). specs.md EC-001 documents
+    this and asserts 38. The constitution is updated to match.
+    Filed for upstream resolution with Go gaze maintainers via specs.md note.
+
+  Previous SYNC IMPACT REPORT (v1.1.0):
+  ==================
+  Version change: 1.0.0 → 1.1.0
+  Amendment date: 2026-06-13
+  Parent constitution: Unbound Force Org Constitution v1.2.0
+
+  Added principles:
+    VI.  Composability First — standalone installability; no hard inter-hero
+         prerequisites; extension points at module interfaces
+    VII. Supply Chain Integrity — committed lock file; CI actions pinned by
+         commit SHA; dependency justification required before adding new deps
+
+  Org principle scoped out:
+    I. Autonomous Collaboration (org v1.2.0) — the Hero Interface Contract
+       envelope format and self-describing artifact metadata requirements
+       target service-to-service inter-hero artifact passing. gaze-py is a
+       standalone CLI analysis tool; its JSON output is consumed directly by
+       users and tooling, not routed through a hero artifact bus. This
+       principle is not applicable and is intentionally omitted. If gaze-py
+       ever gains a service mode or participates in a hero pipeline, this
+       decision MUST be revisited.
+       Org constitution location: ../unbound-force/.specify/memory/constitution.md
+       (or https://github.com/unbound-force/unbound-force if available externally)
+
+  Updated sections:
+    Governance — parent_constitution field added; compliance review updated
+                 to reference "all active principles" (was "all five principles")
+
+  Templates requiring updates: none
+
+  Follow-up TODOs:
+    - Once pyproject.toml is added, run `uv sync --frozen` and commit uv.lock to
+      satisfy Principle VII's lock file requirement (currently inapplicable
+      as no package manifest exists yet). Track in a dedicated OpenSpec change.
+    - Add Dependabot config (`.github/dependabot.yml`, ecosystem: github-actions)
+      to keep SHA-pinned CI actions current automatically. Track in a dedicated
+      OpenSpec change.
+    - Reconcile AGENTS.md review-council list to include SRE for CI-touching changes
+      and document the Tester-vs-SRE selection rule.
+
+  Previous SYNC IMPACT REPORT (v1.0.0):
+  ==================
   Version change: (template) → 1.0.0 (initial ratification)
   Ratification date: 2026-06-13
 
@@ -118,16 +172,63 @@ gaze-py MUST implement. No spec, plan, or implementation MAY contradict them.
   `docs/porting/contracts.md`, `docs/porting/requirements.md`, and
   `docs/porting/taxonomy-reference.md` from the Go gaze repository at
   `../gaze/`.
-- The 37-type effect taxonomy (EC-001), the confidence scoring formula
+- The 38-type effect taxonomy (EC-001), the confidence scoring formula
   (CC-001), the CRAP/GazeCRAP formulas (SC-001/SC-002), the quadrant rules
   (SC-004), and the JSON field names (OC-002) are fixed. They MUST NOT be
-  invented, renamed, or reinterpreted.
+  invented, renamed, or reinterpreted. Note: the porting contracts state
+  "37 types" in their headers due to a documentation bug (contracts.md P4
+  Count column says 5 while listing 6 names). The canonical count is 38 by
+  enumeration. See specs.md EC-001 for the documented discrepancy.
 - Any spec element that conflicts with a porting contract MUST be revised
   before implementation begins. The porting contract wins.
 
 **Rationale**: gaze-py is a port, not an independent tool. Schema
 compatibility with Go gaze is a first-class requirement — users and tooling
 depend on consistent output across implementations.
+
+### VI. Composability First
+
+gaze-py MUST be independently installable and usable without any other Unbound
+Force hero or external service present.
+
+- No implementation MAY introduce a hard runtime dependency on another hero.
+  Optional integrations (e.g., reading a sibling hero's output) MUST degrade
+  gracefully when that hero is absent. Graceful degradation means: exit with
+  code 0, emit a warning to stderr naming the unavailable integration, and
+  continue with reduced functionality. Unhandled exceptions and partial or
+  corrupt output are NOT acceptable degradation modes.
+- Extension points (configuration loaders, output formatters, effect
+  classifiers) MUST be defined at module interfaces. Callers extend behavior
+  by providing alternative implementations — not by modifying internals.
+- The `gazepy` CLI MUST be the sole required entry point. Users MUST NOT need
+  to run another hero's binary to obtain a valid gaze-py result.
+
+**Rationale**: A tool that silently depends on adjacent tooling is fragile and
+hostile to new contributors. gaze-py earns adoption by working in isolation
+from day one.
+
+### VII. Supply Chain Integrity
+
+gaze-py MUST maintain a verifiable, reproducible dependency graph.
+
+- All runtime and development dependencies MUST be managed via a committed lock
+  file (`uv.lock`). The lock file MUST be kept in version control and updated
+  whenever dependencies change. (Prerequisite: a `pyproject.toml` must exist;
+  this requirement activates once the package manifest is committed.)
+- CI pipeline actions MUST be pinned by commit SHA. Floating tag references
+  (e.g., `@v4`) are prohibited in `.github/workflows/`. The human-readable
+  version tag MUST be preserved as an inline comment
+  (e.g., `@<sha>  # v4.2.2`). Before committing a pinned SHA, the implementer
+  MUST verify it maps to the stated version tag using
+  `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`. SHA pins MUST be kept
+  current via automated tooling (e.g., Dependabot with `ecosystem: github-actions`).
+- Before adding a new dependency, the implementer MUST justify in the spec or
+  PR description that the existing toolchain cannot cover the use case.
+  Transitive dependency count and maintenance status MUST be considered.
+
+**Rationale**: Floating tags and unlocked dependency graphs are silent failure
+modes. A pinned, auditable supply chain makes security incidents detectable
+and reproducible builds possible.
 
 ---
 
@@ -139,8 +240,10 @@ depend on consistent output across implementations.
   or cross-repo scope). Use the OpenSpec pipeline (`openspec/changes/`) for
   tactical changes (single story, single repo). Spec artifacts MUST exist
   before implementation begins.
-  Exempt: constitution amendments, typo fixes, single-line formatting fixes,
-  emergency hotfixes (retroactively documented within 24 hours).
+  Exempt: constitution amendments *(the content edits themselves; the PR and
+  review-council process still applies per the Governance section)*, typo
+  fixes, single-line formatting fixes, emergency hotfixes (retroactively
+  documented within 24 hours).
 
 - **Porting Contracts First**: Before writing any spec, read
   `../gaze/docs/porting/contracts.md`, `requirements.md`, and
@@ -182,6 +285,7 @@ This constitution is the highest-authority document for gaze-py. All
 development practices, pull request reviews, and architectural decisions
 MUST be consistent with the principles defined above.
 
+- **Parent Constitution**: Unbound Force Org Constitution v1.2.0
 - **Amendments**: Any change MUST be proposed via pull request, reviewed,
   and approved before merge. The amendment MUST include a migration plan if
   it alters or removes existing principles.
@@ -190,7 +294,7 @@ MUST be consistent with the principles defined above.
   - MINOR: New principle or materially expanded guidance.
   - PATCH: Clarifications or non-semantic refinements.
 - **Compliance Review**: At each planning phase (spec, plan, tasks), the
-  Constitution Check gate MUST verify alignment with all five principles,
+  Constitution Check gate MUST verify alignment with all active principles,
   with explicit sign-off on Principle V (porting contract alignment).
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
+**Version**: 1.1.1 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
