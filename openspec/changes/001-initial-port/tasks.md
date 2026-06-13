@@ -41,7 +41,7 @@
 
 ## 3. Taxonomy Tests (EC-001)
 
-- [ ] 3.1 Write `tests/test_taxonomy.py` — EC-001: assert 38 types (with comment referencing the 37-vs-38 contract bug), assert tier counts (P0=5 P1=8 P2=10 P3=9 P4=6), assert all named types present, assert TIER_MAP covers all 38 types; assert `Score` has `contract_coverage_reason` field
+- [ ] 3.1 Write `tests/test_taxonomy.py` — EC-001: assert 38 types (with comment referencing the 37-vs-38 contract bug), assert tier counts (P0=5 P1=8 P2=10 P3=9 P4=6), assert all named types present, assert TIER_MAP covers all 38 types; assert `Score` has `contract_coverage_reason` field; assert `Score` has `effect_confidence_range` field typed `tuple[int, int] | None`; assert `FunctionTarget` has `caller_count` field; assert `Summary` has `crap_threshold` and `gaze_crap_threshold` fields
 - [ ] 3.2 Run `uv run pytest tests/test_taxonomy.py` — MUST pass
 
 ## 4. AST Detector (R1)
@@ -72,7 +72,7 @@
             result = modified(data)  # finally assignment
         return result  # return is OUTSIDE finally
     ```
-    (the effect is attributed to the inner function, not the outer — N/A here as there is no nesting, but note the return MUST be outside the finally block)
+    (Note: the return MUST be outside the finally block. The `DeferredReturnMutation` effect is attributed to the function containing the finally block — this is a single-function pattern with no inner/outer nesting.)
   - `filesystem_write.py` — `open(path, 'w')`
   - `filesystem_delete.py` — `os.remove(path)`
   - `filesystem_meta.py` — `os.chmod(path, mode)`
@@ -117,7 +117,7 @@
   (1) module-level pass for SentinelError via top-level ClassDef with transitive base resolution;
   (2) per-function `FunctionVisitor(ast.NodeVisitor)` for all other types;
   `FileDetector.detect(path, *, root: Path, callers: dict[str, int] | None = None) -> list[FunctionTarget]`;
-  `GazeParseError` raised on SyntaxError — import from `taxonomy/exceptions.py`, NOT defined here;
+  `GazeParseError` raised on `SyntaxError` or `ValueError` (null bytes) — `except (SyntaxError, ValueError): raise GazeParseError(...) from e`; import from `taxonomy/exceptions.py`, NOT defined here;
   populate `FunctionTarget.complexity` using `complexity.cyclomatic_complexity()`;
   implement all P0 + P1 + feasible P2/P3/P4 types per design.md language mapping table;
   apply ReturnValue heuristic and Panic/ProcessExit disambiguation
@@ -169,14 +169,15 @@
   - SC-005: fix_strategy is null when line_coverage is null (CRAP cannot be computed → strategy cannot be assigned)
   - SC-006: Sort order: add_tests before add_assertions before decompose_and_test before decompose
   - SC-006: Cap at 20 entries (25 functions → 20 in output)
-- [ ] 6.2 Write `src/gaze_py/crap/scorer.py` — `crap()`, `gaze_crap()`, `quadrant()`, `fix_strategy()`, `recommended_actions()`, `crapload()`; complexity input comes from `FunctionTarget.complexity` (populated by `analysis/complexity.py`); CRAP returns `None` when `line_coverage is None`; `fix_strategy` returns `None` when CRAP is null OR when CRAP < crap_threshold (only CRAPload functions get a strategy); respect SC-005 evaluation order (check complexity rules 1+2 first, then Q3/Rule 3, then default); Rule 3 (`add_assertions`) is only reachable when `quadrant == Q3` which requires GazeCRAP — in this change this scenario is tested via synthetic injection only, not live pipeline
+- [ ] 6.2 Write `src/gaze_py/crap/scorer.py` — `crap()`, `gaze_crap()`, `quadrant()`, `fix_strategy()`, `recommended_actions()`, `crapload()`; complexity input comes from `FunctionTarget.complexity` (populated by `analysis/complexity.py`); CRAP returns `None` when `line_coverage is None`; `fix_strategy` returns `None` when CRAP is null OR when CRAP < crap_threshold (only CRAPload functions get a strategy); when CRAP is computed but no functions are in CRAPload, set `Summary.recommended_actions=[]` (empty list, NOT None) per OC-003; respect SC-005 evaluation order (check complexity rules 1+2 first, then Q3/Rule 3, then default); Rule 3 (`add_assertions`) is only reachable when `quadrant == Q3` which requires GazeCRAP — in this change this scenario is tested via synthetic injection only, not live pipeline
 - [ ] 6.3 Run `uv run pytest tests/test_scorer.py` — MUST pass; `uv run mypy src/gaze_py/crap/` — MUST pass
 
 ## 7. Output Formatting (R5)
 
 - [ ] 7.1 Write `tests/test_output.py` — tests FIRST (red):
   - OC-001: `--format=json` → valid JSON; `--format=text` → non-empty non-JSON string
-  - OC-002: Required fields present: `side_effects`, `line_coverage`, `crap`, `gaze_crap`, `contract_coverage`, `fix_strategy`, `quadrant`, `recommended_actions`
+  - OC-002: Required fields present in output: `side_effects`, `line_coverage`, `crap`, `gaze_crap`, `contract_coverage`, `fix_strategy`, `quadrant`, `recommended_actions` (function-level); `crap_threshold`, `gaze_crap_threshold` (summary-level, always non-null)
+  - OC-002: `recommended_actions` entries each have keys `function`, `file`, `strategy`, `crap` (assert key names, not just presence)
   - OC-002: No camelCase field names in JSON output
   - OC-003: `line_coverage` is null (NOT 0.0) when coverage not provided
   - OC-003: `crap` is null when `line_coverage` is null

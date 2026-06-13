@@ -116,12 +116,15 @@ without SSA.
    subclass descends into the function body and collects all other effect
    types.
 
-**Failure mode**: When `ast.parse()` raises `SyntaxError` (invalid Python),
-`FileDetector.detect()` MUST raise a `GazeParseError` (imported from
-`taxonomy/exceptions.py`) — NOT return an empty list silently. The exception
-MUST carry the file path in its message or `filename` attribute so the error
-is actionable. Callers (the CLI pipeline) catch this, emit a warning via
-`click.echo(err=True)`, and continue with other files.
+**Failure mode**: When `ast.parse()` raises `SyntaxError` **or `ValueError`**
+(invalid Python — `ValueError` is raised on null bytes in source, e.g. binary
+files accidentally named `.py`), `FileDetector.detect()` MUST raise a
+`GazeParseError` (imported from `taxonomy/exceptions.py`) — NOT return an
+empty list silently. Catch both: `except (SyntaxError, ValueError): raise
+GazeParseError(...) from e`. The exception MUST carry the file path in its
+message or `filename` attribute so the error is actionable. Callers (the CLI
+pipeline) catch this, emit a warning via `click.echo(err=True)`, and continue
+with other files.
 
 ### Cyclomatic Complexity (EC-005 Python adaptation)
 
