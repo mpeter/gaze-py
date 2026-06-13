@@ -1,0 +1,177 @@
+"""Classification engine — runs all 5 signals and computes the final score.
+
+ClassificationEngine.classify() is the single entry point for classifying a
+side effect. It runs all five signal analyzers, applies the tier boost and
+contradiction penalty, clamps the score to [0, 100], and assigns a label.
+
+Per CC-001 through CC-006 (contracts.md and specs.md).
+"""
+
+from __future__ import annotations
+
+from gaze_py.classify.signals.caller import caller_signal
+from gaze_py.classify.signals.docstring import docstring_signal
+from gaze_py.classify.signals.interface import interface_signal
+from gaze_py.classify.signals.naming import naming_signal
+from gaze_py.classify.signals.visibility import visibility_signal
+from gaze_py.config.loader import GazeConfig
+from gaze_py.taxonomy.effects import TIER_MAP, Tier
+from gaze_py.taxonomy.models import ClassificationResult, FunctionTarget, SideEffect, Signal
+
+# Base confidence score for all effects (CC-001).
+_BASE_CONFIDENCE: int = 50
+
+# Tier boost values per CC-001.
+_TIER_BOOST: dict[Tier, int] = {
+    Tier.P0: 25,
+    Tier.P1: 10,
+    Tier.P2: 0,
+    Tier.P3: 0,
+    Tier.P4: 0,
+}
+
+# Contradiction penalty applied when both positive and negative signals exist (CC-004).
+_CONTRADICTION_PENALTY: int = -20
+
+# Score range bounds (CC-002).
+_SCORE_MIN: int = 0
+_SCORE_MAX: int = 100
+
+
+class ClassificationEngine:
+    """Classifies side effects using five signal analyzers.
+
+    Runs all five signal analyzers (interface, visibility, caller, naming,
+    docstring), sums their weights, applies the tier boost and contradiction
+    penalty, clamps the score to [0, 100], and assigns a label.
+
+    Per CC-001 through CC-006.
+    """
+
+    def __init__(self, config: GazeConfig) -> None:
+        """Initialize the engine with configuration thresholds.
+
+        Args:
+            config: GazeConfig providing contractual_threshold and
+                incidental_threshold for label assignment.
+        """
+        self._config = config
+
+    def classify(
+        self,
+        effect: SideEffect,
+        target: FunctionTarget,
+        *,
+        class_bases: list[str] | None = None,
+        docstring: str | None = None,
+        return_type_hint: str | None = None,
+        receiver_name: str | None = None,
+    ) -> ClassificationResult:
+        """Classify a side effect and return a ClassificationResult.
+
+        Runs all five signal analyzers, applies tier boost and contradiction
+        penalty, clamps the score to [0, 100], and assigns a label based on
+        the configured thresholds.
+
+        Args:
+            effect: The SideEffect being classified.
+            target: The FunctionTarget containing the effect. Provides
+                caller_count and function name.
+            class_bases: List of base class names for the containing class,
+                or None for standalone functions. Used by the interface signal.
+            docstring: The function's docstring text, or None when absent.
+                Used by the docstring signal.
+            return_type_hint: String representation of the return type
+                annotation, or None when absent. Used by the visibility signal.
+            receiver_name: Name of the containing class, or None for
+                standalone functions. Used by the visibility signal.
+
+        Returns:
+            A frozen ClassificationResult with label, score, and signals.
+        """
+        signals: list[Signal] = []
+
+        # Signal 1: Interface satisfaction.
+        sig = interface_signal(class_bases)
+        if sig is not None:
+            signals.append(sig)
+
+        # Signal 2: API visibility.
+        sig = visibility_signal(
+            target.name,
+            return_type_hint=return_type_hint,
+            receiver_name=receiver_name,
+        )
+        if sig is not None:
+            signals.append(sig)
+
+        # Signal 3: Caller dependency.
+        sig = caller_signal(target.caller_count)
+        if sig is not None:
+            signals.append(sig)
+
+        # Signal 4: Naming convention.
+        sig = naming_signal(target.name, effect.type)
+        if sig is not None:
+            signals.append(sig)
+
+        # Signal 5: Docstring keywords.
+        sig = docstring_signal(docstring, effect.type)
+        if sig is not None:
+            signals.append(sig)
+
+        # CC-004: Contradiction detection — both positive AND negative signals present.
+        has_positive = any(s.weight > 0 for s in signals)
+        has_negative = any(s.weight < 0 for s in signals)
+        if has_positive and has_negative:
+            signals.append(Signal(source="contradiction", weight=_CONTRADICTION_PENALTY))
+
+        # CC-001: Compute raw score.
+        tier = TIER_MAP[effect.type]
+        tier_boost = _TIER_BOOST[tier]
+        signal_sum = sum(s.weight for s in signals)
+        raw_score = _BASE_CONFIDENCE + tier_boost + signal_sum
+
+        # CC-002: Clamp to [0, 100].
+        final_score = max(_SCORE_MIN, min(_SCORE_MAX, raw_score))
+
+        # CC-003: Assign label based on thresholds.
+        label = _assign_label(
+            final_score,
+            contractual_threshold=self._config.contractual_threshold,
+            incidental_threshold=self._config.incidental_threshold,
+        )
+
+        return ClassificationResult(
+            label=label,
+            score=final_score,
+            signals=tuple(signals),
+        )
+
+
+def _assign_label(
+    score: int,
+    *,
+    contractual_threshold: int,
+    incidental_threshold: int,
+) -> str:
+    """Assign a classification label based on the clamped score.
+
+    Per CC-003:
+    - 'contractual' when score >= contractual_threshold (inclusive)
+    - 'ambiguous' when incidental_threshold <= score < contractual_threshold
+    - 'incidental' when score < incidental_threshold
+
+    Args:
+        score: Clamped confidence score in [0, 100].
+        contractual_threshold: Minimum score for 'contractual' label.
+        incidental_threshold: Maximum score (exclusive) for 'incidental' label.
+
+    Returns:
+        One of 'contractual', 'ambiguous', or 'incidental'.
+    """
+    if score >= contractual_threshold:
+        return "contractual"
+    if score >= incidental_threshold:
+        return "ambiguous"
+    return "incidental"
