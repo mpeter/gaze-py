@@ -2,7 +2,7 @@
 
 **Input**: `openspec/changes/quality-call-scanning/proposal.md`
 **Branch**: `opsx/quality-call-scanning`
-**Files**: `src/gaze_py/quality.py`, `src/gaze_py/cli.py`,
+**Files**: `src/gaze_py/quality/__init__.py`, `src/gaze_py/cli/__init__.py`,
            `tests/test_quality.py`, `tests/test_cli.py`
 
 ## Format: `[ID] [P?] Description`
@@ -47,7 +47,7 @@
 
 ## Phase 2 — Implement
 
-- [x] T003 Implement in `src/gaze_py/quality.py`:
+- [x] T003 Implement in `src/gaze_py/quality/__init__.py`:
   - Add `_iter_test_functions(tree: ast.Module) -> list[tuple[str, list[ast.stmt]]]`
     — finds top-level `def test_*` and `class TestX: def test_*` methods
   - Add `_extract_called_names(body: list[ast.stmt]) -> set[str]`
@@ -63,7 +63,7 @@
       `0` if falling back to all bodies with no specific match
   - Remove `_find_test_function_body()` — replaced by above
 
-- [x] T004 [P] Implement in `src/gaze_py/cli.py` — `report` command:
+- [x] T004 [P] Implement in `src/gaze_py/cli/__init__.py` — `report` command:
   - Phase 2: replace filename heuristic with inverted index:
     - Parse all test files once; collect called names per file
     - Build `{func_name: [test_source_text]}` index

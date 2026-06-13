@@ -22,7 +22,7 @@ Expected: ~300+ mappings across 40+ test files.
 
 ## What Changes
 
-### `src/gaze_py/quality.py`
+### `src/gaze_py/quality/__init__.py`
 
 Replace `_find_test_function_body()` with two new functions:
 
@@ -46,7 +46,7 @@ Update `map_assertions()` to:
    found (e.g. `"TestNamesInFile.test_extracts_names, ..."`) instead
    of the placeholder `"<test_function>"`.
 
-### `src/gaze_py/cli.py` — `report` command
+### `src/gaze_py/cli/__init__.py` — `report` command
 
 Replace the per-test-file loop (filename → function name heuristic)
 with an inverted index approach:
@@ -87,10 +87,10 @@ command's purpose is the quality pipeline, not raw side effects.
 
 ## Impact
 
-- `src/gaze_py/quality.py`: `_find_test_function_body` removed;
+- `src/gaze_py/quality/__init__.py`: `_find_test_function_body` removed;
   `_iter_test_functions`, `_extract_called_names` added;
   `map_assertions` signature unchanged, behaviour extended
-- `src/gaze_py/cli.py`: `report` command Phase 2 rewritten;
+- `src/gaze_py/cli/__init__.py`: `report` command Phase 2 rewritten;
   Phase 3 output changed from analysis to quality JSON
 - `tests/test_cli.py`: `test_sc030_report_json_exit_0` updated to
   expect quality JSON keys (`quality_reports`) instead of analysis

@@ -607,16 +607,20 @@ def build_test_index(test_dir: Path) -> tuple[dict[str, list[str]], list[str]]:
     warnings: list[str] = []
     resolved = test_dir.resolve()
     for test_file in sorted(resolved.rglob("test_*.py")):
-        if any(part.startswith(".") for part in test_file.parts):
+        if any(part.startswith(".") for part in test_file.relative_to(resolved).parts):
             continue
         try:
             src_text = test_file.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue  # binary file — skip silently
+        except OSError as exc:
+            warnings.append(f"skipping {test_file}: I/O error: {exc}")
+            continue
         try:
             tree = ast.parse(src_text)
         except SyntaxError as exc:
-            warnings.append(f"skipping {test_file}: syntax error at line {exc.lineno}")
+            line_info = f" at line {exc.lineno}" if exc.lineno is not None else ""
+            warnings.append(f"skipping {test_file}: syntax error{line_info}")
             continue
         except RecursionError:
             warnings.append(f"skipping {test_file}: source nesting depth exceeds Python recursion limit")

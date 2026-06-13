@@ -20,10 +20,16 @@ from __future__ import annotations
 import io
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from gaze_py import __version__
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from gaze_py.taxonomy import PackageSummary, QualityReport
 
 
 def _analyze_tolerant(
@@ -137,6 +143,37 @@ def _validate_no_traversal(path: Path, root: Path | None = None) -> Path:
         )
         sys.exit(1)
     return resolved_path
+
+
+def _build_package_summary(reports: Sequence[QualityReport], worst_n: int = 0) -> PackageSummary:
+    """Build a ``PackageSummary`` from a list of ``QualityReport`` objects.
+
+    Extracted to eliminate duplication between the ``quality`` and ``report``
+    commands (DRY / default.md CS-004).  The only difference between the two
+    callers is ``worst_n``: ``report`` passes ``5``, ``quality`` passes ``0``.
+
+    Args:
+        reports: Sequence of ``QualityReport`` instances.
+        worst_n: Number of worst-coverage tests to include in
+            ``PackageSummary.worst_coverage_tests``.  Pass ``0`` to omit.
+
+    Returns:
+        A ``PackageSummary`` instance.
+    """
+    from gaze_py.taxonomy import PackageSummary
+
+    total = len(reports)
+    avg_cov = sum(r.contract_coverage.percentage for r in reports) / total if total > 0 else 0.0
+    total_over = sum(r.over_specification.count for r in reports)
+    avg_conf = sum(r.assertion_detection_confidence for r in reports) // total if total > 0 else 0
+    worst = sorted(reports, key=lambda r: r.contract_coverage.percentage)[:worst_n] if worst_n > 0 else []
+    return PackageSummary(
+        total_tests=total,
+        average_contract_coverage=avg_cov,
+        total_over_specifications=total_over,
+        assertion_detection_confidence=avg_conf,
+        worst_coverage_tests=worst,
+    )
 
 
 def _derive_target_func(test_file: Path) -> str:
@@ -319,7 +356,6 @@ def quality(
     from gaze_py.quality import map_assertions
     from gaze_py.report.json import write_quality_json
     from gaze_py.report.text import write_quality_text
-    from gaze_py.taxonomy import PackageSummary
 
     # Validate tests_path exists.
     tests_dir = _validate_path_exists(tests_path, label="tests_path")
@@ -373,17 +409,7 @@ def quality(
         reports.append(report)
 
     # Build package summary.
-    total = len(reports)
-    avg_cov = sum(r.contract_coverage.percentage for r in reports) / total if total > 0 else 0.0
-    total_over = sum(r.over_specification.count for r in reports)
-    avg_conf = sum(r.assertion_detection_confidence for r in reports) // total if total > 0 else 0
-    summary = PackageSummary(
-        total_tests=total,
-        average_contract_coverage=avg_cov,
-        total_over_specifications=total_over,
-        assertion_detection_confidence=avg_conf,
-        worst_coverage_tests=[],
-    )
+    summary = _build_package_summary(reports, worst_n=0)
 
     buf = io.StringIO()
     if output_format == "json":
@@ -432,7 +458,7 @@ def report(
     from gaze_py.quality import build_test_index, map_assertions
     from gaze_py.report.json import write_quality_json
     from gaze_py.report.text import write_quality_text
-    from gaze_py.taxonomy import AnalysisResult, PackageSummary
+    from gaze_py.taxonomy import AnalysisResult  # noqa: TC001
 
     # Validate both paths exist before any analysis.
     src = _validate_path_exists(src_path, label="src_path")
@@ -468,8 +494,9 @@ def report(
     # (module-named test files, class-based test suites) without filename heuristics.
     resolved_tests = tests.resolve()
     func_to_test_sources, index_warnings = build_test_index(resolved_tests)
-    for warning in index_warnings:
-        click.echo(f"warning: {warning}", err=True)
+    if output_format != "json":
+        for warning in index_warnings:
+            click.echo(f"warning: {warning}", err=True)
 
     reports = []
     for result in results:
@@ -480,7 +507,7 @@ def report(
         test_srcs = func_to_test_sources.get(fn_name)
         if not test_srcs:
             continue
-        combined = "\n\n".join(test_srcs)
+        combined = "\n\n".join(dict.fromkeys(test_srcs))  # deduplicate while preserving order
         try:
             rpt = map_assertions(
                 test_source=combined,
@@ -493,17 +520,7 @@ def report(
         reports.append(rpt)
 
     # Phase 3: emit quality report (coverage metrics, gap hints).
-    total = len(reports)
-    avg_cov = sum(r.contract_coverage.percentage for r in reports) / total if total > 0 else 0.0
-    total_over = sum(r.over_specification.count for r in reports)
-    avg_conf = sum(r.assertion_detection_confidence for r in reports) // total if total > 0 else 0
-    summary = PackageSummary(
-        total_tests=total,
-        average_contract_coverage=avg_cov,
-        total_over_specifications=total_over,
-        assertion_detection_confidence=avg_conf,
-        worst_coverage_tests=sorted(reports, key=lambda r: r.contract_coverage.percentage)[:5],
-    )
+    summary = _build_package_summary(reports, worst_n=5)
 
     buf = io.StringIO()
     if output_format == "json":

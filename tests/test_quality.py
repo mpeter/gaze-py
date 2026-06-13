@@ -483,3 +483,18 @@ def test_build_test_index_multiple_files(tmp_path: Path) -> None:
     assert "beta" in index
     assert len(index["beta"]) == 1
     assert warnings == []
+
+
+def test_build_test_index_recursion_error_produces_warning(tmp_path: Path) -> None:
+    """build_test_index appends a warning for files that cause RecursionError during parse."""
+    from unittest.mock import patch
+
+    from gaze_py.quality import build_test_index
+
+    (tmp_path / "test_deep.py").write_text("def test_x():\n    foo()\n")
+    with patch("gaze_py.quality.ast.parse", side_effect=RecursionError("nesting")):
+        index, warnings = build_test_index(tmp_path)
+
+    assert index == {}, f"Expected empty index, got: {list(index.keys())}"
+    assert len(warnings) == 1, f"Expected 1 warning, got: {warnings}"
+    assert "test_deep.py" in warnings[0]
