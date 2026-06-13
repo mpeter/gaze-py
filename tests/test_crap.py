@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from gaze_py.crap import assign_fix_strategy, classify_quadrant, crap_score, gaze_crap_score
+from gaze_py.crap import (
+    assign_fix_strategy,
+    classify_quadrant,
+    compute_crap,
+    compute_gazecrap,
+    crap_score,
+    gaze_crap_score,
+)
 from gaze_py.taxonomy import FixStrategy, Quadrant
 
 
@@ -24,12 +31,12 @@ class TestCrapScore:
         assert crap_score(42, 100.0) == 42
 
     def test_known_value_50_percent(self) -> None:
-        """complexity=10, coverage=50% → 10² × 0.5³ + 10 = 100×0.125 + 10 = 22.5."""
+        """complexity=10, coverage=50% -> 10^2 * 0.5^3 + 10 = 100*0.125 + 10 = 22.5."""
         result = crap_score(10, 50.0)
         assert result == pytest.approx(22.5)
 
     def test_known_value_75_percent(self) -> None:
-        """complexity=8, coverage=75% → 64 × 0.25³ + 8 = 64×0.015625 + 8 = 9.0."""
+        """complexity=8, coverage=75% -> 64 * 0.25^3 + 8 = 64*0.015625 + 8 = 9.0."""
         result = crap_score(8, 75.0)
         assert result == pytest.approx(9.0)
 
@@ -40,7 +47,7 @@ class TestCrapScore:
 
 
 class TestQuadrantClassification:
-    """Tests for Q1–Q4 quadrant assignment."""
+    """Tests for Q1-Q4 quadrant assignment."""
 
     def test_q1_safe(self) -> None:
         assert classify_quadrant(5.0, 5.0, 30.0, 30.0) == Quadrant.Q1_Safe
@@ -82,3 +89,62 @@ class TestFixStrategy:
 
     def test_none_quadrant_returns_none(self) -> None:
         assert assign_fix_strategy(10, 50.0, None, 30.0) is None
+
+
+# ---------------------------------------------------------------------------
+# SC-020 / SC-021: GazeCRAP formula verification (parametrized)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("complexity", "contract_coverage_pct", "expected"),
+    [
+        # SC-020: complexity=5, coverage=0% -> 5^2 * 1^3 + 5 = 30
+        (5, 0.0, 30.0),
+        # SC-021: complexity=5, coverage=100% -> 5^2 * 0^3 + 5 = 5
+        (5, 100.0, 5.0),
+    ],
+)
+def test_sc020_sc021_gaze_crap_formula(
+    complexity: int,
+    contract_coverage_pct: float,
+    expected: float,
+) -> None:
+    """SC-020/SC-021: GazeCRAP formula produces correct values.
+
+    Given complexity and contract_coverage_pct,
+    When gaze_crap_score is called,
+    Then the result matches the hand-computed expected value.
+    """
+    assert gaze_crap_score(complexity, contract_coverage_pct) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("complexity", "contract_coverage_pct", "expected"),
+    [
+        (5, 0.0, 30.0),
+        (5, 100.0, 5.0),
+    ],
+)
+def test_compute_gazecrap_alias(
+    complexity: int,
+    contract_coverage_pct: float,
+    expected: float,
+) -> None:
+    """compute_gazecrap alias produces the same results as gaze_crap_score.
+
+    Given complexity and contract_coverage_pct,
+    When compute_gazecrap is called,
+    Then the result matches the expected value (alias parity).
+    """
+    assert compute_gazecrap(complexity, contract_coverage_pct) == pytest.approx(expected)
+
+
+def test_compute_crap_alias() -> None:
+    """compute_crap alias produces the same results as crap_score.
+
+    Given complexity=10 and coverage=50%,
+    When compute_crap is called,
+    Then the result matches crap_score(10, 50.0).
+    """
+    assert compute_crap(10, 50.0) == pytest.approx(crap_score(10, 50.0))

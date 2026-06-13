@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
-
 from gaze_py.taxonomy import (
+    TIER_MAP,
     AnalysisResult,
     Classification,
     ClassificationLabel,
@@ -14,8 +13,6 @@ from gaze_py.taxonomy import (
     SideEffectType,
     Signal,
     Tier,
-    TIER_MAP,
-    _generate_side_effect_id,
 )
 
 
@@ -32,16 +29,26 @@ class TestSideEffectTypes:
 
     def test_p1_types(self) -> None:
         p1 = {
-            "SliceMutation", "MapMutation", "GlobalMutation", "WriterOutput",
-            "HTTPResponseWrite", "ChannelSend", "ChannelClose", "DeferredReturnMutation",
+            "SliceMutation",
+            "MapMutation",
+            "GlobalMutation",
+            "WriterOutput",
+            "HTTPResponseWrite",
+            "ChannelSend",
+            "ChannelClose",
+            "DeferredReturnMutation",
         }
         for name in p1:
             assert hasattr(SideEffectType, name), f"Missing P1 type: {name}"
 
     def test_p4_types(self) -> None:
         p4 = {
-            "ReflectionMutation", "UnsafeMutation", "CgoCall",
-            "FinalizerRegistration", "SyncPoolOp", "ClosureCaptureMutation",
+            "ReflectionMutation",
+            "UnsafeMutation",
+            "CgoCall",
+            "FinalizerRegistration",
+            "SyncPoolOp",
+            "ClosureCaptureMutation",
         }
         for name in p4:
             assert hasattr(SideEffectType, name), f"Missing P4 type: {name}"
@@ -67,18 +74,6 @@ class TestTierMap:
     def test_p4_mapping(self) -> None:
         assert TIER_MAP[SideEffectType.ReflectionMutation] == Tier.P4
         assert TIER_MAP[SideEffectType.CgoCall] == Tier.P4
-
-
-class TestSideEffectId:
-    """Test the ``se-XXXXXXXX`` ID generation format."""
-
-    def test_format(self) -> None:
-        sid = _generate_side_effect_id()
-        assert re.match(r"^se-[0-9a-f]{8}$", sid), f"Bad ID format: {sid}"
-
-    def test_unique(self) -> None:
-        ids = {_generate_side_effect_id() for _ in range(100)}
-        assert len(ids) == 100, "Generated duplicate IDs"
 
 
 class TestToDict:
@@ -127,6 +122,7 @@ class TestToDict:
         target = FunctionTarget(package="main", function="Run")
         meta = Metadata(
             gaze_version="0.1.0",
+            gaze_py_version="0.1.0",
             python_version="3.11.0",
             duration_ms=123,
             timestamp="2025-01-01T00:00:00Z",
@@ -137,6 +133,7 @@ class TestToDict:
         assert d["target"]["function"] == "Run"
         assert d["target"]["receiver"] is None
         assert d["metadata"]["gaze_version"] == "0.1.0"
+        assert d["metadata"]["gaze_py_version"] == "0.1.0"
         assert d["side_effects"] == []
 
     def test_function_target_optional_fields(self) -> None:

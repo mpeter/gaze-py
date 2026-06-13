@@ -8,7 +8,7 @@ from gaze_py.taxonomy import FixStrategy, Quadrant
 def crap_score(complexity: int, coverage_pct: float) -> float:
     """Compute the CRAP (Change Risk Anti-Pattern) score.
 
-    Formula: complexity² × (1 - coverage/100)³ + complexity
+    Formula: complexity^2 * (1 - coverage/100)^3 + complexity
     """
     return complexity**2 * (1 - coverage_pct / 100) ** 3 + complexity
 
@@ -29,9 +29,9 @@ def classify_quadrant(
     crap_threshold: float,
     gaze_crap_threshold: float,
 ) -> Quadrant | None:
-    """Classify a function into a quality quadrant (Q1–Q4).
+    """Classify a function into a quality quadrant (Q1-Q4).
 
-    Uses a 2×2 matrix of (CRAP vs threshold) × (GazeCRAP vs threshold):
+    Uses a 2x2 matrix of (CRAP vs threshold) x (GazeCRAP vs threshold):
 
     * **Q1_Safe** — both scores below thresholds.
     * **Q2_ComplexButTested** — CRAP above threshold, GazeCRAP below.
@@ -88,3 +88,16 @@ def assign_fix_strategy(
 
     # Q4_Dangerous
     return FixStrategy.decompose_and_test
+
+
+# ---------------------------------------------------------------------------
+# Aliases for API parity with spec (SC-020 / SC-021)
+# ---------------------------------------------------------------------------
+
+# ``compute_gazecrap`` is the canonical name used in the spec and CLI.
+# It delegates to ``gaze_crap_score`` so both names are always in sync.
+compute_gazecrap = gaze_crap_score
+
+# ``compute_crap`` is the canonical name for the standard CRAP formula.
+# It delegates to ``crap_score`` so both names are always in sync.
+compute_crap = crap_score
