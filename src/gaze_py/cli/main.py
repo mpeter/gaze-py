@@ -15,7 +15,6 @@ to stderr, and analysis continues with other files.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import click
@@ -72,7 +71,11 @@ def analyze(path: str, output_format: str, coverage_json: str | None) -> None:
         raise SystemExit(1)
 
     config = load_config(src_path)
-    coverage_data = _load_coverage_json(coverage_json)
+    try:
+        coverage_data = _load_coverage_json(coverage_json)
+    except GazeConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
 
     result = _run_pipeline(src_path, config, coverage_data)
     _emit(result, output_format)
@@ -117,7 +120,11 @@ def report(src: str, tests: str, output_format: str, coverage_json: str | None) 
         raise SystemExit(1)
 
     config = load_config(src_path)
-    coverage_data = _load_coverage_json(coverage_json)
+    try:
+        coverage_data = _load_coverage_json(coverage_json)
+    except GazeConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
 
     result = _run_pipeline(src_path, config, coverage_data)
     _emit(result, output_format)
@@ -186,8 +193,16 @@ def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
     return coverage_map
 
 
+_SKIP_DIRS: frozenset[str] = frozenset(
+    {".git", "__pycache__", ".venv", "venv", "node_modules", ".mypy_cache", ".ruff_cache", "dist"}
+)
+
+
 def _collect_py_files(path: Path) -> list[Path]:
     """Collect all .py files under path (recursively for directories).
+
+    Skips common non-source directories (.git, __pycache__, .venv, etc.)
+    to avoid analyzing virtual-environment or cache files.
 
     Args:
         path: A .py file or a directory to scan recursively.
@@ -197,7 +212,7 @@ def _collect_py_files(path: Path) -> list[Path]:
     """
     if path.is_file():
         return [path] if path.suffix == ".py" else []
-    return sorted(path.rglob("*.py"))
+    return sorted(p for p in path.rglob("*.py") if not any(part in _SKIP_DIRS for part in p.parts))
 
 
 def _resolve_line_coverage(
@@ -373,47 +388,3 @@ def _emit(result: AnalysisResult, output_format: str) -> None:
         click.echo(to_json(result))
     else:
         click.echo(to_text(result))
-
-
-# ---------------------------------------------------------------------------
-# Exception handling for GazeConfigError from coverage JSON loading
-# ---------------------------------------------------------------------------
-
-
-def _handle_gaze_config_error(e: GazeConfigError) -> None:
-    """Emit a GazeConfigError to stderr and exit non-zero.
-
-    Args:
-        e: The GazeConfigError to report.
-    """
-    click.echo(f"Error: {e}", err=True)
-    sys.exit(1)
-
-
-# Patch the analyze and report commands to handle GazeConfigError
-_original_analyze = analyze.callback
-_original_report = report.callback
-
-
-def _analyze_with_error_handling(path: str, output_format: str, coverage_json: str | None) -> None:
-    """Wrapper that catches GazeConfigError from coverage JSON loading."""
-    try:
-        assert _original_analyze is not None
-        _original_analyze(path, output_format, coverage_json)
-    except GazeConfigError as e:
-        _handle_gaze_config_error(e)
-
-
-def _report_with_error_handling(
-    src: str, tests: str, output_format: str, coverage_json: str | None
-) -> None:
-    """Wrapper that catches GazeConfigError from coverage JSON loading."""
-    try:
-        assert _original_report is not None
-        _original_report(src, tests, output_format, coverage_json)
-    except GazeConfigError as e:
-        _handle_gaze_config_error(e)
-
-
-analyze.callback = _analyze_with_error_handling
-report.callback = _report_with_error_handling

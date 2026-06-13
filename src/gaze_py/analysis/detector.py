@@ -322,6 +322,8 @@ class _FunctionVisitor(ast.NodeVisitor):
         self._depth = 0  # nesting depth; skip nested FunctionDef when > 0
         # For GlobalMutation: track declared global names
         self._global_names: set[str] = set()
+        # For ClosureCaptureMutation: track declared nonlocal names
+        self._nonlocal_names: set[str] = set()
         # For DeferredReturnMutation: track finally-assigned names and return names
         self._finally_assigned: set[str] = set()
         self._return_names: set[str] = set()
@@ -581,19 +583,14 @@ class _FunctionVisitor(ast.NodeVisitor):
         # ClosureCaptureMutation is attributed to the inner function.
         # This visitor runs on the inner function, so we track nonlocal names
         # and detect assignment to them via visit_Assign/visit_AugAssign.
-        # We add to _global_names to reuse the same assignment detection path,
-        # but emit ClosureCaptureMutation instead.
-        # Actually: use a separate set to avoid conflating with GlobalMutation.
-        if not hasattr(self, "_nonlocal_names"):
-            self._nonlocal_names: set[str] = set()
+        # Use a separate set to avoid conflating with GlobalMutation.
         self._nonlocal_names.update(node.names)
         self.generic_visit(node)
 
     def _check_nonlocal_assignment(self, targets: list[ast.expr]) -> str | None:
         """Return the nonlocal name if any target is an assignment to one."""
-        nonlocal_names: set[str] = getattr(self, "_nonlocal_names", set())
         for target in targets:
-            if isinstance(target, ast.Name) and target.id in nonlocal_names:
+            if isinstance(target, ast.Name) and target.id in self._nonlocal_names:
                 return target.id
         return None
 
@@ -1017,25 +1014,6 @@ class _FunctionVisitor(ast.NodeVisitor):
                 return
 
 
-def _collect_return_names(stmts: list[ast.stmt]) -> set[str]:
-    """Collect all Name ids returned by ast.Return nodes in a statement list.
-
-    Does not recurse into nested function definitions.
-
-    Args:
-        stmts: List of AST statement nodes to scan.
-
-    Returns:
-        Set of variable names that appear as return values.
-    """
-    names: set[str] = set()
-    for stmt in stmts:
-        for node in ast.walk(stmt):
-            if isinstance(node, ast.Return) and isinstance(node.value, ast.Name):
-                names.add(node.value.id)
-    return names
-
-
 def _collect_return_names_excluding_finally(stmts: list[ast.stmt]) -> set[str]:
     """Collect return names from statements, skipping finally block contents.
 
@@ -1287,7 +1265,10 @@ class FileDetector:
                 ValueError (e.g., null bytes in source). The exception
                 carries the file path in its message.
         """
-        source = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            raise GazeParseError(f"Cannot read {path}: {e}") from e
 
         try:
             module = ast.parse(source, filename=str(path))

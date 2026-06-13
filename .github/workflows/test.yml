@@ -29,4 +29,4 @@ jobs:
       - name: Type check
         run: uv run mypy --strict src/
       - name: Test
-        run: uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85 --cov-report=term-missing
+        run: uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85 --cov-report=term-missing --cov-report=json

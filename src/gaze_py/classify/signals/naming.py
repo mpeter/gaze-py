@@ -17,7 +17,7 @@ from gaze_py.taxonomy.models import Signal
 # Contractual prefixes and the effect types each implies.
 # A prefix with an empty set implies ALL effect types (fires for any effect).
 # Per contracts.md CC-005 and tasks.md 5.2.
-CONTRACTUAL_PREFIXES: dict[str, frozenset[SideEffectType]] = {
+_CONTRACTUAL_PREFIXES: dict[str, frozenset[SideEffectType]] = {
     "Get": frozenset({SideEffectType.ReturnValue, SideEffectType.ErrorReturn}),
     "Fetch": frozenset({SideEffectType.ReturnValue, SideEffectType.ErrorReturn}),
     "Load": frozenset({SideEffectType.ReturnValue, SideEffectType.ErrorReturn}),
@@ -116,7 +116,7 @@ CONTRACTUAL_PREFIXES: dict[str, frozenset[SideEffectType]] = {
 
 # Incidental prefixes — fire for any effect type with weight -10.
 # Per contracts.md CC-005 and tasks.md 5.2.
-INCIDENTAL_PREFIXES: frozenset[str] = frozenset(
+_INCIDENTAL_PREFIXES: frozenset[str] = frozenset(
     {
         "log",
         "Log",
@@ -171,12 +171,12 @@ def naming_signal(
             return Signal(source="naming", weight=_SENTINEL_WEIGHT)
 
     # Incidental prefix check: fires for any effect type.
-    for prefix in INCIDENTAL_PREFIXES:
+    for prefix in _INCIDENTAL_PREFIXES:
         if func_name.startswith(prefix):
             return Signal(source="naming", weight=_INCIDENTAL_WEIGHT)
 
     # Contractual prefix check: fires only when effect type is implied.
-    for prefix, implied_types in CONTRACTUAL_PREFIXES.items():
+    for prefix, implied_types in _CONTRACTUAL_PREFIXES.items():
         if func_name.startswith(prefix):
             # Empty implied_types set means the prefix fires for all effect types.
             if not implied_types or effect_type in implied_types:

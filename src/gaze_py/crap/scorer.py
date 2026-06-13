@@ -17,7 +17,7 @@ from gaze_py.taxonomy.models import FunctionTarget
 
 _STRATEGY_ORDER: dict[str, int] = {
     "add_tests": 0,
-    "add_assertions": 1,
+    "add_assertions": 1,  # O1 deferred — unreachable in this change; pre-wired for future use
     "decompose_and_test": 2,
     "decompose": 3,
 }
@@ -96,10 +96,10 @@ def quadrant(
     """Assign a quadrant label based on line and contract coverage fractions.
 
     Quadrant definitions (per SC-004):
-    - Q1: line_coverage >= 0.5 AND contract_coverage >= 0.5
-    - Q2: line_coverage >= 0.5 AND contract_coverage < 0.5
-    - Q3: line_coverage < 0.5 AND contract_coverage >= 0.5
-    - Q4: line_coverage < 0.5 AND contract_coverage < 0.5
+    - Q1_Safe: line_coverage >= 0.5 AND contract_coverage >= 0.5
+    - Q2_ComplexButTested: line_coverage >= 0.5 AND contract_coverage < 0.5
+    - Q3_SimpleButUnderspecified: line_coverage < 0.5 AND contract_coverage >= 0.5
+    - Q4_Dangerous: line_coverage < 0.5 AND contract_coverage < 0.5
 
     Returns None when either coverage value is None.
 
@@ -108,7 +108,8 @@ def quadrant(
         contract_coverage: Contract coverage fraction in [0.0, 1.0], or None.
 
     Returns:
-        Quadrant label ("Q1", "Q2", "Q3", or "Q4"), or None.
+        Quadrant label ("Q1_Safe", "Q2_ComplexButTested",
+        "Q3_SimpleButUnderspecified", or "Q4_Dangerous"), or None.
     """
     if line_coverage is None or contract_coverage is None:
         return None
@@ -117,12 +118,12 @@ def quadrant(
     high_contract = contract_coverage >= _QUADRANT_HIGH_THRESHOLD
 
     if high_line and high_contract:
-        return "Q1"
+        return "Q1_Safe"
     if high_line and not high_contract:
-        return "Q2"
+        return "Q2_ComplexButTested"
     if not high_line and high_contract:
-        return "Q3"
-    return "Q4"
+        return "Q3_SimpleButUnderspecified"
+    return "Q4_Dangerous"
 
 
 def fix_strategy(
@@ -141,8 +142,10 @@ def fix_strategy(
     - Rule 1: complexity >= complexity_threshold AND line_coverage == 0.0
               -> "decompose_and_test"
     - Rule 2: complexity >= complexity_threshold AND line_coverage > 0.0
-              AND quadrant == "Q3" -> "decompose"
-    - Rule 3 (default): -> "add_tests"
+              AND quadrant == "Q3_SimpleButUnderspecified" -> "decompose"
+    - Rule 3: quadrant == "Q3_SimpleButUnderspecified" (low CRAP complexity)
+              -> "add_assertions"
+    - Rule 4 (default): -> "add_tests"
 
     Args:
         crap_score: Computed CRAP score, or None.
@@ -165,9 +168,12 @@ def fix_strategy(
         complexity >= complexity_threshold
         and line_coverage is not None
         and line_coverage > 0.0
-        and quadrant_label == "Q3"
+        and quadrant_label == "Q3_SimpleButUnderspecified"
     ):
         return "decompose"
+
+    if quadrant_label == "Q3_SimpleButUnderspecified":
+        return "add_assertions"
 
     return "add_tests"
 

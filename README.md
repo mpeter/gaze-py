@@ -17,7 +17,7 @@ gaze-py is not yet published to PyPI. Install from a locally built wheel:
 
 ```bash
 uv build
-uv tool install --force dist/gaze_py-0.1.0-py3-none-any.whl
+uv tool install --force dist/gaze_py-*.whl
 ```
 
 This installs the `gazepy` binary into your PATH via `uv tool`.

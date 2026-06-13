@@ -69,43 +69,26 @@ class TestSideEffectTypeCount:
             assert effect_type in TIER_MAP, f"TIER_MAP missing entry for {effect_type}"
 
 
-class TestTierCounts:
-    """EC-001: Tier counts match the porting contract (P0=5, P1=8, P2=10, P3=9, P4=6)."""
+@pytest.mark.parametrize(
+    "tier,expected_count",
+    [
+        (Tier.P0, _P0_COUNT),
+        (Tier.P1, _P1_COUNT),
+        (Tier.P2, _P2_COUNT),
+        (Tier.P3, _P3_COUNT),
+        (Tier.P4, _P4_COUNT),
+    ],
+)
+def test_tier_member_count(tier: Tier, expected_count: int) -> None:
+    """EC-001: Each tier has the correct member count per the porting contract.
 
-    def test_p0_has_5_members(self) -> None:
-        p0_types = [t for t, tier in TIER_MAP.items() if tier == Tier.P0]
-        assert len(p0_types) == _P0_COUNT, (
-            f"Expected {_P0_COUNT} P0 types, got {len(p0_types)}: {p0_types}"
-        )
-
-    def test_p1_has_8_members(self) -> None:
-        p1_types = [t for t, tier in TIER_MAP.items() if tier == Tier.P1]
-        assert len(p1_types) == _P1_COUNT, (
-            f"Expected {_P1_COUNT} P1 types, got {len(p1_types)}: {p1_types}"
-        )
-
-    def test_p2_has_10_members(self) -> None:
-        p2_types = [t for t, tier in TIER_MAP.items() if tier == Tier.P2]
-        assert len(p2_types) == _P2_COUNT, (
-            f"Expected {_P2_COUNT} P2 types, got {len(p2_types)}: {p2_types}"
-        )
-
-    def test_p3_has_9_members(self) -> None:
-        p3_types = [t for t, tier in TIER_MAP.items() if tier == Tier.P3]
-        assert len(p3_types) == _P3_COUNT, (
-            f"Expected {_P3_COUNT} P3 types, got {len(p3_types)}: {p3_types}"
-        )
-
-    def test_p4_has_6_members(self) -> None:
-        """EC-001: P4 has 6 members.
-
-        NOTE: The porting contracts say P4=5 in their count column, but list
-        6 type names. The canonical count is 6 per enumeration.
-        """
-        p4_types = [t for t, tier in TIER_MAP.items() if tier == Tier.P4]
-        assert len(p4_types) == _P4_COUNT, (
-            f"Expected {_P4_COUNT} P4 types, got {len(p4_types)}: {p4_types}"
-        )
+    NOTE: P4 contracts say 5 in their count column but list 6 type names.
+    The canonical count is 6 per enumeration.
+    """
+    tier_types = [t for t, t_tier in TIER_MAP.items() if t_tier == tier]
+    assert len(tier_types) == expected_count, (
+        f"Expected {expected_count} {tier.value} types, got {len(tier_types)}: {tier_types}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +201,7 @@ def test_p4_type_has_correct_tier(name: str) -> None:
 class TestStrEnumBehaviour:
     """SideEffectType is a StrEnum — values equal their names."""
 
-    def test_strEnum_value_equals_name(self) -> None:
+    def test_str_enum_value_equals_name(self) -> None:
         """SideEffectType members compare equal to their string name."""
         assert SideEffectType.ReturnValue == "ReturnValue"
         assert SideEffectType.ClosureCaptureMutation == "ClosureCaptureMutation"

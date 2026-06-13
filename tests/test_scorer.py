@@ -140,38 +140,28 @@ def test_sc003_crapload_boundary_inclusive() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SC-004: quadrant()
+# SC-004: quadrant() — truth table
 # ---------------------------------------------------------------------------
 
 
-def test_sc004_quadrant_q1_high_line_high_contract() -> None:
-    """SC-004: Q1 — both coverages >= 0.5."""
-    result = quadrant(0.8, 0.9)
-    assert result == "Q1"
-
-
-def test_sc004_quadrant_q2_high_line_low_contract() -> None:
-    """SC-004: Q2 — line_coverage >= 0.5, contract_coverage < 0.5."""
-    result = quadrant(0.8, 0.3)
-    assert result == "Q2"
-
-
-def test_sc004_quadrant_q3_low_line_high_contract() -> None:
-    """SC-004: Q3 — line_coverage < 0.5, contract_coverage >= 0.5."""
-    result = quadrant(0.3, 0.8)
-    assert result == "Q3"
-
-
-def test_sc004_quadrant_q4_low_line_low_contract() -> None:
-    """SC-004: Q4 — both coverages < 0.5."""
-    result = quadrant(0.3, 0.2)
-    assert result == "Q4"
+@pytest.mark.parametrize(
+    "line_cov,contract_cov,expected",
+    [
+        (0.8, 0.9, "Q1_Safe"),
+        (0.8, 0.3, "Q2_ComplexButTested"),
+        (0.3, 0.8, "Q3_SimpleButUnderspecified"),
+        (0.3, 0.2, "Q4_Dangerous"),
+    ],
+)
+def test_sc004_quadrant_truth_table(line_cov: float, contract_cov: float, expected: str) -> None:
+    """SC-004: Quadrant truth table — all four quadrant labels."""
+    assert quadrant(line_cov, contract_cov) == expected
 
 
 def test_sc004_quadrant_boundary_exactly_half() -> None:
-    """SC-004: 0.5 is 'high' (>= 0.5)."""
+    """SC-004: 0.5 is 'high' (>= 0.5) → Q1_Safe."""
     result = quadrant(0.5, 0.5)
-    assert result == "Q1"
+    assert result == "Q1_Safe"
 
 
 def test_sc004_quadrant_returns_none_when_line_coverage_is_none() -> None:
@@ -229,12 +219,15 @@ def test_sc005_rule1_decompose_and_test() -> None:
 
 
 def test_sc005_rule2_decompose() -> None:
-    """SC-005 Rule 2: complexity >= threshold AND coverage > 0 AND Q3 → 'decompose'."""
+    """SC-005 Rule 2: complexity >= threshold AND coverage > 0 AND Q3_SimpleButUnderspecified.
+
+    Expected strategy: 'decompose'.
+    """
     result = fix_strategy(
         crap_score=30.0,
         complexity=15,
         line_coverage=0.6,
-        quadrant_label="Q3",
+        quadrant_label="Q3_SimpleButUnderspecified",
         threshold=15.0,
         complexity_threshold=15,
     )
