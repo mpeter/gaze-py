@@ -88,3 +88,16 @@ def assign_fix_strategy(
 
     # Q4_Dangerous
     return FixStrategy.decompose_and_test
+
+
+# ---------------------------------------------------------------------------
+# Aliases for API parity with spec (SC-020 / SC-021)
+# ---------------------------------------------------------------------------
+
+# ``compute_gazecrap`` is the canonical name used in the spec and CLI.
+# It delegates to ``gaze_crap_score`` so both names are always in sync.
+compute_gazecrap = gaze_crap_score
+
+# ``compute_crap`` is the canonical name for the standard CRAP formula.
+# It delegates to ``crap_score`` so both names are always in sync.
+compute_crap = crap_score

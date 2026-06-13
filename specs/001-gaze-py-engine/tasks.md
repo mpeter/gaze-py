@@ -137,7 +137,7 @@ GazeCRAP formula aliased for contract coverage.
 
 **Write tests FIRST — ensure they FAIL before implementing.**
 
-- [ ] T010 [S3] Write `tests/test_report_json.py` (BEFORE
+- [x] T010 [S3] Write `tests/test_report_json.py` (BEFORE
   implementing formatters):
   - Tests MUST fail initially (no implementation yet)
   - Validate analysis JSON against `ANALYSIS_SCHEMA` via
@@ -151,18 +151,18 @@ GazeCRAP formula aliased for contract coverage.
   - Verify `jq`-compatible structure (assert via Python dict
     key access: `output["results"][0]["side_effects"]`)
 
-- [ ] T011 [P] [S3] Write `tests/test_report_text.py` (BEFORE
+- [x] T011 [P] [S3] Write `tests/test_report_text.py` (BEFORE
   implementing text formatter):
   - Smoke tests: text output is non-empty, contains function name,
     contains tier labels (`P0`–`P4`), contains GazeCRAP score
 
-- [ ] T012 [S3] Create `src/gaze_py/report/__init__.py`:
+- [x] T012 [S3] Create `src/gaze_py/report/__init__.py`:
   - Export `build_metadata(version: str, start_ns: int) -> dict`
     — assembles `gaze_version`, `gaze_py_version`, `python_version`,
     `duration_ms` (from `start_ns` to now), `timestamp`, `warnings`
     — single source of truth for metadata assembly across formatters
 
-- [ ] T013 [P] [S3] Implement `src/gaze_py/report/schema.py`:
+- [x] T013 [P] [S3] Implement `src/gaze_py/report/schema.py`:
   NOTE: Depends on T010 and T011 (tests must exist and fail
   before implementation begins). [P] means parallel with T014
   and T015, not with T010/T011.
@@ -173,7 +173,7 @@ GazeCRAP formula aliased for contract coverage.
     quality report
   - Add `jsonschema>=4.18` to `pyproject.toml` dev dependencies
 
-- [ ] T014 [P] [S3] Implement `src/gaze_py/report/json.py`:
+- [x] T014 [P] [S3] Implement `src/gaze_py/report/json.py`:
   NOTE: Depends on T010 and T011 (tests must exist and fail
   before implementation begins). [P] means parallel with T013
   and T015, not with T010/T011.
@@ -183,7 +183,7 @@ GazeCRAP formula aliased for contract coverage.
   - Top-level keys: `version`, `results` (analysis) /
     `quality_reports`, `quality_summary` (quality)
 
-- [ ] T015 [P] [S3] Implement `src/gaze_py/report/text.py`:
+- [x] T015 [P] [S3] Implement `src/gaze_py/report/text.py`:
   NOTE: Depends on T010 and T011 (tests must exist and fail
   before implementation begins). [P] means parallel with T013
   and T014, not with T010/T011.
@@ -193,7 +193,7 @@ GazeCRAP formula aliased for contract coverage.
   - Per-function table: effect type, tier, location, description
   - Summary line: GazeCRAP score, contract coverage %
 
-- [ ] T016 [P] [S3] Update `src/gaze_py/crap.py`:
+- [x] T016 [P] [S3] Update `src/gaze_py/crap.py`:
   - Verify `gaze_crap_score(complexity, contract_coverage_pct)`
     already exists and matches S3 SC-020/SC-021 formula
   - Add `compute_gazecrap` as an alias:
@@ -201,7 +201,7 @@ GazeCRAP formula aliased for contract coverage.
   - Preserve `crap_score()` (line-coverage CRAP) unchanged
   - Do NOT rename or remove any existing functions
 
-- [ ] T017 [S3] Verify all schema and crap tests pass:
+- [x] T017 [S3] Verify all schema and crap tests pass:
   `uv run pytest tests/test_report_json.py tests/test_report_text.py tests/test_crap.py -v`
   Add new parametrized test cases to `test_crap.py` for SC-020
   and SC-021 (complexity=5 / coverage=0% → 30; coverage=100% → 5).

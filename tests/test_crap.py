@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from gaze_py.crap import assign_fix_strategy, classify_quadrant, crap_score, gaze_crap_score
+from gaze_py.crap import (
+    assign_fix_strategy,
+    classify_quadrant,
+    compute_crap,
+    compute_gazecrap,
+    crap_score,
+    gaze_crap_score,
+)
 from gaze_py.taxonomy import FixStrategy, Quadrant
 
 
@@ -82,3 +89,62 @@ class TestFixStrategy:
 
     def test_none_quadrant_returns_none(self) -> None:
         assert assign_fix_strategy(10, 50.0, None, 30.0) is None
+
+
+# ---------------------------------------------------------------------------
+# SC-020 / SC-021: GazeCRAP formula verification (parametrized)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("complexity", "contract_coverage_pct", "expected"),
+    [
+        # SC-020: complexity=5, coverage=0% → 5² × 1³ + 5 = 30
+        (5, 0.0, 30.0),
+        # SC-021: complexity=5, coverage=100% → 5² × 0³ + 5 = 5
+        (5, 100.0, 5.0),
+    ],
+)
+def test_sc020_sc021_gaze_crap_formula(
+    complexity: int,
+    contract_coverage_pct: float,
+    expected: float,
+) -> None:
+    """SC-020/SC-021: GazeCRAP formula produces correct values.
+
+    Given complexity and contract_coverage_pct,
+    When gaze_crap_score is called,
+    Then the result matches the hand-computed expected value.
+    """
+    assert gaze_crap_score(complexity, contract_coverage_pct) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("complexity", "contract_coverage_pct", "expected"),
+    [
+        (5, 0.0, 30.0),
+        (5, 100.0, 5.0),
+    ],
+)
+def test_compute_gazecrap_alias(
+    complexity: int,
+    contract_coverage_pct: float,
+    expected: float,
+) -> None:
+    """compute_gazecrap alias produces the same results as gaze_crap_score.
+
+    Given complexity and contract_coverage_pct,
+    When compute_gazecrap is called,
+    Then the result matches the expected value (alias parity).
+    """
+    assert compute_gazecrap(complexity, contract_coverage_pct) == pytest.approx(expected)
+
+
+def test_compute_crap_alias() -> None:
+    """compute_crap alias produces the same results as crap_score.
+
+    Given complexity=10 and coverage=50%,
+    When compute_crap is called,
+    Then the result matches crap_score(10, 50.0).
+    """
+    assert compute_crap(10, 50.0) == pytest.approx(crap_score(10, 50.0))
