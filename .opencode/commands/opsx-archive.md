@@ -78,7 +78,16 @@ Archive a completed change in the experimental workflow.
    mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
    ```
 
-6. **Display summary**
+6. **Return to main branch**
+
+   After the archive move completes:
+   ```bash
+   git checkout main
+   ```
+
+   The `opsx/<name>` branch still exists locally. Note in the summary that the developer can delete it manually with `git branch -d opsx/<name>` if desired.
+
+7. **Display summary**
 
    Show archive completion summary including:
    - Change name
