@@ -57,16 +57,16 @@ Source layout using the `src/` convention:
 ```text
 src/gaze_py/
   __init__.py      Package root
-  cli.py           CLI layer (click commands)
-  taxonomy.py      Domain types: SideEffect, AnalysisResult, Tier,
+  cli/             CLI layer (click commands)
+  taxonomy/        Domain types: SideEffect, AnalysisResult, Tier,
                    QualityReport, ContractCoverage,
                    OverSpecificationScore, PackageSummary,
                    AssertionMapping, etc.
-  classify.py      Contractual classification engine
-  config.py        Configuration file handling (.gaze.yaml)
-  crap.py          CRAP score computation and reporting
-  analysis.py      AST side-effect detection engine (S1)
-  quality.py       Assertion mapper and contract coverage (S2)
+  classify/        Contractual classification engine
+  config/          Configuration file handling (.gaze.yaml)
+  crap/            CRAP score computation and reporting
+  analysis/        AST side-effect detection engine (S1)
+  quality/         Assertion mapper and contract coverage (S2)
   report/          JSON (schema-compatible with Go gaze) and text
                    formatters (S3)
 tests/

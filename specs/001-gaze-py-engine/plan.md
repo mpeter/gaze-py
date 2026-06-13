@@ -88,28 +88,23 @@ with `jsonschema>=4.18` in CI.
 
 ---
 
-### ADR-004 — Flat Module Layout (AP-006 Deviation)
+### ADR-004 — Subpackage Layout (AP-006 Compliant)
 
-**Decision**: New modules (`analysis.py`, `quality.py`) use flat
-module layout rather than the subpackage layout required by
-python.md AP-006 (`analysis/`, `taxonomy/`, `cli/`).
+**Decision**: All modules use AP-006 subpackage layout:
+`analysis/`, `quality/`, `taxonomy/`, `classify/`, `crap/`,
+`config/`, `cli/`, `report/`.
 
-**Rationale**: The existing codebase is entirely flat
-(`taxonomy.py`, `classify.py`, `crap.py`, `cli.py`). Introducing
-subpackages for new modules while leaving existing modules flat
-would create an inconsistent dual convention within the same
-package. The AP-006 subpackage refactoring should be applied
-uniformly across all modules in a dedicated future spec, not
-partially in this feature branch.
+**Rationale**: The initial implementation used flat modules for
+speed. A subsequent refactoring (chore: cell-57c10dd8288f3d9e)
+converted all flat modules to subpackages, bringing the project
+into full AP-006 compliance. Import paths are identical before
+and after (`gaze_py.analysis`, `gaze_py.taxonomy`, etc.) since
+Python resolves both `analysis.py` and `analysis/__init__.py`
+to the same import path.
 
-**Constraint**: python.md AP-006 is a `[MUST]` rule. This
-deviation is intentional and time-bounded. A future refactoring
-spec MUST be filed to bring the package layout into AP-006
-compliance uniformly.
-
-**Consequences**: Import paths are `gaze_py.analysis`,
-`gaze_py.quality` (flat). Tests import directly from these
-paths. No subpackage `__init__.py` files needed for S1–S2.
+**Consequences**: Each module is now a directory with an
+`__init__.py`. Additional sub-modules can be added under each
+package without further structural changes.
 
 ---
 
@@ -217,14 +212,15 @@ functions) and test `test_performance_50_functions`.
 
 ```text
 src/gaze_py/
-  analysis.py          S1: AST side-effect detection engine
-  quality.py           S2: assertion mapper, contract coverage,
-                           over-specification scoring
-  report/
-    __init__.py        S3: package root + shared build_metadata()
-    json.py            S3: JSON formatter (schema-compatible)
-    text.py            S3: human-readable text formatter (rich)
-    schema.py          S3: JSON Schema constants (Draft 2020-12)
+  analysis/            S1: AST side-effect detection engine
+    __init__.py
+  quality/             S2: assertion mapper, contract coverage,
+    __init__.py            over-specification scoring
+  report/              S3: JSON and text formatters
+    __init__.py            package root + shared build_metadata()
+    json.py                JSON formatter (schema-compatible)
+    text.py                human-readable text formatter (rich)
+    schema.py              JSON Schema constants (Draft 2020-12)
 
 tests/
   test_analysis.py     S1: unit tests for detection engine
@@ -237,14 +233,14 @@ tests/
     quality/           S2: paired source+test fixtures
 ```
 
-**Layout note (ADR-004)**: See ADR-004 below regarding the flat
-module layout deviation from python.md AP-006.
+**Layout note**: AP-006 subpackage layout. Each module is a
+directory with `__init__.py` (see ADR-004).
 
 **Shared metadata helper**: `report/__init__.py` exports
 `build_metadata(version: str, start_ns: int) -> dict` to avoid
 duplicating metadata assembly across `json.py` and `text.py`.
 
-### Domain types (new, added to `taxonomy.py`)
+### Domain types (new, added to `taxonomy/`)
 
 The following dataclasses MUST be added to `taxonomy.py` to
 maintain the existing domain-type ownership pattern:
