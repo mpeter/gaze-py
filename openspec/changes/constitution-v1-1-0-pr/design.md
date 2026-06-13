@@ -25,7 +25,7 @@ The constitution's own Governance section requires all amendments go through a P
 
 **Decision: Which files to stage**
 
-Only `.specify/memory/constitution.md` and `.github/workflows/test.yml` belong in this commit. Use `git add <path>` for each file explicitly rather than `git add .`. Verify with `git diff --cached --name-only` before committing.
+Only `.specify/memory/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` belong in this commit. Use `git add <path>` for each file explicitly rather than `git add .`. Verify with `git diff --cached --name-only` before committing.
 
 **Decision: Branch name**
 
