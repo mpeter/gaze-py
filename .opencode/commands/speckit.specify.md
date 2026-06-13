@@ -110,9 +110,19 @@ Given that feature description, do this:
 
 4. Load the resolved active `spec-template` file to understand required sections.
 
-5. **IF EXISTS**: Load `.specify/memory/constitution.md` for project principles and governance constraints.
+5. **Retrieve context from Dewey** (before writing the spec):
 
-6. Follow this execution flow:
+   Query Dewey for relevant context:
+   - Use `dewey_semantic_search` with the feature description to find related specs, prior proposals, and similar features
+   - Use `dewey_semantic_search_filtered` with `source_type: "github"` to find related issues across the organization
+   - Use `dewey_traverse` on any discovered related specs to understand scope and dependencies
+
+   Use retrieved context to avoid duplicating prior work and to reference relevant prior decisions.
+   If Dewey is unavailable, proceed using direct file reads of local specs and convention packs.
+
+6. **IF EXISTS**: Load `.specify/memory/constitution.md` for project principles and governance constraints.
+
+7. Follow this execution flow:
     1. Parse user description from arguments
        If empty: ERROR "No feature description provided"
     2. Extract key concepts from description
@@ -137,9 +147,9 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-6. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+8. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
 
-7. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
+9. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
    a. **Create Spec Quality Checklist**: Generate a checklist file at `SPECIFY_FEATURE_DIRECTORY/checklists/requirements.md` using the checklist template structure with these validation items:
 

@@ -79,7 +79,17 @@ You **MUST** consider the user input before proceeding (if not empty).
      - Display the table showing all checklists passed
      - Automatically proceed to step 3
 
-3. Load and analyze the implementation context:
+3. **Retrieve implementation context from Dewey**:
+
+   Before implementing, query Dewey for relevant patterns:
+   - Use `dewey_semantic_search` with the task descriptions to find similar implementations in other repos
+   - Use `dewey_semantic_search_filtered` with `source_type: "web"` to find relevant toolstack documentation
+   - Use `dewey_search` for convention pack references (`.opencode/uf/packs/python.md`, `python-custom.md`) related to the implementation domain
+
+   Use retrieved context to follow established patterns. Convention packs are non-negotiable — all implementation MUST comply with `.opencode/uf/packs/python.md` and `.opencode/uf/packs/python-custom.md`.
+   If Dewey is unavailable, read convention packs directly before implementing.
+
+4. Load and analyze the implementation context:
    - **REQUIRED**: Read tasks.md for the complete task list and execution plan
    - **REQUIRED**: Read plan.md for tech stack, architecture, and file structure
    - **IF EXISTS**: Read data-model.md for entities and relationships
@@ -88,7 +98,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **IF EXISTS**: Read .specify/memory/constitution.md for governance constraints
    - **IF EXISTS**: Read quickstart.md for integration scenarios
 
-4. **Project Setup Verification**:
+5. **Project Setup Verification**:
    - **REQUIRED**: Create/verify ignore files based on actual project setup:
 
    **Detection & Creation Logic**:
@@ -132,27 +142,27 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Terraform**: `.terraform/`, `*.tfstate*`, `*.tfvars`, `.terraform.lock.hcl`
    - **Kubernetes/k8s**: `*.secret.yaml`, `secrets/`, `.kube/`, `kubeconfig*`, `*.key`, `*.crt`
 
-5. Parse tasks.md structure and extract:
+6. Parse tasks.md structure and extract:
    - **Task phases**: Setup, Tests, Core, Integration, Polish
    - **Task dependencies**: Sequential vs parallel execution rules
    - **Task details**: ID, description, file paths, parallel markers [P]
    - **Execution flow**: Order and dependency requirements
 
-6. Execute implementation following the task plan:
+7. Execute implementation following the task plan:
    - **Phase-by-phase execution**: Complete each phase before moving to the next
    - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together  
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding
 
-7. Implementation execution rules:
+8. Implementation execution rules:
    - **Setup first**: Initialize project structure, dependencies, configuration
    - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
    - **Core development**: Implement models, services, CLI commands, endpoints
    - **Integration work**: Database connections, middleware, logging, external services
    - **Polish and validation**: Unit tests, performance optimization, documentation
 
-8. Progress tracking and error handling:
+9. Progress tracking and error handling:
    - Report progress after each completed task
    - Halt execution if any non-parallel task fails
    - For parallel tasks [P], continue with successful tasks, report failed ones
@@ -160,7 +170,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Suggest next steps if implementation cannot proceed
    - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
 
-9. Completion validation:
+10. Completion validation:
    - Verify all required tasks are completed
    - Check that implemented features match the original specification
    - Validate that tests pass and coverage meets requirements
@@ -200,6 +210,16 @@ Check if `.specify/extensions.yml` exists in the project root.
     Prompt: {prompt}
     To execute: `/{command}`
     ```
+
+## Review Council Gate
+
+**Before reporting completion, you MUST run the review council.**
+
+Run `/review-council` to have all Divisor reviewers (Adversary, Architect, Guard, Tester) assess the implementation. This is non-negotiable per the gaze-py constitution's Development Workflow.
+
+- If all reviewers **APPROVE**: proceed to Completion Report.
+- If any reviewer returns **REQUEST CHANGES**: fix all findings, then re-run `/review-council`. Do not submit until all reviewers APPROVE.
+- There MUST be minimal to no code changes between the council's APPROVE and the Completion Report.
 
 ## Completion Report
 
