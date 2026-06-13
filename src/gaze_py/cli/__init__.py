@@ -383,12 +383,15 @@ def quality(
     test_files = sorted(resolved_tests.rglob("test_*.py"))
 
     for test_file in test_files:
-        # Skip hidden directories.
-        if any(part.startswith(".") for part in test_file.parts):
+        # Skip hidden directories (check relative path parts only).
+        if any(part.startswith(".") for part in test_file.relative_to(resolved_tests).parts):
             continue
         try:
             test_source = test_file.read_text(encoding="utf-8")
         except UnicodeDecodeError:
+            continue
+        except OSError as exc:
+            click.echo(f"warning: skipping {test_file}: I/O error: {exc}", err=True)
             continue
 
         # Derive target function name from test file name convention.

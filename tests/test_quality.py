@@ -498,3 +498,18 @@ def test_build_test_index_recursion_error_produces_warning(tmp_path: Path) -> No
     assert index == {}, f"Expected empty index, got: {list(index.keys())}"
     assert len(warnings) == 1, f"Expected 1 warning, got: {warnings}"
     assert "test_deep.py" in warnings[0]
+
+
+def test_build_test_index_oserror_produces_warning(tmp_path: Path) -> None:
+    """build_test_index appends a warning for files that raise OSError on read."""
+    from unittest.mock import patch
+
+    from gaze_py.quality import build_test_index
+
+    (tmp_path / "test_unreadable.py").write_text("def test_x():\n    foo()\n")
+    with patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
+        index, warnings = build_test_index(tmp_path)
+
+    assert index == {}, f"Expected empty index, got: {list(index.keys())}"
+    assert len(warnings) == 1, f"Expected 1 warning, got: {warnings}"
+    assert "test_unreadable.py" in warnings[0]
