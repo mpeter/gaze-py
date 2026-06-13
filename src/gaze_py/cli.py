@@ -250,7 +250,7 @@ def analyze(
 
 
 @main.command()
-@click.option("--coverprofile", type=click.Path(), default=None, help="Path to Go coverage profile.")
+@click.option("--coverprofile", type=click.Path(), default=None, help="Path to .coverage SQLite database.")
 @click.option("--crap-threshold", type=float, default=None, help="CRAP score threshold.")
 @click.option("--gaze-crap-threshold", type=float, default=None, help="GazeCRAP score threshold.")
 @click.option("--max-crapload", type=float, default=None, help="Maximum aggregate CRAP load.")
@@ -323,9 +323,10 @@ def quality(
 
     # Validate tests_path exists.
     tests_dir = _validate_path_exists(tests_path, label="tests_path")
-    abs_tests = tests_dir.absolute()
-    root_for_tests = abs_tests if abs_tests.is_dir() else abs_tests.parent
-    _validate_no_traversal(tests_dir, root=root_for_tests)
+    # User-supplied test directories may legitimately live outside cwd
+    # (e.g. in CI, tmp_path fixtures, or monorepos). Traversal protection
+    # is provided by analyze_path() per-file validation inside the loop.
+    # A tautological root-equals-self guard is not applied here.
 
     # --coverprofile: validates path exists but does NOT yet read the .coverage SQLite DB.
     # Full coverage.CoverageData integration is deferred (see plan.md flag disposition).
@@ -434,6 +435,14 @@ def report(
     # Validate both paths exist before any analysis.
     src = _validate_path_exists(src_path, label="src_path")
     tests = _validate_path_exists(tests_path, label="tests_path")
+
+    # Warn if --coverprofile supplied (not yet implemented for report command).
+    if coverprofile is not None:
+        click.echo(
+            "warning: --coverprofile is not yet implemented for the report command "
+            "(planned for v0.2). The flag is accepted but has no effect.",
+            err=True,
+        )
 
     # Determine root for traversal checking (src only; tests are walked
     # directly without the traversal guard since they are user-supplied).

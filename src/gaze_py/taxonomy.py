@@ -392,6 +392,11 @@ class QualityReport:
     unmapped_assertions: list[AssertionMapping] = field(default_factory=list)
     assertion_count: int = 0
     assertion_detection_confidence: int = 0
+    # Note: plan.md specifies a metadata: Metadata field. It is deliberately
+    # omitted in v1 — metadata is a reporting concern, not a domain concern.
+    # The JSON formatter (report/json.py) attaches metadata at serialisation
+    # time via build_metadata(), keeping it out of the domain model.
+    # See ADR-002 and plan.md "Modified files" section.
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serialisable dict representation."""
