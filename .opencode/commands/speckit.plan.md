@@ -56,9 +56,19 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. **Setup**: Run `.specify/scripts/bash/setup-plan.sh --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-2. **Load context**: Read FEATURE_SPEC and `.specify/memory/constitution.md`. Load IMPL_PLAN template (already copied).
+2. **Retrieve context from Dewey** (before planning):
 
-3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+   Query Dewey for relevant patterns and prior decisions:
+   - Use `dewey_semantic_search` with the feature name and description to find similar implementations in other repos
+   - Use `dewey_semantic_search_filtered` with `source_type: "web"` to find relevant toolstack documentation
+   - Use `dewey_search` for convention pack references related to this feature's domain
+
+   Use retrieved context to follow established patterns and avoid reinventing solutions.
+   If Dewey is unavailable, proceed with direct file reads of convention packs and local code examples.
+
+3. **Load context**: Read FEATURE_SPEC and `.specify/memory/constitution.md`. Load IMPL_PLAN template (already copied).
+
+4. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)
