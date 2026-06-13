@@ -24,16 +24,7 @@ Implement tasks from an OpenSpec change.
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx-apply <other>`).
 
-2. **Validate branch**
-
-   Run `git rev-parse --abbrev-ref HEAD` to get the current branch.
-
-   - If the current branch is `opsx/<change-name>`: proceed.
-   - If the current branch is NOT `opsx/<change-name>`: **STOP** with error:
-     > "Must be on branch `opsx/<change-name>` to implement this change.
-     > Run: `git checkout opsx/<change-name>`"
-
-3. **Check status to understand the schema**
+2. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json
    ```
@@ -42,19 +33,7 @@ Implement tasks from an OpenSpec change.
    - `planningHome`, `changeRoot`, and `actionContext`: planning scope and edit constraints
    - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
 
-4. **Retrieve implementation context from Dewey**
-
-   Before implementing, query Dewey for relevant patterns:
-
-   - Use `dewey_semantic_search` with the task description to find similar implementations in other repos
-   - Use `dewey_semantic_search_filtered` with `source_type: "web"` to find relevant toolstack documentation
-   - Use `dewey_search` for convention pack references related to the task's domain
-
-   Use the retrieved context to follow established patterns and avoid reinventing solutions that already exist in the ecosystem.
-
-   If Dewey is unavailable, proceed with direct file reads of convention packs and local code examples.
-
-5. **Get apply instructions**
+3. **Get apply instructions**
 
    ```bash
    openspec instructions apply --change "<name>" --json
@@ -73,14 +52,14 @@ Implement tasks from an OpenSpec change.
 
    **Workspace guard:** If status JSON reports `actionContext.mode: "workspace-planning"` and `allowedEditRoots` is empty, explain that full workspace apply is not supported in this slice. Treat linked repos and folders as read-only context, ask the user to select an affected area through an explicit implementation workflow, and STOP before editing files.
 
-6. **Read context files**
+4. **Read context files**
 
    Read every file path listed under `contextFiles` from the apply instructions output.
    The files depend on the schema being used:
    - **spec-driven**: proposal, specs, design, tasks
    - Other schemas: follow the contextFiles from CLI output
 
-7. **Show current progress**
+5. **Show current progress**
 
    Display:
    - Schema being used
@@ -88,7 +67,7 @@ Implement tasks from an OpenSpec change.
    - Remaining tasks overview
    - Dynamic instruction from CLI
 
-8. **Implement tasks (loop until done or blocked)**
+6. **Implement tasks (loop until done or blocked)**
 
    For each pending task:
    - Show which task is being worked on
@@ -103,7 +82,7 @@ Implement tasks from an OpenSpec change.
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
-9. **On completion or pause, show status**
+7. **On completion or pause, show status**
 
    Display:
    - Tasks completed this session
@@ -178,21 +157,3 @@ This skill supports the "actions on a change" model:
 
 - **Can be invoked anytime**: Before all artifacts are done (if tasks exist), after partial implementation, interleaved with other actions
 - **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly
-
-
----
-
-## Dewey Availability Tiers
-
-Adjust context retrieval based on Dewey availability:
-
-**Tier 3 (Full Dewey)**: Use `dewey_semantic_search`, `dewey_search`, `dewey_traverse`, and `dewey_semantic_search_filtered` for comprehensive cross-repo and toolstack context.
-
-**Tier 2 (Graph-only, no embedding model)**: Use `dewey_search` and `dewey_traverse` for keyword-based and structural queries. Semantic search is unavailable.
-
-**Tier 1 (No Dewey)**: Fall back to direct file operations:
-- Use the Read tool to read local specs, backlog items, and convention packs
-- Use the Grep tool for keyword search across the codebase
-- Reference `.opencode/uf/packs/` for coding standards
-
-All tiers produce valid results. Higher tiers provide richer cross-repo context but are never required.
