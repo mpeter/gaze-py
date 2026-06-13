@@ -216,7 +216,11 @@ def test_analyze_directory_json_exit_0() -> None:
 
 
 def test_sc030_report_json_exit_0() -> None:
-    """report <src_path> <tests_path> --format=json exits 0 with valid JSON."""
+    """report <src_path> <tests_path> --format=json exits 0 with quality JSON.
+
+    The report command emits quality_reports + quality_summary (not raw
+    analysis results). Updated as part of opsx/quality-call-scanning.
+    """
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -224,8 +228,9 @@ def test_sc030_report_json_exit_0() -> None:
     )
     assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}. Output:\n{result.output}"
     data = json.loads(result.output)
-    assert "version" in data
-    assert "results" in data
+    # report now emits quality JSON (quality_reports + quality_summary)
+    assert "quality_reports" in data, f"Expected 'quality_reports' key in report output, got: {list(data.keys())}"
+    assert "quality_summary" in data
 
 
 def test_report_missing_src_exits_1() -> None:

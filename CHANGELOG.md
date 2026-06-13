@@ -4,6 +4,19 @@
 
 Spec: specs/001-gaze-py-engine/spec.md
 
+### Fixed (opsx/quality-call-scanning)
+- `quality.py`: `map_assertions()` now finds all test functions including
+  class-based test methods (`class TestFoo: def test_bar`), not just the
+  first top-level `def test_*` function. Resolves zero-mapping on standard
+  pytest projects that name test files after modules rather than functions.
+- `quality.py`: target function resolution now uses call-scanning
+  (`_extract_called_names`) instead of filename convention — tests are
+  matched to source functions by what they actually call, not by name.
+- `cli.py`: `report` command builds an inverted index of test files in
+  one pass, eliminating the O(functions × files) cost of the previous loop.
+- `cli.py`: `report` command now emits quality JSON
+  (`quality_reports` + `quality_summary`) instead of analysis JSON.
+
 ### Added
 - `analysis.py`: AST-based side-effect detection engine (S1)
 - `quality.py`: Assertion mapper and contract coverage computation (S2)

@@ -491,24 +491,76 @@ def _compute_over_specification(
     )
 
 
-def _find_test_function_body(
-    tree: ast.Module,
-) -> list[ast.stmt] | None:
-    """Return the body of the first test function found in the module.
+def _iter_test_functions(tree: ast.Module) -> list[tuple[str, list[ast.stmt]]]:
+    """Return ``(qualified_name, body)`` for every test function in the module.
 
-    Searches for top-level ``ast.FunctionDef`` nodes whose names start
-    with ``test_``.
+    Handles three layouts without descending into nested definitions:
+
+    - Top-level ``def test_foo``: collected as ``("test_foo", body)``.
+    - Class methods ``class TestFoo: def test_bar``: collected as
+      ``("TestFoo.test_bar", body)``.
+    - Non-test class methods and non-test top-level functions: skipped.
+
+    Only direct children of the module (top-level) are walked; inner
+    ``FunctionDef`` nodes inside other functions are not visited.
 
     Args:
         tree: Parsed AST module.
 
     Returns:
-        The ``body`` of the first test function, or ``None`` if not found.
+        List of ``(qualified_name, body)`` tuples in source order.
     """
-    for node in ast.walk(tree):
+    results: list[tuple[str, list[ast.stmt]]] = []
+    for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
-            return node.body
-    return None
+            results.append((node.name, node.body))
+        elif isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and item.name.startswith("test_"):
+                    results.append((f"{node.name}.{item.name}", item.body))
+    return results
+
+
+def _extract_called_names(body: list[ast.stmt]) -> set[str]:
+    """Return plain function names called anywhere in the statement list.
+
+    Handles:
+
+    - ``foo(...)``          → ``"foo"``
+    - ``module.foo(...)``   → ``"foo"`` (attribute access, rightmost name)
+    - ``result = foo(...)`` → ``"foo"``
+    - Calls in assert nodes, context managers, etc.
+
+    Does NOT descend into nested ``FunctionDef`` or ``AsyncFunctionDef``
+    bodies — only the top-level body is scanned.  This prevents test
+    helpers defined inside the test function from polluting the call set.
+
+    Args:
+        body: Statement list (the ``body`` of a function or module).
+
+    Returns:
+        Set of plain function/method names called in the body.
+    """
+    names: list[str] = []
+
+    class _CallVisitor(ast.NodeVisitor):
+        def visit_Call(self, node: ast.Call) -> None:
+            if isinstance(node.func, ast.Name):
+                names.append(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                names.append(node.func.attr)
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            pass  # do not descend into nested function defs
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            pass  # do not descend into nested async function defs
+
+    visitor = _CallVisitor()
+    for stmt in body:
+        visitor.visit(stmt)
+    return set(names)
 
 
 # ---------------------------------------------------------------------------
@@ -560,16 +612,32 @@ def map_assertions(
             code="PARSE_ERROR",
         ) from exc
 
-    # Locate the test function body.
-    body = _find_test_function_body(tree)
-    if body is None:
-        # No test function found — treat as empty (per spec edge case:
-        # "Empty test file: ContractCoverage.percentage == 0.0").
-        body = []
+    # Discover all test functions (top-level and class methods).
+    all_test_fns = _iter_test_functions(tree)
 
-    # Run the assertion visitor.
+    # Filter to test functions that actually call target_func.
+    # This handles module-named test files, class-based test suites, and
+    # scenario-named tests — all standard pytest conventions.
+    relevant: list[tuple[str, list[ast.stmt]]] = [
+        (name, body) for name, body in all_test_fns if target_func in _extract_called_names(body)
+    ]
+
+    # Fall back to all test bodies when none specifically call target_func
+    # (preserves existing behaviour for simple fixtures and convention-named
+    # tests where the call might not be detected statically).
+    using_fallback = not relevant and bool(all_test_fns)
+    active = relevant if relevant else all_test_fns
+
+    # Merge all relevant bodies; run the visitor once over the combined set.
+    merged_body: list[ast.stmt] = []
+    for _name, body in active:
+        merged_body.extend(body)
+
+    test_fn_name = ", ".join(name for name, _ in active) if active else "<unknown>"
+    confidence = 0 if using_fallback else (90 if active else 0)
+
     visitor = AssertionVisitor(target_func)
-    visitor.visit_body(body)
+    visitor.visit_body(merged_body)
 
     # Compute coverage metrics.
     contract_coverage = _compute_contract_coverage(visitor.result, target_effects, target_func)
@@ -583,7 +651,7 @@ def map_assertions(
     )
 
     return QualityReport(
-        test_function="<test_function>",
+        test_function=test_fn_name,
         test_location="<test_source>",
         target_function=target_function,
         contract_coverage=contract_coverage,
@@ -591,5 +659,5 @@ def map_assertions(
         ambiguous_effects=[],
         unmapped_assertions=[],
         assertion_count=visitor.result.total_assert_count,
-        assertion_detection_confidence=90,
+        assertion_detection_confidence=confidence,
     )

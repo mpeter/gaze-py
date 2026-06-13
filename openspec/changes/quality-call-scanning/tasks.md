@@ -16,7 +16,7 @@
 
 **Write tests FIRST — ensure they FAIL before implementing.**
 
-- [ ] T001 Write new tests in `tests/test_quality.py`:
+- [x] T001 Write new tests in `tests/test_quality.py`:
   - `test_iter_test_functions_finds_class_methods` — given a source
     with `class TestFoo: def test_bar(self): ...`, verify
     `_iter_test_functions` returns `[("TestFoo.test_bar", body)]`
@@ -35,7 +35,7 @@
   - `test_map_assertions_multi_test_merged` — given two test methods
     that both call `fn`, verify both assertion counts are combined
 
-- [ ] T002 [P] Update `tests/test_cli.py`:
+- [x] T002 [P] Update `tests/test_cli.py`:
   - `test_sc030_report_json_exit_0` — update assertion to expect
     `quality_reports` key (quality JSON) instead of `version`+`results`
     (analysis JSON)
@@ -47,7 +47,7 @@
 
 ## Phase 2 — Implement
 
-- [ ] T003 Implement in `src/gaze_py/quality.py`:
+- [x] T003 Implement in `src/gaze_py/quality.py`:
   - Add `_iter_test_functions(tree: ast.Module) -> list[tuple[str, list[ast.stmt]]]`
     — finds top-level `def test_*` and `class TestX: def test_*` methods
   - Add `_extract_called_names(body: list[ast.stmt]) -> set[str]`
@@ -63,7 +63,7 @@
       `0` if falling back to all bodies with no specific match
   - Remove `_find_test_function_body()` — replaced by above
 
-- [ ] T004 [P] Implement in `src/gaze_py/cli.py` — `report` command:
+- [x] T004 [P] Implement in `src/gaze_py/cli.py` — `report` command:
   - Phase 2: replace filename heuristic with inverted index:
     - Parse all test files once; collect called names per file
     - Build `{func_name: [test_source_text]}` index
@@ -80,26 +80,26 @@
 
 ## Phase 3 — Verify and clean
 
-- [ ] T005 Run full quality gate:
+- [x] T005 Run full quality gate:
   - `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
   - `uv run ruff check .`
   - `uv run ruff format --check .`
   - `uv run mypy src/`
 
-- [ ] T006 [P] Smoke test on fieldkit-cmd:
+- [x] T006 [P] Smoke test on fieldkit-cmd:
   - `gaze-py report /path/to/fieldkit-cmd/fieldkit/gmail_cache/
     /path/to/fieldkit-cmd/tests/ --format=json`
   - Verify: `quality_reports` count > 0,
     `average_contract_coverage` > 0%
   - Verify: class-based test names appear in `test_function` fields
 
-- [ ] T007 [P] Update `CHANGELOG.md` with entry for this change
+- [x] T007 [P] Update `CHANGELOG.md` with entry for this change
 
 ## Completion Gate
 
-- [ ] All existing tests still pass (no regressions)
-- [ ] New tests in T001 pass
-- [ ] `test_sc030_report_json_exit_0` passes with updated assertion
-- [ ] `ruff`, `mypy` clean
-- [ ] Coverage ≥ 85%
-- [ ] fieldkit-cmd smoke test passes (quality_reports > 0)
+- [x] All existing tests still pass (no regressions)
+- [x] New tests in T001 pass
+- [x] `test_sc030_report_json_exit_0` passes with updated assertion
+- [x] `ruff`, `mypy` clean
+- [x] Coverage ≥ 85%
+- [x] fieldkit-cmd smoke test passes (quality_reports > 0)

@@ -255,3 +255,151 @@ def test_no_contractual_effects_full_coverage() -> None:
     assert report.contract_coverage.percentage == 100.0
     assert report.contract_coverage.covered_count == 0
     assert report.contract_coverage.total_contractual == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests for quality-call-scanning change (opsx/quality-call-scanning)
+# ---------------------------------------------------------------------------
+
+
+def test_iter_test_functions_finds_top_level() -> None:
+    """_iter_test_functions returns top-level def test_* functions."""
+    import ast
+
+    from gaze_py.quality import _iter_test_functions
+
+    source = "def test_foo():\n    assert 1 == 1\ndef helper():\n    pass\n"
+    tree = ast.parse(source)
+    results = _iter_test_functions(tree)
+    assert len(results) == 1
+    assert results[0][0] == "test_foo"
+
+
+def test_iter_test_functions_finds_class_methods() -> None:
+    """_iter_test_functions returns class-based test methods."""
+    import ast
+
+    from gaze_py.quality import _iter_test_functions
+
+    source = "class TestFoo:\n    def test_bar(self):\n        assert True\n    def helper(self):\n        pass\n"
+    tree = ast.parse(source)
+    results = _iter_test_functions(tree)
+    assert len(results) == 1
+    assert results[0][0] == "TestFoo.test_bar"
+
+
+def test_iter_test_functions_finds_both() -> None:
+    """_iter_test_functions finds both top-level and class-based tests."""
+    import ast
+
+    from gaze_py.quality import _iter_test_functions
+
+    source = (
+        "def test_standalone():\n    pass\n\n"
+        "class TestGroup:\n"
+        "    def test_one(self):\n        pass\n"
+        "    def test_two(self):\n        pass\n"
+    )
+    tree = ast.parse(source)
+    results = _iter_test_functions(tree)
+    names = [n for n, _ in results]
+    assert "test_standalone" in names
+    assert "TestGroup.test_one" in names
+    assert "TestGroup.test_two" in names
+    assert len(results) == 3
+
+
+def test_extract_called_names_simple() -> None:
+    """_extract_called_names finds bare function calls."""
+    import ast
+
+    from gaze_py.quality import _extract_called_names
+
+    source = "foo(1, 2)\nbar()\n"
+    tree = ast.parse(source)
+    body = tree.body
+    names = _extract_called_names(body)
+    assert "foo" in names
+    assert "bar" in names
+
+
+def test_extract_called_names_attribute() -> None:
+    """_extract_called_names extracts the method name from attr calls."""
+    import ast
+
+    from gaze_py.quality import _extract_called_names
+
+    source = "module.foo()\nobj.bar(x)\n"
+    tree = ast.parse(source)
+    names = _extract_called_names(tree.body)
+    assert "foo" in names
+    assert "bar" in names
+
+
+def test_extract_called_names_ignores_nested_def() -> None:
+    """_extract_called_names does not descend into nested function defs."""
+    import ast
+
+    from gaze_py.quality import _extract_called_names
+
+    source = "def helper():\n    secret()\nvisible()\n"
+    tree = ast.parse(source)
+    names = _extract_called_names(tree.body)
+    assert "visible" in names
+    assert "secret" not in names
+
+
+def test_map_assertions_finds_class_method_tests() -> None:
+    """map_assertions finds coverage from class-based test methods."""
+    test_source = (
+        "from mymod import compute\n\n"
+        "class TestCompute:\n"
+        "    def test_basic(self):\n"
+        "        result = compute(1, 2)\n"
+        "        assert result == 3\n"
+    )
+    report = map_assertions(test_source, [_make_return_effect()], "compute")
+    assert report.contract_coverage.percentage == 100.0, (
+        f"Expected 100% coverage from class-based test, got {report.contract_coverage.percentage}%"
+    )
+
+
+def test_map_assertions_test_function_name_populated() -> None:
+    """map_assertions populates test_function with real test method names."""
+    test_source = "class TestFoo:\n    def test_bar(self):\n        result = fn()\n        assert result == 1\n"
+    report = map_assertions(test_source, [_make_return_effect()], "fn")
+    assert report.test_function != "<test_function>", (
+        "test_function should be populated with real name, not placeholder"
+    )
+    assert "test_bar" in report.test_function
+
+
+def test_map_assertions_multi_test_merged() -> None:
+    """map_assertions merges bodies from multiple tests that call the target."""
+    test_source = (
+        "class TestFoo:\n"
+        "    def test_returns(self):\n"
+        "        result = fn(1)\n"
+        "        assert result == 1\n"
+        "    def test_raises(self):\n"
+        "        import pytest\n"
+        "        with pytest.raises(ValueError):\n"
+        "            fn(-1)\n"
+    )
+    from gaze_py.taxonomy import SideEffectType, Tier
+
+    effects = [
+        _make_return_effect(),
+        SideEffect(
+            id="se-00000002",
+            type=SideEffectType.ErrorReturn,
+            tier=Tier.P0,
+            location="src.py:2",
+            description="raises",
+            target="ValueError",
+        ),
+    ]
+    report = map_assertions(test_source, effects, "fn")
+    assert report.contract_coverage.percentage == 100.0, (
+        f"Both effects should be covered by merged test bodies, got {report.contract_coverage.percentage}%"
+    )
