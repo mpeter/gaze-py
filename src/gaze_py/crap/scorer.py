@@ -1,10 +1,12 @@
 """CRAP and GazeCRAP scoring functions.
 
 Implements the CRAP formula, GazeCRAP extension, quadrant assignment,
-fix strategy selection, CRAPload counting, and recommended action generation.
+fix strategy selection, CRAPload filtering, and recommended action generation.
 
 All functions are pure — they accept numeric inputs and return numeric outputs
 or None when inputs are unavailable (OC-003: null-not-zero).
+
+Coverage inputs are fractions in [0.0, 1.0].
 
 Per SC-001 through SC-006 (contracts.md and tasks.md).
 """
@@ -13,10 +15,6 @@ from __future__ import annotations
 
 from gaze_py.taxonomy.models import FunctionTarget
 
-# ---------------------------------------------------------------------------
-# Strategy sort order — lower index = higher priority in output (SC-006).
-# add_tests < add_assertions < decompose_and_test < decompose
-# ---------------------------------------------------------------------------
 _STRATEGY_ORDER: dict[str, int] = {
     "add_tests": 0,
     "add_assertions": 1,
@@ -24,11 +22,9 @@ _STRATEGY_ORDER: dict[str, int] = {
     "decompose": 3,
 }
 
-# Default complexity threshold for fix_strategy Rule 1 and Rule 2 (SC-005).
 _DEFAULT_COMPLEXITY_THRESHOLD: int = 15
-
-# Maximum number of recommended actions returned (SC-006).
 _MAX_RECOMMENDED_ACTIONS: int = 20
+_QUADRANT_HIGH_THRESHOLD: float = 0.5
 
 
 def crap(complexity: int, line_coverage: float | None) -> float | None:
@@ -40,8 +36,7 @@ def crap(complexity: int, line_coverage: float | None) -> float | None:
 
     Args:
         complexity: McCabe cyclomatic complexity (>= 1).
-        line_coverage: Line coverage fraction in [0.0, 1.0], or None when
-            coverage data was not provided.
+        line_coverage: Line coverage fraction in [0.0, 1.0], or None.
 
     Returns:
         CRAP score as a float, or None when line_coverage is None.
@@ -54,15 +49,11 @@ def crap(complexity: int, line_coverage: float | None) -> float | None:
 def gaze_crap(complexity: int, contract_coverage: float | None) -> float | None:
     """Compute the GazeCRAP score for a function.
 
-    Uses the same formula as crap() but with contract coverage instead of
-    line coverage. Returns None when contract_coverage is None (O1 not run).
-
     Formula: complexity^2 * (1 - contract_coverage)^3 + complexity
 
     Args:
         complexity: McCabe cyclomatic complexity (>= 1).
-        contract_coverage: Contract coverage fraction in [0.0, 1.0], or None
-            when O1 (contract coverage analysis) has not run.
+        contract_coverage: Contract coverage fraction in [0.0, 1.0], or None.
 
     Returns:
         GazeCRAP score as a float, or None when contract_coverage is None.
@@ -83,12 +74,10 @@ def crapload(
 
     Args:
         targets: All analyzed FunctionTargets.
-        threshold: CRAP score threshold. Functions with CRAP >= threshold
-            are included in the result. Default: 15.0.
+        threshold: CRAP score threshold. Default: 15.0.
 
     Returns:
-        List of FunctionTargets with CRAP >= threshold, in the order they
-        appear in targets.
+        List of FunctionTargets with CRAP >= threshold.
     """
     result: list[FunctionTarget] = []
     for target in targets:
@@ -104,13 +93,13 @@ def quadrant(
     line_coverage: float | None,
     contract_coverage: float | None,
 ) -> str | None:
-    """Assign a quadrant label based on line and contract coverage.
+    """Assign a quadrant label based on line and contract coverage fractions.
 
     Quadrant definitions (per SC-004):
-    - Q1: line_coverage >= 0.5 AND contract_coverage >= 0.5 (high/high — safe)
-    - Q2: line_coverage >= 0.5 AND contract_coverage < 0.5 (high/low)
-    - Q3: line_coverage < 0.5 AND contract_coverage >= 0.5 (low/high)
-    - Q4: line_coverage < 0.5 AND contract_coverage < 0.5 (low/low — risky)
+    - Q1: line_coverage >= 0.5 AND contract_coverage >= 0.5
+    - Q2: line_coverage >= 0.5 AND contract_coverage < 0.5
+    - Q3: line_coverage < 0.5 AND contract_coverage >= 0.5
+    - Q4: line_coverage < 0.5 AND contract_coverage < 0.5
 
     Returns None when either coverage value is None.
 
@@ -119,15 +108,13 @@ def quadrant(
         contract_coverage: Contract coverage fraction in [0.0, 1.0], or None.
 
     Returns:
-        Quadrant label ("Q1", "Q2", "Q3", or "Q4"), or None when either
-        coverage value is None.
+        Quadrant label ("Q1", "Q2", "Q3", or "Q4"), or None.
     """
     if line_coverage is None or contract_coverage is None:
         return None
 
-    _HIGH_THRESHOLD = 0.5
-    high_line = line_coverage >= _HIGH_THRESHOLD
-    high_contract = contract_coverage >= _HIGH_THRESHOLD
+    high_line = line_coverage >= _QUADRANT_HIGH_THRESHOLD
+    high_contract = contract_coverage >= _QUADRANT_HIGH_THRESHOLD
 
     if high_line and high_contract:
         return "Q1"
@@ -152,33 +139,28 @@ def fix_strategy(
     Evaluation order per SC-005:
     - Returns None when CRAP is None or CRAP < threshold.
     - Rule 1: complexity >= complexity_threshold AND line_coverage == 0.0
-              → "decompose_and_test"
+              -> "decompose_and_test"
     - Rule 2: complexity >= complexity_threshold AND line_coverage > 0.0
-              AND quadrant == "Q3" → "decompose"
-    - Rule 3 (default): → "add_tests"
+              AND quadrant == "Q3" -> "decompose"
+    - Rule 3 (default): -> "add_tests"
 
     Args:
-        crap_score: Computed CRAP score, or None when coverage not provided.
+        crap_score: Computed CRAP score, or None.
         complexity: McCabe cyclomatic complexity.
         line_coverage: Line coverage fraction in [0.0, 1.0], or None.
         quadrant_label: Quadrant label from quadrant(), or None.
-        threshold: CRAP threshold for CRAPload membership. Default: 15.0.
-        complexity_threshold: Complexity threshold for Rules 1 and 2.
-            Default: 15.
+        threshold: CRAP threshold. Default: 15.0.
+        complexity_threshold: Complexity threshold for Rules 1 and 2. Default: 15.
 
     Returns:
         Fix strategy string, or None when CRAP is null or below threshold.
     """
-    # Guard: no strategy when CRAP is unavailable or below threshold.
     if crap_score is None or crap_score < threshold:
         return None
 
-    # Rule 1: high complexity + zero coverage → must decompose AND add tests.
     if complexity >= complexity_threshold and line_coverage == 0.0:
         return "decompose_and_test"
 
-    # Rule 2: high complexity + some coverage + Q3 → decompose (tests exist but
-    # contract coverage is low, meaning the structure is the problem).
     if (
         complexity >= complexity_threshold
         and line_coverage is not None
@@ -187,7 +169,6 @@ def fix_strategy(
     ):
         return "decompose"
 
-    # Rule 3 (default): CRAP is high but complexity is manageable → add tests.
     return "add_tests"
 
 
@@ -202,12 +183,11 @@ def recommended_actions(
     Capped at 20 entries per SC-006.
 
     Args:
-        targets: All analyzed FunctionTargets. Only those with a non-null
-            fix_strategy in their Score are included.
+        targets: All analyzed FunctionTargets.
 
     Returns:
-        List of action dicts, each with keys: "function", "file", "strategy",
-        "crap". Capped at 20 entries.
+        List of action dicts with keys: "function", "file", "strategy", "crap".
+        Capped at 20 entries.
     """
     actions: list[dict[str, object]] = []
 
@@ -232,7 +212,6 @@ def recommended_actions(
         crap_rank = -(float(crap_val) if isinstance(crap_val, (int, float)) else 0.0)
         return (strategy_rank, crap_rank)
 
-    # Sort: strategy priority ascending, then CRAP score descending.
     actions.sort(key=_sort_key)
 
     return actions[:_MAX_RECOMMENDED_ACTIONS]
