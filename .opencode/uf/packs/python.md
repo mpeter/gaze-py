@@ -29,7 +29,7 @@ version: 1.0.0
 - **AP-003** [MUST] Use `dataclasses` with JSON serialization for all domain types (side effects, analysis results, CRAP scores). Include `to_dict()` methods for JSON output.
 - **AP-004** [MUST] Use `importlib.resources` or `importlib.metadata` for bundling static assets. Do not rely on `__file__` paths at runtime.
 - **AP-005** [SHOULD] Implement the file ownership model: classify files as tool-owned (auto-updated on re-run) or user-owned (never overwritten without `--force`).
-- **AP-006** [MUST] Keep package boundaries clean. CLI code lives in `src/gaze_py/cli/`. Core analysis lives in `src/gaze_py/analysis/`. Domain types live in `src/gaze_py/taxonomy/`.
+- **AP-006** [SHOULD] Keep package boundaries clean. For new projects, prefer subpackage layout: CLI code in `src/gaze_py/cli/`, core analysis in `src/gaze_py/analysis/`, domain types in `src/gaze_py/taxonomy/`. For existing projects that use a flat-module layout (`cli.py`, `analysis.py`, `taxonomy.py`), maintain consistency with the established pattern rather than introducing a mixed layout. Document the layout choice in an ADR and commit to a future refactoring spec. See `python-custom.md` CR-001 for this project's documented choice.
 - **AP-007** [SHOULD] Use Protocol classes (from `typing`) for dependency injection boundaries rather than abstract base classes, enabling structural subtyping.
 
 ## Security Checks
