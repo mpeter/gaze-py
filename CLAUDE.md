@@ -10,6 +10,8 @@
 @.opencode/uf/packs/severity.md
 @.opencode/uf/packs/content.md
 @.opencode/uf/packs/content-custom.md
+@.opencode/uf/packs/python.md
+@.opencode/uf/packs/python-custom.md
 
 ## Review Agents (read on-demand)
 
