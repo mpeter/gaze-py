@@ -428,8 +428,8 @@ def report(
     """
     from gaze_py.analysis import GazeParseError
     from gaze_py.quality import map_assertions
-    from gaze_py.report.json import write_analysis_json
-    from gaze_py.report.text import write_analysis_text
+    from gaze_py.report.json import write_quality_json
+    from gaze_py.report.text import write_quality_text
     from gaze_py.taxonomy import AnalysisResult  # noqa: TC001
 
     # Validate both paths exist before any analysis.
@@ -461,41 +461,83 @@ def report(
     results: list[AnalysisResult] = raw_results  # type: ignore[assignment]
 
     # Phase 2: map assertions from test files (best-effort).
-    # Build a lookup: function name → AnalysisResult for pairing.
-    func_to_effects = {r.target.function: r.side_effects for r in results}
+    # Strategy: build an inverted index (function_name → test file sources)
+    # by scanning ALL test files once upfront. Then for each source function
+    # look up which test files call it. This handles non-convention layouts
+    # (module-named test files, class-based test suites, etc.) without the
+    # filename → function name heuristic.
+    import ast as _ast
+
+    from gaze_py.quality import _extract_called_names, _iter_test_functions
 
     resolved_tests = tests.resolve()
     test_files = sorted(resolved_tests.rglob("test_*.py"))
-    reports = []
+
+    # Build inverted index: source_func_name → list of test file source texts
+    # that contain at least one test calling that function.
+    # Done in a single pass over all test files.
+    func_to_test_sources: dict[str, list[str]] = {}
     for test_file in test_files:
         if any(part.startswith(".") for part in test_file.parts):
             continue
         try:
-            test_source = test_file.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
+            src_text = test_file.read_text(encoding="utf-8")
+            tree = _ast.parse(src_text)
+        except (UnicodeDecodeError, SyntaxError):
             continue
+        # Collect all names called across all test bodies in this file.
+        all_called: set[str] = set()
+        for _fn_name, body in _iter_test_functions(tree):
+            all_called |= _extract_called_names(body)
+        # Register this test file for every source function it calls.
+        for called_name in all_called:
+            func_to_test_sources.setdefault(called_name, []).append(src_text)
 
-        target_func = _derive_target_func(test_file)
-        effects = func_to_effects.get(target_func, [])
+    # For each source function that has coverage from test files, map assertions.
+    reports = []
+    for result in results:
+        fn_name = result.target.function
+        effects = result.side_effects
+        if not effects:
+            continue  # no contractual effects → nothing to map
 
+        test_srcs = func_to_test_sources.get(fn_name)
+        if not test_srcs:
+            continue  # no tests call this function
+
+        # Concatenate all relevant test files and map assertions once.
+        combined = "\n\n".join(test_srcs)
         try:
             rpt = map_assertions(
-                test_source=test_source,
+                test_source=combined,
                 target_effects=effects,
-                target_func=target_func,
+                target_func=fn_name,
             )
         except GazeParseError as exc:
-            click.echo(f"warning: skipping {test_file}: {exc}", err=True)
+            click.echo(f"warning: skipping {fn_name}: {exc}", err=True)
             continue
         reports.append(rpt)
 
-    # Phase 3: emit combined output.
-    # For report we output the analysis results (the primary output surface).
+    # Phase 3: emit quality reports (the primary output surface for report).
+    total = len(reports)
+    avg_cov = sum(r.contract_coverage.percentage for r in reports) / total if total > 0 else 0.0
+    total_over = sum(r.over_specification.count for r in reports)
+    avg_conf = sum(r.assertion_detection_confidence for r in reports) // total if total > 0 else 0
+    from gaze_py.taxonomy import PackageSummary
+
+    summary = PackageSummary(
+        total_tests=total,
+        average_contract_coverage=avg_cov,
+        total_over_specifications=total_over,
+        assertion_detection_confidence=avg_conf,
+        worst_coverage_tests=sorted(reports, key=lambda r: r.contract_coverage.percentage)[:5],
+    )
+
     buf = io.StringIO()
     if output_format == "json":
-        write_analysis_json(results, version=__version__, out=buf)
+        write_quality_json(reports, summary, version=__version__, out=buf)
     else:
-        write_analysis_text(results, out=buf)
+        write_quality_text(reports, out=buf)
     click.echo(buf.getvalue(), nl=False)
 
 
