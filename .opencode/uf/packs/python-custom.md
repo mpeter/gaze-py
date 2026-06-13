@@ -100,6 +100,48 @@ with `field_name: T | None` and the JSON schema MUST mark it nullable.
 
 ---
 
+## CR-005: JSON Serialization via `dataclasses.asdict()` (AP-003 Deviation)
+
+[MUST] This project uses `dataclasses.asdict()` + a custom `_json_default` encoder
+for JSON serialization of domain types, rather than individual `to_dict()` methods
+as specified in AP-003 of the universal Python pack.
+
+**Rationale**: `asdict()` handles the full nested dataclass tree recursively
+(AnalysisResult → FunctionTarget → Score → SideEffect → Signal →
+ClassificationResult) without boilerplate. Writing individual `to_dict()` methods
+on 7+ dataclasses would duplicate the recursive walk and create drift risk when
+fields are added.
+
+The `_json_default(obj)` function in `report/json_formatter.py` handles types
+that `asdict()` cannot serialize automatically:
+- Any `enum.Enum` instance (non-StrEnum): call `.value`
+- Any other non-serializable type: raise `TypeError`
+
+`StrEnum` members (`SideEffectType`) serialize automatically as their string
+value. No `to_dict()` methods are added to domain dataclasses.
+
+This deviation is pre-approved and does NOT require a review exception on a
+per-PR basis.
+
+---
+
+## CR-006: No `rich` Dependency for Agent-Consumed Output (CS-009 Exception)
+
+[MUST] The universal Python pack (CS-009) requires `rich` for terminal output
+formatting. gaze-py's text output is consumed primarily by automated agents
+(the `gaze-reporter` agent), not interactive terminal users. Adding `rich` adds
+a transitive dependency footprint for no user-facing benefit.
+
+**Approved exception**: `report/text_formatter.py` MUST use plain string
+formatting (`str.format()`, f-strings) — NOT `rich.Console`, `rich.Table`,
+or any `rich.*` API. Output is routed through `click.echo()` in the CLI layer
+per CS-008 (never `print()` directly).
+
+If a future change adds interactive terminal features intended for human users,
+`rich` SHOULD be added as a dependency at that point.
+
+---
+
 ## CR-004: Test Private Functions Only Through Their Public Contract
 
 [MUST] Do not import and test underscore-prefixed private functions directly

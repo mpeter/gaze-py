@@ -177,6 +177,26 @@ MAY produce zero detections.
 - **WHEN** the detector runs
 - **THEN** a `DeferredReturnMutation` effect is present
 
+#### Scenario: StderrWrite detected
+- **GIVEN** a function calling `sys.stderr.write(...)`
+- **WHEN** the detector runs
+- **THEN** a `StderrWrite` effect is present
+
+#### Scenario: EnvVarMutation detected
+- **GIVEN** a function containing `os.environ[key] = value`
+- **WHEN** the detector runs
+- **THEN** an `EnvVarMutation` effect is present
+
+#### Scenario: TimeDependency detected
+- **GIVEN** a function calling `time.time()`
+- **WHEN** the detector runs
+- **THEN** a `TimeDependency` effect is present
+
+#### Scenario: ClosureCaptureMutation detected
+- **GIVEN** a function containing `nonlocal x` followed by `x = new_value`
+- **WHEN** the detector runs on the enclosing function
+- **THEN** a `ClosureCaptureMutation` effect is present
+
 ---
 
 ### Requirement: CC-001 Confidence Scoring Formula
@@ -240,6 +260,14 @@ configurable.
 #### Scenario: Ambiguous label
 - **GIVEN** a classified effect with score 65
 - **THEN** label is "ambiguous"
+
+#### Scenario: Boundary — exactly at contractual_threshold
+- **GIVEN** a classified effect with score 80 and `contractual_threshold=80`
+- **THEN** label is "contractual" (>= is inclusive at upper boundary)
+
+#### Scenario: Boundary — exactly at incidental_threshold
+- **GIVEN** a classified effect with score 50 and `incidental_threshold=50`
+- **THEN** label is "ambiguous" (score 50 >= incidental_threshold → ambiguous, not incidental)
 
 ---
 
@@ -375,6 +403,8 @@ The scorer MUST compute GazeCRAP using the same formula as CRAP but substituting
 
 GazeCRAP MUST be null when `contract_coverage` is null (O1 not run).
 
+The GazeCRAP reference value tests MUST use `@pytest.mark.parametrize` (TC-005).
+
 #### Scenario: GazeCRAP reference values
 - **GIVEN** known complexity and contract_coverage inputs
 - **WHEN** GazeCRAP is computed
@@ -463,6 +493,47 @@ priority numbers (for SC-006 sort order) are: `add_tests=0`, `add_assertions=1`,
   AND quadrant is Q3_SimpleButUnderspecified
 - **THEN** strategy is `decompose` (rule 2 evaluated before rule 3)
 
+> **Note**: Rule 3 (`add_assertions`) requires `quadrant == Q3_SimpleButUnderspecified`,
+> which requires GazeCRAP, which requires O1. In this change, Rule 3 is
+> unreachable in the live pipeline. The test for Rule 2 vs Rule 3 MUST inject
+> a synthetic Q3 quadrant value directly into `fix_strategy()` rather than
+> going through the full pipeline.
+
+#### Scenario: fix_strategy null for functions below CRAPload threshold
+- **GIVEN** a function where CRAP < crap_threshold
+- **THEN** `fix_strategy` is `null` (only CRAPload functions receive a strategy)
+
+#### Scenario: fix_strategy null when CRAP is null
+- **GIVEN** a function where `line_coverage` is null (no coverage provided)
+- **THEN** `fix_strategy` is `null` (CRAP cannot be computed, strategy cannot be assigned)
+
+---
+
+### Requirement: Report Command Behavior
+
+The `gazepy report <src> <tests>` command MUST be distinct from `gazepy analyze`
+in signature (two positional arguments) but in this change behaves identically
+to `analyze <src>`. The `<tests>` argument is accepted but ignored with a
+warning emitted to stderr:
+```
+Warning: report --tests: quality assessment (O1) deferred — ignoring tests directory
+```
+
+This is the correct behavior for this change because the `report` command is
+defined to pair source and test files for O1 assertion mapping, which is not
+yet implemented. The command MUST NOT fail when `<tests>` is provided.
+
+#### Scenario: Report command accepts two arguments
+- **GIVEN** `gazepy report <src_path> <tests_path> --format=json`
+- **WHEN** run
+- **THEN** exits 0, produces valid JSON identical in structure to `analyze` output,
+  and emits a warning to stderr about O1 deferral
+
+#### Scenario: Report command handles missing tests path gracefully
+- **GIVEN** `gazepy report <src_path> /nonexistent/tests --format=json`
+- **WHEN** run
+- **THEN** exits 0 with a warning (the path is accepted but ignored in this change)
+
 ---
 
 ### Requirement: OC-001 Dual Format
@@ -486,6 +557,23 @@ human-readable terminal output.
 - **WHEN** run
 - **THEN** exit code is non-zero and stderr contains an error message
 
+#### Scenario: CLI failure — malformed coverage-json
+- **GIVEN** `gazepy analyze <path> --coverage-json <invalid_file>`
+  where `<invalid_file>` exists but is not valid JSON
+- **WHEN** run
+- **THEN** exit code is non-zero and stderr contains the file path and parse error
+
+#### Scenario: CLI failure — wrong-schema coverage-json
+- **GIVEN** `gazepy analyze <path> --coverage-json <valid_but_wrong_schema_file>`
+  where the file is valid JSON but lacks the `files` key
+- **WHEN** run
+- **THEN** exit code is non-zero and stderr contains an actionable error message
+
+> **Coverage JSON format**: The `--coverage-json` flag expects the output of
+> `coverage json` or `pytest --cov-report=json` (coverage.py v6+ format).
+> The field read is `files[path].summary.percent_covered` (float, 0-100).
+> A minimal valid fixture: `{"files": {"<path>": {"summary": {"percent_covered": 75.0}}}}`.
+
 ---
 
 ### Requirement: OC-002 JSON Field Names
@@ -508,7 +596,7 @@ taxonomy-reference.md. The following fields MUST be present in the output
 | `fix_strategy_counts` | Summary | Yes (null — O1 deferred) |
 | `gaze_crapload` | Summary | Yes (null — O1 deferred) |
 | `avg_contract_coverage` | Summary | Yes (null — O1 deferred) |
-| `recommended_actions` | Summary | Yes (null when CRAP is null) |
+| `recommended_actions` | Summary | Yes (null when CRAP is null; `[]` when CRAP non-null but no functions in CRAPload) |
 | `effect_confidence_range` | Score | Deferred to future change |
 | `ssa_degraded_packages` | Summary | N/A — no SSA in Python |
 
@@ -538,14 +626,38 @@ is null.
 - **THEN** `line_coverage` is null (NOT 0.0) and `crap` is null
 
 #### Scenario: GazeCRAP null without O1
-- **GIVEN** analysis run without quality assessment (O1)
+- **GIVEN** analysis run without quality assessment (O1 not run)
 - **WHEN** JSON output is produced
 - **THEN** `gaze_crap` is null, `contract_coverage` is null, `quadrant` is null
+
+#### Scenario: recommended_actions empty list when no CRAPload functions
+- **GIVEN** analysis run with coverage data (CRAP computed) but all functions below threshold
+- **WHEN** JSON output is produced
+- **THEN** `recommended_actions` is `[]` (empty list, NOT null — CRAP was computed, result is empty)
 
 #### Scenario: contract_coverage_reason when no effects detected
 - **GIVEN** a function with no detected side effects
 - **WHEN** JSON output is produced
 - **THEN** `contract_coverage_reason` is `"no_effects_detected"`
+
+> **Note on O1 deferral**: `"no_effects_detected"` is the one reason code
+> populated in this change. It is determinable from the detector alone (zero
+> effects found for the function) and does NOT require O1. The other four reason
+> codes (`no_test_coverage`, `no_assertions_mapped`, `all_effects_ambiguous`,
+> and the empty/normal case) are deferred to the O1 change. design.md correctly
+> states `contract_coverage_reason` is `None` when O1 is deferred — with this
+> exception: when a function has zero detected effects, the reason MUST be
+> `"no_effects_detected"` regardless of whether O1 has run.
+
+#### Scenario: contract_coverage_reason null when O1 deferred (effects present)
+- **GIVEN** a function with detected side effects and O1 not run
+- **WHEN** JSON output is produced
+- **THEN** `contract_coverage_reason` is `null`
+
+#### Scenario: effect_confidence_range null (deferred field)
+- **GIVEN** any analysis result in this change
+- **WHEN** JSON output is produced
+- **THEN** `effect_confidence_range` is `null` (field is deferred to a future change; MUST serialize as null per OC-003, not absent)
 
 ---
 
@@ -600,3 +712,14 @@ P3/P4 effect types with no Python equivalent (WaitGroupOp, AtomicOp,
 RecoverBehavior, UnsafeMutation, SyncPoolOp) have no-op detection paths.
 These paths MUST be covered by at least one test each asserting an empty
 result for the relevant effect type name.
+
+**No-op test strategy**: Use `pure_function.py` as the input fixture and assert
+that the detector returns zero effects of each specific no-op type. Use
+`@pytest.mark.parametrize` over the five type names (TC-005). This is
+semantically correct — a function with no effects has no WaitGroupOp effects,
+no AtomicOp effects, etc. No dedicated fixture file is needed for no-op types.
+
+| Module | Coverage approach (additional rows) |
+|---|---|
+| `taxonomy/exceptions.py` | 100% via test_config.py and test_detector.py import/raise tests |
+| `analysis/complexity.py` | `pure_function.py` → 1; `high_complexity.py` → value > 1; edge cases |

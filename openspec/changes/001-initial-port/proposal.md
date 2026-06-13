@@ -19,9 +19,12 @@ All source code is new — the repo is currently a clean scaffold with no
 
 ### New Capabilities
 
-- **R1 — Side Effect Detection**: AST visitor that detects all 37 effect types
+- **R1 — Side Effect Detection**: AST visitor that detects all 38 effect types
   (P0 with zero false negatives; P1–P2 best-effort; P3–P4 defined but
   unimplemented) in Python source files, per EC-001 through EC-005.
+  (Porting contract headers say "37" — this is a documentation bug; the
+  canonical count is 38 by enumeration: P0=5+P1=8+P2=10+P3=9+P4=6. See
+  specs.md EC-001 note.)
 - **R2 — Classification**: Five-signal confidence engine (interface
   satisfaction, API visibility, caller dependency, naming convention,
   docstring) that labels each effect contractual/ambiguous/incidental, per
@@ -57,13 +60,14 @@ None.
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` (v1.0.0).
+Assessed against `.specify/memory/constitution.md` (v1.1.1).
 
 ### I. Accuracy (Porting Contract Supremacy)
 
 **Assessment**: PASS
 
-All 37 effect types, tier assignments, confidence formula, signal weights,
+All 38 effect types (37 per contract header — documentation bug; see specs.md
+EC-001 note), tier assignments, confidence formula, signal weights,
 CRAP/GazeCRAP formulas, quadrant rules, fix strategy ordering, and JSON field
 names are taken verbatim from `../gaze/docs/porting/contracts.md` and
 `taxonomy-reference.md`. No values are invented. Every contract ID (EC-001
@@ -105,3 +109,30 @@ This proposal was written after reading contracts.md, requirements.md, and
 taxonomy-reference.md in full. All capability scope, field names, formulas,
 and tier assignments match the contracts. No element contradicts a porting
 contract.
+
+### VI. Composability First
+
+**Assessment**: PASS
+
+gaze-py is independently installable and usable without any other Unbound
+Force hero or external service. The `gazepy` CLI is the sole required entry
+point. Optional integrations (`--coverage-json`) degrade gracefully: when
+absent, `line_coverage` and `crap` emit null and a warning is written to
+stderr. The O1 capability (quality/assertion mapping) is deferred without
+breaking the R1–R5 pipeline. No hard runtime dependency on any sibling hero
+is introduced.
+
+### VII. Supply Chain Integrity
+
+**Assessment**: PASS (with known pending item)
+
+- `uv.lock` will be committed as part of task 1.6 (immediately after `uv sync`
+  creates it). This satisfies the lock-file requirement which activates once
+  `pyproject.toml` is first committed.
+- CI pipeline actions (`actions/checkout`, `astral-sh/setup-uv`) are already
+  SHA-pinned with version tag comments in `.github/workflows/test.yml`.
+- Runtime dependencies (`click`, `pyyaml`) are justified: `click` is the
+  canonical CLI framework per CS-008; `pyyaml` is required for `.gaze.yaml`
+  config loading. No `rich` dependency is added (CS-009 exception documented
+  in design.md — gaze-py output is agent-consumed, not interactive terminal UI).
+- New dependencies are documented in `pyproject.toml` with version constraints.

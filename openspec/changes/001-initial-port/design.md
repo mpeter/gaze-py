@@ -8,10 +8,13 @@ src/gaze/
 ├── taxonomy/
 │   ├── __init__.py
 │   ├── effects.py           # SideEffectType (38-value StrEnum), Tier, TIER_MAP
-│   └── models.py            # SideEffect, Signal, ClassificationResult,
-│                            # Score, FunctionTarget, AnalysisResult dataclasses
+│   ├── models.py            # SideEffect, Signal, ClassificationResult,
+│   │                        # Score, FunctionTarget, AnalysisResult dataclasses
+│   └── exceptions.py        # GazeParseError, GazeConfigError (AP-008: shared
+│                            # exceptions belong here, not in subpackages)
 ├── analysis/
 │   ├── __init__.py
+│   ├── complexity.py        # cyclomatic_complexity(node) -> int (McCabe algorithm)
 │   └── detector.py          # FileDetector: two-phase AST scan
 ├── classify/
 │   ├── __init__.py
@@ -29,7 +32,8 @@ src/gaze/
 │                            # recommended_actions(), crapload()
 ├── config/
 │   ├── __init__.py
-│   └── loader.py            # Load .gaze.yaml; GazeConfig dataclass
+│   └── loader.py            # Load .gaze.yaml; GazeConfig dataclass; raises
+│                            # GazeConfigError (imported from taxonomy/exceptions.py)
 ├── report/
 │   ├── __init__.py
 │   ├── json_formatter.py    # to_json(AnalysisResult) -> str
@@ -78,6 +82,11 @@ tests/
         ├── stdout_write.py              # print(), sys.stdout.write()
         ├── callback_invoke.py           # calling a function parameter
         ├── mutex_op.py                  # threading.Lock
+        ├── stderr_write.py              # sys.stderr.write(x) — StderrWrite P3
+        ├── env_var_mutation.py          # os.environ['KEY'] = 'val' — EnvVarMutation P3
+        ├── time_dependency.py           # time.time() — TimeDependency P3
+        ├── closure_capture_mutation.py  # nonlocal x; x = new_val — ClosureCaptureMutation P4
+        ├── high_complexity.py           # multiple if/for/while branches — for scorer tests
         └── syntax_error.py             # invalid Python — failure mode test
 ```
 
@@ -108,9 +117,50 @@ without SSA.
    types.
 
 **Failure mode**: When `ast.parse()` raises `SyntaxError` (invalid Python),
-`FileDetector.detect()` MUST raise a `GazeParseError` (a custom exception
-subclass) — NOT return an empty list silently. Callers (the CLI pipeline) catch
-this and emit a warning, then continue with other files.
+`FileDetector.detect()` MUST raise a `GazeParseError` (imported from
+`taxonomy/exceptions.py`) — NOT return an empty list silently. The exception
+MUST carry the file path in its message or `filename` attribute so the error
+is actionable. Callers (the CLI pipeline) catch this, emit a warning via
+`click.echo(err=True)`, and continue with other files.
+
+### Cyclomatic Complexity (EC-005 Python adaptation)
+
+Cyclomatic complexity is computed internally using the AST — this matches the
+Go implementation which uses `github.com/fzipp/gocyclo` for the same purpose,
+and satisfies the porting contract (`requirements.md:72`: "A port must either
+compute this or accept it from an external tool."). No external tool dependency
+is added.
+
+**Algorithm** (`analysis/complexity.py`):
+
+```python
+def cyclomatic_complexity(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    ...
+```
+
+- Start at 1 (base complexity for any function).
+- Increment for each:
+  - `ast.If` node (includes `elif` — each `elif` is its own `ast.If` in the AST)
+  - `ast.For` node
+  - `ast.While` node
+  - `ast.ExceptHandler` node (each `except` clause)
+  - `ast.With` item (each `with` clause, counting all `items`)
+  - `ast.Assert` node
+  - `ast.BoolOp` with `ast.And` or `ast.Or` (each boolean operator)
+  - Comprehension `if` filter (each `if` in a `listcomp`/`dictcomp`/`setcomp`/`genexpr`)
+- Does **NOT** recurse into nested `ast.FunctionDef` or `ast.AsyncFunctionDef` nodes
+  (each function is scored independently; nested function complexity does not
+  roll up into the outer function).
+
+**FunctionTarget model**: The `FunctionTarget` dataclass MUST include a
+`complexity: int` field (populated by the detector using `cyclomatic_complexity()`).
+The CRAP scorer reads this field — it does not accept complexity as a separate
+argument.
+
+**Note**: Effect type names are retained verbatim from the Go taxonomy (e.g.,
+`GoroutineSpawn` rather than `ThreadSpawn`) to preserve JSON schema compatibility
+per OC-002 and EC-001. The Python detection uses `threading.Thread`,
+`asyncio.create_task`, etc., but the effect type string remains `GoroutineSpawn`.
 
 ### Effect IDs
 
@@ -163,14 +213,55 @@ and `param[k] = v` is unambiguously PointerArgMutation.
 The contracts provide no disambiguation rule. The approach that avoids invented
 logic and preserves EC-003 (one effect per AST node):
 
-- **Panic** (P2): `raise SystemExit` only. This is structurally distinct from
-  a function call — it is an `ast.Raise` node, not an `ast.Call`.
+- **Panic** (P2): Any `ast.Raise` node where the exception expression is
+  `ast.Name(id='SystemExit')` OR `ast.Call(func=ast.Name(id='SystemExit'), ...)`.
+  Both `raise SystemExit` and `raise SystemExit(1)` match. This is structurally
+  distinct from a function call — it is an `ast.Raise` node.
 - **ProcessExit** (P3): `sys.exit()`, `os._exit()`, `os.abort()` — function
-  calls only.
+  calls only (detected via `ast.Call` on qualified name).
 
 No overlap exists. A single AST node cannot be both a `Raise` and a `Call`.
 No context (e.g., `except` block) inspection is needed. This is the simplest
 rule with no invented disambiguation and full EC-003 compliance.
+
+### Detection heuristic boundaries
+
+Several effect types use heuristic detection that accepts false positives in
+exchange for implementation simplicity. These are documented here to bound the
+implementation and prevent over-engineering.
+
+**GlobalMutation**: Detected when a function body contains an explicit
+`ast.Global` statement for name `N` followed by an assignment to `N`. Direct
+assignment to module-level names inside a function body WITHOUT a `global`
+declaration does NOT count as `GlobalMutation` — this clause would require a
+pre-pass to collect all module-level names and is omitted to keep the detector
+stateless per function. The `global_mutation.py` fixture MUST use the explicit
+`global X; X = val` pattern.
+
+**DeferredReturnMutation**: Detected when a `finally:` block contains
+`ast.Assign` where the target is `ast.Name(id=N)`, AND the function body
+contains `ast.Return` whose value is `ast.Name(id=N)`. Name-matching only —
+no cross-block data-flow analysis. This bounds the implementation to a simple
+two-pass within the function node.
+
+**HTTPResponseWrite**: Detected by parameter name pattern — `.write()` or
+attribute assignment on any function parameter named `response` or `resp`.
+False positives from non-HTTP response objects with these names are accepted
+(P1 detection policy). False negatives from differently-named response objects
+are accepted. This heuristic limitation is intentional.
+
+**ChannelSend / ChannelClose**: Detected by method name on a function parameter
+— `.put()` on any parameter → ChannelSend; `.close()` on any parameter →
+ChannelClose. No import tracking or type inference. The `channel_send.py`
+fixture uses `def send(q): q.put(x)` where `q` is a function parameter (no
+`import queue` needed in the fixture).
+
+**CallerDependency data flow**: The `callers: dict[str, int]` map (function
+qualified name → caller module count) is built by the CLI in a pre-pass and
+passed as a parameter through the pipeline: CLI → `FileDetector.detect()` →
+`FunctionTarget.caller_count` → `ClassificationEngine.classify()` →
+`signals/caller.py`. No subpackage imports from any other subpackage for this
+data — it flows via parameters only (AP-006 compliant).
 
 ### Classification engine
 
@@ -193,11 +284,37 @@ Line coverage is an external input — the CLI accepts `--coverage-json <path>`
 pointing to a `coverage.py` JSON report. If not provided:
 - `line_coverage` is `None` (NOT 0.0 — per OC-003 null-not-zero)
 - `crap` is `None` (CRAP cannot be computed without coverage)
-- A warning is emitted to stderr
+- A warning is emitted to stderr via `click.echo(err=True)`
 - The rest of the analysis (detection, classification, effect listing) proceeds normally
 
 This avoids running tests internally (matches O6 intent without implementing the
 full capability) and correctly distinguishes "not computed" from "computed as zero."
+
+**Coverage JSON format** (`coverage.py` v6+ schema):
+```json
+{
+  "files": {
+    "<relative_path>": {
+      "summary": {
+        "percent_covered": 75.0
+      }
+    }
+  }
+}
+```
+The CLI reads `files[path].summary.percent_covered` as a float [0, 100] for
+each analyzed file. This is the output of `coverage json` or
+`pytest --cov-report=json`.
+
+**Failure modes for `--coverage-json`**:
+- File does not exist → `GazeConfigError` with actionable message, exit non-zero
+- File exists but is not valid JSON → `GazeConfigError` with file path and parse error, exit non-zero
+- File is valid JSON but lacks the `files` key → `GazeConfigError` with field
+  name and expected schema, exit non-zero
+- A specific path in the coverage JSON does not match any analyzed file →
+  warning emitted, that file analyzed with `line_coverage=None`
+
+A minimal valid test fixture is provided at `tests/testdata/coverage_sample.json`.
 
 ### GazeCRAP / O1 deferral
 
@@ -206,18 +323,48 @@ implemented in this change. When O1 has not run:
 - `contract_coverage` is `None`
 - `gaze_crap` is `None`
 - `quadrant` is `None`
-- `fix_strategy` is `None` when CRAP is also null; otherwise `fix_strategy`
-  uses line_coverage and CRAP (quadrant-based strategies like `add_assertions`
-  are unavailable without GazeCRAP)
-- `contract_coverage_reason` is `None` (O1 deferred)
+- `fix_strategy` is `None` when CRAP is null OR when CRAP < crap_threshold.
+  Only functions in the CRAPload (CRAP >= crap_threshold) receive a strategy.
+  When CRAP is non-null and >= threshold, `fix_strategy` uses line_coverage
+  and CRAP. Rule 3 (`add_assertions`, which requires `quadrant == Q3`) is
+  unreachable in this change — Q3 requires GazeCRAP which requires O1.
+  In practice, only Rules 1, 2, and 4 (default) can fire in this change.
+- `contract_coverage_reason` is `None` when O1 is deferred **except** for one
+  special case: when a function has **zero detected effects**, the reason MUST be
+  `"no_effects_detected"`. This value is determinable from the detector alone
+  (no O1 required). All other reason codes (`no_test_coverage`,
+  `no_assertions_mapped`, `all_effects_ambiguous`) are deferred to O1.
+
+**SC-005 evaluation order** (critical — read before implementing `fix_strategy()`):
+Evaluation order (first match wins in code) is NOT the same as sort priority
+(used for output ordering):
+
+| Evaluation order | Condition | Strategy | Sort priority |
+|---|---|---|---|
+| 1 (check first) | complexity >= threshold AND coverage == 0 | decompose_and_test | 2 |
+| 2 | complexity >= threshold AND coverage > 0 | decompose | 3 |
+| 3 (unreachable without O1) | quadrant == Q3 | add_assertions | 1 |
+| 4 (default) | none of the above | add_tests | 0 |
+
+Output sorts by priority number ascending (add_tests=0 appears first). Do NOT
+use priority number as evaluation order — they are inversely related.
 
 ### JSON serialization strategy
 
 Domain dataclasses use `dataclasses.asdict()` for JSON serialization.
 
+> **AP-003 deviation**: The universal Python pack (AP-003) requires `to_dict()`
+> methods on domain types. This project uses `dataclasses.asdict()` + a custom
+> `_json_default` encoder instead. Rationale: `asdict()` handles the full
+> nested dataclass tree recursively (SideEffect → Signal → ClassificationResult →
+> Score → FunctionTarget → AnalysisResult) without boilerplate. Individual
+> `to_dict()` methods on 7+ dataclasses would duplicate this recursive walk and
+> create drift risk. This deviation is approved and documented in
+> `.opencode/uf/packs/python-custom.md` as CR-005.
+
 - `SideEffectType` is a `StrEnum` — serializes automatically as its string value.
-- `Tier` is a plain enum — add a `to_dict()` method or use a custom JSON
-  encoder that calls `.value` for any enum instance.
+- `Tier` is a plain enum — the custom `_json_default` encoder calls `.value`
+  for any non-StrEnum enum instance.
 - `None` fields serialize as JSON `null` natively.
 - The `json_formatter.py` produces output via:
   ```python
@@ -229,6 +376,41 @@ Domain dataclasses use `dataclasses.asdict()` for JSON serialization.
 Value objects (`Signal`, `SideEffect`, `Score`, `ClassificationResult`) MUST
 use `@dataclass(frozen=True)`. Container/builder objects (`FunctionTarget`,
 `AnalysisResult`) MAY be mutable if the pipeline builds them incrementally.
+
+### Domain model sketches
+
+**GazeConfig** fields (for `config/loader.py`):
+```python
+@dataclass
+class GazeConfig:
+    contractual_threshold: int = 80     # [0, 100]
+    incidental_threshold: int = 50      # [0, 100]
+    crap_threshold: float = 15.0        # > 0
+    gaze_crap_threshold: float = 15.0   # > 0
+```
+YAML key hierarchy: `classification.thresholds.contractual/incidental`,
+`scoring.crap_threshold/gaze_crap_threshold`. Unknown keys silently ignored.
+
+**AnalysisResult** structure (for `taxonomy/models.py`):
+```python
+@dataclass
+class AnalysisResult:
+    functions: list[FunctionTarget]     # one per analyzed function
+    summary: Summary                    # aggregate counts/stats
+```
+
+`FunctionTarget` carries: `name: str`, `file_path: str`, `line: int`,
+`complexity: int`, `effects: list[SideEffect]`, `score: Score | None`.
+
+`Score` carries: `line_coverage: float | None`, `crap: float | None`,
+`gaze_crap: float | None`, `contract_coverage: float | None`,
+`contract_coverage_reason: str | None`, `fix_strategy: str | None`,
+`quadrant: str | None`, `effect_confidence_range: tuple[int, int] | None`.
+
+`Summary` carries: `function_count: int`, `crapload: int`,
+`gaze_crapload: int | None`, `avg_line_coverage: float | None`,
+`avg_contract_coverage: float | None`, `quadrant_counts: dict | None`,
+`fix_strategy_counts: dict | None`, `recommended_actions: list[dict] | None`.
 
 ### pyproject.toml naming
 
@@ -267,6 +449,47 @@ Config loader MUST validate all threshold values are in sane ranges:
 `contractual_threshold` and `incidental_threshold` in [0, 100];
 `crap_threshold` and `gaze_crap_threshold` > 0. Raise `GazeConfigError` on
 invalid values.
+
+### Report command behavior
+
+The `gazepy report <src> <tests>` command is defined to eventually pair source
+and test files for O1 assertion mapping. In this change, O1 is deferred.
+
+**Behavior in this change**: `report` accepts `<src>` and `<tests>` as positional
+arguments, runs the same detector → classifier → scorer → formatter pipeline as
+`analyze <src>`, and ignores `<tests>` with a warning:
+```
+Warning: report --tests: quality assessment (O1) deferred — ignoring tests directory
+```
+
+The command exits 0. The output JSON is structurally identical to `analyze` output.
+
+**Rationale**: Providing the command surface now (even as a stub) lets the CLI
+API stabilize. Users can script against `gazepy report` and the command will
+gain O1 behavior when that change ships, without breaking the call site.
+
+### Text formatter output format
+
+The text formatter (`report/text_formatter.py`) produces plain text output
+using Python's `str.format()` — no `rich` dependency.
+
+> **CS-009 exception**: The universal Python pack (CS-009) requires `rich` for
+> terminal output formatting. gaze-py's text output is consumed primarily by
+> automated agents (the `gaze-reporter` agent), not interactive terminal users.
+> Adding `rich` as a dependency provides no value for agent-consumed output and
+> would increase the package footprint. This exception is documented in
+> `.opencode/uf/packs/python-custom.md` as CR-006. Output is still routed
+> through `click.echo()` in the CLI layer per CS-008 (never `print()`).
+
+Output format (one line per function):
+```
+<relative_path>:<function_name>  complexity=N  CRAP=<value|null>  effects=<count>  strategy=<value|null>
+```
+
+Followed by a summary line:
+```
+Total: N functions, M in CRAPload (threshold=15.0)
+```
 
 ### Install path
 
