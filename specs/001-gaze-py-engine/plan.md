@@ -88,6 +88,31 @@ with `jsonschema>=4.18` in CI.
 
 ---
 
+### ADR-004 — Flat Module Layout (AP-006 Deviation)
+
+**Decision**: New modules (`analysis.py`, `quality.py`) use flat
+module layout rather than the subpackage layout required by
+python.md AP-006 (`analysis/`, `taxonomy/`, `cli/`).
+
+**Rationale**: The existing codebase is entirely flat
+(`taxonomy.py`, `classify.py`, `crap.py`, `cli.py`). Introducing
+subpackages for new modules while leaving existing modules flat
+would create an inconsistent dual convention within the same
+package. The AP-006 subpackage refactoring should be applied
+uniformly across all modules in a dedicated future spec, not
+partially in this feature branch.
+
+**Constraint**: python.md AP-006 is a `[MUST]` rule. This
+deviation is intentional and time-bounded. A future refactoring
+spec MUST be filed to bring the package layout into AP-006
+compliance uniformly.
+
+**Consequences**: Import paths are `gaze_py.analysis`,
+`gaze_py.quality` (flat). Tests import directly from these
+paths. No subpackage `__init__.py` files needed for S1–S2.
+
+---
+
 ### ADR-003 — Dispatch via uf init, Not Shell Script
 
 **Decision**: Language-aware dispatch is implemented inside
@@ -112,8 +137,10 @@ infrastructure, and integrates automatically into every `uf init`
 run without manual user configuration.
 
 **Version pinning**: `installGazePy()` MUST install a pinned
-version (e.g., `gaze-py==0.1.0`), not `latest`. The pinned
-version MUST be updated explicitly when a new release is made.
+version, not `latest`. The pinned version is defined as a named
+constant `GazePyVersion` in `internal/setup/setup.go`. The
+gaze-py release checklist MUST include updating this constant
+and cutting a corresponding `unbound-force` PR before tagging.
 This prevents supply-chain drift from a future broken or malicious
 PyPI release.
 
@@ -131,6 +158,11 @@ template depends on the final subcommand names and flags.
 **Primary new dependencies**:
   - `jsonschema>=4.18` (dev, test-only) — Draft 2020-12 support
     requires 4.18+; added to `pyproject.toml` dev dependencies
+  - `rich` (runtime) — required by python.md CS-009 [MUST] for
+    terminal output in `report/text.py`; verify already present
+    in `pyproject.toml` or add
+  - `coverage` (runtime) — required for `--coverprofile` flag
+    to read `.coverage` via `coverage.CoverageData` API
 **Testing**: pytest, `uv run pytest`
 **Target platform**: macOS, Linux
 **Performance goals**: < 2s for a 50-function module (see Coverage
@@ -205,10 +237,8 @@ tests/
     quality/           S2: paired source+test fixtures
 ```
 
-**Layout note**: Flat module layout (`analysis.py`, `quality.py`)
-is used for consistency with the existing codebase pattern
-(`taxonomy.py`, `classify.py`, `crap.py`). The python.md AP-006
-subpackage layout is deferred to a future refactoring spec.
+**Layout note (ADR-004)**: See ADR-004 below regarding the flat
+module layout deviation from python.md AP-006.
 
 **Shared metadata helper**: `report/__init__.py` exports
 `build_metadata(version: str, start_ns: int) -> dict` to avoid
@@ -247,6 +277,22 @@ class OverSpecificationScore:
     ratio: float               # 0.0–1.0
     incidental_assertions: list[AssertionMapping]
     suggestions: list[str]     # one per incidental assertion
+
+@dataclass
+class FunctionTarget:
+    package: str       # e.g. "gaze_py.crap" (dotted module path)
+    function: str      # function or method name
+    signature: str     # full signature string
+    location: str      # "file.py:line:col"
+    receiver: str = "" # type annotation for self, if a method
+
+@dataclass
+class AssertionMapping:
+    assertion_text: str           # source text of the assert
+    location: str                 # "file.py:line"
+    mapped_effect: SideEffectType | None  # None if unmapped
+    confidence: int               # 0–100
+    unmapped_reason: str | None   # "helper_param" | "inline_call" | "no_effect_match" | None
 
 @dataclass
 class PackageSummary:
@@ -349,10 +395,20 @@ on non-argument names.
 ### Error handling
 
 `analyze_module()` MUST catch `SyntaxError` from `ast.parse()`
-and raise `GazeParseError(path, line, msg)` — a typed wrapper
-defined in `analysis.py`. The CLI catches `GazeParseError` and
-emits a human-readable error; the file is skipped and a warning
-is appended to `metadata.warnings[]`.
+and raise `GazeParseError` — a typed wrapper defined in
+`analysis.py`:
+
+```python
+class GazeParseError(Exception):
+    def __init__(self, path: str, line: int | None,
+                 msg: str, code: str = "PARSE_ERROR") -> None:
+```
+
+The `code` field distinguishes error types for `metadata.warnings[]`
+population: `"PARSE_ERROR"` for `SyntaxError`, `"ENCODING_ERROR"`
+for `UnicodeDecodeError`, `"RECURSION_LIMIT"` for `RecursionError`.
+The CLI catches `GazeParseError` and emits a human-readable error;
+the file is skipped and a warning is appended to `metadata.warnings[]`.
 
 `analyze_module()` MUST catch `RecursionError` from the AST
 visitor and emit a warning with code `RECURSION_LIMIT` rather

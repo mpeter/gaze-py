@@ -2,7 +2,7 @@
 
 **Input**: `specs/001-gaze-py-engine/spec.md` and `plan.md`
 **Prerequisites**: plan.md (required), spec.md (required)
-**Repos**: `gaze-py` (T001–T020), `unbound-force` (T021–T026)
+**Repos**: `gaze-py` (T001–T021), `unbound-force` (T022–T027)
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -40,8 +40,8 @@ on the fixture set.
   - `test_sc013_multi_return_deduplicated`
   - `test_sc011_env_mutation_call_form`
   - `test_performance_50_functions` (`@pytest.mark.slow`)
-  - `test_cli_path_traversal_rejected`
-  - `test_cli_directory_walk_excludes_hidden_and_pycache`
+  - `test_analyze_path_traversal_raises_error` (unit: `analyze_path()` raises on escape)
+  - `test_analyze_path_excludes_hidden_and_pycache` (unit: walk excludes hidden dirs)
   NOTE: T002 depends on T001 (fixtures must exist before
   parametrize paths are referenced). Do NOT mark as [P].
 
@@ -163,6 +163,9 @@ GazeCRAP formula aliased for contract coverage.
     — single source of truth for metadata assembly across formatters
 
 - [ ] T013 [P] [S3] Implement `src/gaze_py/report/schema.py`:
+  NOTE: Depends on T010 and T011 (tests must exist and fail
+  before implementation begins). [P] means parallel with T014
+  and T015, not with T010/T011.
   - `ANALYSIS_SCHEMA` constant: Draft 2020-12 JSON Schema for
     analysis report (ADR-002 adaptations: `python_version`,
     `gaze_py_version`, no `ssa_degraded`)
@@ -171,6 +174,9 @@ GazeCRAP formula aliased for contract coverage.
   - Add `jsonschema>=4.18` to `pyproject.toml` dev dependencies
 
 - [ ] T014 [P] [S3] Implement `src/gaze_py/report/json.py`:
+  NOTE: Depends on T010 and T011 (tests must exist and fail
+  before implementation begins). [P] means parallel with T013
+  and T015, not with T010/T011.
   - `write_analysis_json(results: list[AnalysisResult], version: str, out: IO) -> None`
   - `write_quality_json(reports: list[QualityReport], summary: PackageSummary, version: str, out: IO) -> None`
   - Uses `report.build_metadata()` for metadata — no duplication
@@ -178,6 +184,9 @@ GazeCRAP formula aliased for contract coverage.
     `quality_reports`, `quality_summary` (quality)
 
 - [ ] T015 [P] [S3] Implement `src/gaze_py/report/text.py`:
+  NOTE: Depends on T010 and T011 (tests must exist and fail
+  before implementation begins). [P] means parallel with T013
+  and T014, not with T010/T011.
   - `write_analysis_text(results: list[AnalysisResult], out: IO) -> None`
   - `write_quality_text(reports: list[QualityReport], out: IO) -> None`
   - Use `rich.Table` / `rich.Console` for output (python.md CS-009)
@@ -213,7 +222,8 @@ with `--format`, `--coverprofile`, and exit code contract.
   - Test SC-027 through SC-031 for each subcommand
   - Test exit codes: 0 on success, 1 on missing path, 1 on
     missing coverprofile
-  - Test path traversal rejection (SC-012 edge case)
+  - `test_cli_path_traversal_exits_1` (CLI-layer: exit code + message)
+  - `test_cli_directory_walk_excludes_hidden` (CLI-layer: dir walk)
 
 - [ ] T019 [S4] Expand `src/gaze_py/cli.py`:
   - Implement `analyze` subcommand per existing stub:
@@ -254,20 +264,34 @@ Coverage ≥ 85% overall; new modules at per-module targets
 **Prerequisites**: T021 complete. S4 CLI surface is stable.
 Work in `unbound-force` repo on branch `001-gaze-py-engine`.
 
-- [ ] T022 [S5] Add `installGazePy()` to
+**Write tests FIRST (T022) — ensure they FAIL before implementing
+T023/T024.**
+
+- [ ] T022 [S5] Write tests for new setup step in
+  `unbound-force/internal/setup/setup_test.go` BEFORE implementing:
+  - Tests MUST fail initially (no implementation yet)
+  - SC-032: Python project → gaze-py step runs at pinned version
+  - SC-033: Go-only project → gaze-py step skipped
+  - SC-034: Already installed → step returns "already installed"
+  - SC-036: Dry-run → step reports without executing
+  - SC-037: Network failure → step returns error with message
+
+- [ ] T023 [S5] Add `installGazePy()` to
   `unbound-force/internal/setup/setup.go`:
   - Check `gaze-py --version` (already installed → skip)
   - Method dispatch: `uv tool install gaze-py==<version>` (preferred),
     fall back to `pip install --user gaze-py==<version>`
+  - Define `const GazePyVersion = "0.1.0"` as a named constant;
+    document update procedure in release checklist
   - Version MUST be pinned (not `latest`)
   - Network failure: return non-nil error with actionable message
     and manual install command; non-fatal for overall `uf init`
   - Dry-run support: report what would be installed
   - Follow `installGaze()` pattern exactly
 
-- [ ] T023 [S5] Add `gaze-py` to the setup step list in
+- [ ] T024 [S5] Add `gaze-py` to the setup step list in
   `setup.go`, gated on `detectLang(opts.TargetDir) == "python"`.
-  NOTE: T023 depends on T022 (`installGazePy` must be defined
+  NOTE: T024 depends on T023 (`installGazePy` must be defined
   before it can be referenced). Do NOT mark as [P].
   ```go
   {name: "gaze-py", tool: "gaze-py", install: installGazePy,
@@ -275,21 +299,13 @@ Work in `unbound-force` repo on branch `001-gaze-py-engine`.
    gateDetail: "not a Python project"},
   ```
 
-- [ ] T024 [P] [S5] Create scaffold asset
+- [ ] T025 [P] [S5] Create scaffold asset
   `unbound-force/internal/scaffold/assets/opencode/commands/gaze-report.md`:
   - Description: "Run gaze-py quality analysis on this Python project"
   - Body: checks `gaze-py` on PATH; emits clear error if not found
     (SC-038); falls back to `.gaze.yaml` for path config;
     defaults to `gaze-py report src/ tests/ --format=json`
   - Deployed by scaffold for Python projects (language-gated)
-
-- [ ] T025 [S5] Write tests for new setup step in
-  `unbound-force/internal/setup/setup_test.go`:
-  - SC-032: Python project → gaze-py step runs at pinned version
-  - SC-033: Go-only project → gaze-py step skipped
-  - SC-034: Already installed → step returns "already installed"
-  - SC-036: Dry-run → step reports without executing
-  - SC-037: Network failure → step returns error with message
 
 - [ ] T026 [P] [S5] Run `unbound-force` CI parity:
   `go test ./...`
