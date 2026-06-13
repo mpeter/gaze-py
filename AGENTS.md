@@ -125,7 +125,7 @@ uv run gazepy report src/gaze/ tests/ --format=json
 uv build
 
 # Install globally
-uv tool install --force dist/gaze-*.whl
+uv tool install --force dist/gaze_py-*.whl
 ```
 
 ## Specification Workflow
