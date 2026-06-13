@@ -13,19 +13,21 @@ side effects in Python functions using AST-only analysis, classifies them as
 contractual or incidental, and computes CRAP and GazeCRAP scores.
 
 - **Language**: Python 3.11+
-- **Package**: `gaze-py` (PyPI) / `gaze_py` (import path)
+- **Package**: `gaze` (PyPI and import path)
 - **Binary**: `gazepy`
 - **License**: Apache 2.0
-- **Layout**: `src/` layout — all source under `src/gaze_py/`, tests under `tests/`
+- **Layout**: `src/` layout — all source under `src/gaze/`, tests under `tests/`
 - **Porting authority**: `../gaze/docs/porting/` — contracts.md, requirements.md,
   taxonomy-reference.md are the authoritative ground truth for what to implement
 
 ## Core Mission
 
-gaze-py is a **port**, not an independent tool. Schema compatibility with Go
-gaze is a first-class requirement. The 37-type effect taxonomy, JSON field
-names, scoring formulas, and quadrant rules are fixed by the porting contracts
-and MUST NOT be invented or reinterpreted.
+gaze-py is a **port**, not an independent tool. Schema compatibility with the Go
+gaze implementation is a first-class requirement. The 38-type effect taxonomy,
+JSON field names, scoring formulas, and quadrant rules are fixed by the porting
+contracts and MUST NOT be invented or reinterpreted. Note: the porting contracts
+state "37 types" in their headers — this is a documentation bug. Enumeration
+yields 38 (P0=5 + P1=8 + P2=10 + P3=9 + P4=6). Tests MUST assert 38.
 
 ## Behavioral Constraints
 
@@ -52,7 +54,7 @@ make an implementation pass. The following are protected:
    target. Never lower it to make a PR pass.
 2. **Porting contract IDs** — EC-001 through OC-003 in test names and comments
    are traceability markers. Never remove or rename them.
-3. **Effect taxonomy** — The 37 `SideEffectType` values and their P0–P4 tier
+3. **Effect taxonomy** — The 38 `SideEffectType` values and their P0–P4 tier
    assignments are fixed by EC-001. Never add, remove, or reclassify them
    without a constitution amendment.
 
@@ -77,7 +79,7 @@ Use the skill tool to load a skill when a task matches its description.
 
 ```text
 gaze-py/
-├── src/gaze_py/          # All package source (src/ layout)
+├── src/gaze/             # All package source (src/ layout)
 │   ├── __init__.py       # __version__ only
 │   ├── taxonomy/         # Domain types: SideEffect, FunctionTarget, etc.
 │   ├── analysis/         # AST side-effect detection engine
@@ -112,12 +114,12 @@ uv sync
 uv run pytest -m "not slow"
 
 # Full CI gate
-uv run ruff check . && uv run ruff format --check . && uv run mypy src/ && uv run pytest --cov=gaze_py --cov-fail-under=85
+uv run ruff check . && uv run ruff format --check . && uv run mypy src/ && uv run pytest --cov=gaze --cov-fail-under=85
 
 # Run the CLI
 uv run gazepy --help
-uv run gazepy analyze src/gaze_py/ --format=text
-uv run gazepy report src/gaze_py/ tests/ --format=json
+uv run gazepy analyze src/gaze/ --format=text
+uv run gazepy report src/gaze/ tests/ --format=json
 
 # Build wheel
 uv build
