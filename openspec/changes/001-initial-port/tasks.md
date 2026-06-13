@@ -154,7 +154,7 @@
 
 ## 6. CRAP Scoring (R3 + R4)
 
-- [ ] 6.1 Write `tests/test_scorer.py` — tests FIRST (red):
+- [x] 6.1 Write `tests/test_scorer.py` — tests FIRST (red):
   - Complexity: `cyclomatic_complexity()` on `pure_function.py` → 1; on `high_complexity.py` → value > 1
   - SC-001: Use `@pytest.mark.parametrize` for all 13 reference values from taxonomy-reference.md
   - SC-001: CRAP is null when `line_coverage` is null
@@ -169,12 +169,12 @@
   - SC-005: fix_strategy is null when line_coverage is null (CRAP cannot be computed → strategy cannot be assigned)
   - SC-006: Sort order: add_tests before add_assertions before decompose_and_test before decompose
   - SC-006: Cap at 20 entries (25 functions → 20 in output)
-- [ ] 6.2 Write `src/gaze_py/crap/scorer.py` — `crap()`, `gaze_crap()`, `quadrant()`, `fix_strategy()`, `recommended_actions()`, `crapload()`; complexity input comes from `FunctionTarget.complexity` (populated by `analysis/complexity.py`); CRAP returns `None` when `line_coverage is None`; `fix_strategy` returns `None` when CRAP is null OR when CRAP < crap_threshold (only CRAPload functions get a strategy); when CRAP is computed but no functions are in CRAPload, set `Summary.recommended_actions=[]` (empty list, NOT None) per OC-003; respect SC-005 evaluation order (check complexity rules 1+2 first, then Q3/Rule 3, then default); Rule 3 (`add_assertions`) is only reachable when `quadrant == Q3` which requires GazeCRAP — in this change this scenario is tested via synthetic injection only, not live pipeline
-- [ ] 6.3 Run `uv run pytest tests/test_scorer.py` — MUST pass; `uv run mypy src/gaze_py/crap/` — MUST pass
+- [x] 6.2 Write `src/gaze_py/crap/scorer.py` — `crap()`, `gaze_crap()`, `quadrant()`, `fix_strategy()`, `recommended_actions()`, `crapload()`; complexity input comes from `FunctionTarget.complexity` (populated by `analysis/complexity.py`); CRAP returns `None` when `line_coverage is None`; `fix_strategy` returns `None` when CRAP is null OR when CRAP < crap_threshold (only CRAPload functions get a strategy); when CRAP is computed but no functions are in CRAPload, set `Summary.recommended_actions=[]` (empty list, NOT None) per OC-003; respect SC-005 evaluation order (check complexity rules 1+2 first, then Q3/Rule 3, then default); Rule 3 (`add_assertions`) is only reachable when `quadrant == Q3` which requires GazeCRAP — in this change this scenario is tested via synthetic injection only, not live pipeline
+- [x] 6.3 Run `uv run pytest tests/test_scorer.py` — MUST pass; `uv run mypy src/gaze_py/crap/` — MUST pass
 
 ## 7. Output Formatting (R5)
 
-- [ ] 7.1 Write `tests/test_output.py` — tests FIRST (red):
+- [x] 7.1 Write `tests/test_output.py` — tests FIRST (red):
   - OC-001: `--format=json` → valid JSON; `--format=text` → non-empty non-JSON string
   - OC-002: Required fields present in output: `side_effects`, `line_coverage`, `crap`, `gaze_crap`, `contract_coverage`, `fix_strategy`, `quadrant`, `recommended_actions` (function-level); `crap_threshold`, `gaze_crap_threshold` (summary-level, always non-null)
   - OC-002: `recommended_actions` entries each have keys `function`, `file`, `strategy`, `crap` (assert key names, not just presence)
@@ -185,13 +185,13 @@
   - OC-003: `contract_coverage_reason` is `"no_effects_detected"` for pure functions
   - OC-003: `effect_confidence_range` is present in JSON output as `null` (not absent — key must exist with value null, confirmed by asserting `'effect_confidence_range' in parsed` AND `parsed['effect_confidence_range'] is None`)
   - OC-001 failure: CLI with invalid path → non-zero exit code and stderr message
-- [ ] 7.2 [P] Write `src/gaze_py/report/json_formatter.py` — `to_json(result: AnalysisResult, *, indent: int = 2) -> str`; use `dataclasses.asdict()` + custom encoder for enums; all OC-002 field names; `None` → JSON `null`; include `contract_coverage_reason`
-- [ ] 7.3 [P] Write `src/gaze_py/report/text_formatter.py` — `to_text(result: AnalysisResult) -> str`; one line per function: `<path>:<name>  complexity=N  CRAP=<value|null>  effects=<count>  strategy=<value|null>`; use plain string formatting (no `rich` dependency — CS-009 exception: gaze-py output is agent-consumed, not interactive terminal UI; see design.md); output via `click.echo()` in CLI layer (CS-008: never `print()` directly in formatters)
-- [ ] 7.4 Run `uv run pytest tests/test_output.py` — MUST pass; `uv run mypy src/gaze_py/report/` — MUST pass
+- [x] 7.2 [P] Write `src/gaze_py/report/json_formatter.py` — `to_json(result: AnalysisResult, *, indent: int = 2) -> str`; use `dataclasses.asdict()` + custom encoder for enums; all OC-002 field names; `None` → JSON `null`; include `contract_coverage_reason`
+- [x] 7.3 [P] Write `src/gaze_py/report/text_formatter.py` — `to_text(result: AnalysisResult) -> str`; one line per function: `<path>:<name>  complexity=N  CRAP=<value|null>  effects=<count>  strategy=<value|null>`; use plain string formatting (no `rich` dependency — CS-009 exception: gaze-py output is agent-consumed, not interactive terminal UI; see design.md); output via `click.echo()` in CLI layer (CS-008: never `print()` directly in formatters)
+- [x] 7.4 Run `uv run pytest tests/test_output.py` — MUST pass; `uv run mypy src/gaze_py/report/` — MUST pass
 
 ## 8. CLI (R5 continued)
 
-- [ ] 8.1 Write `tests/test_cli.py` — tests FIRST (red), use `click.testing.CliRunner`:
+- [x] 8.1 Write `tests/test_cli.py` — tests FIRST (red), use `click.testing.CliRunner`:
   - `gazepy analyze <testdata_path> --format=json` exits 0, output is valid JSON
   - `gazepy analyze <testdata_path> --format=text` exits 0, output is non-empty and contains "complexity="
   - `gazepy analyze <testdata_path> --coverage-json <coverage_file>` exits 0 AND JSON output contains non-null `line_coverage` (TC-008: assert output content, not just exit code); use `tests/testdata/coverage_sample.json` fixture (see task 8.2 note); resolve fixture path via `pathlib.Path(__file__).parent / 'testdata' / 'coverage_sample.json'` (TC-004: tests must not depend on working directory)
@@ -199,8 +199,8 @@
   - `gazepy analyze /nonexistent` exits non-zero, stderr contains error message
   - `gazepy report <src> <tests> --format=json` exits 0, output is valid JSON (report behaves identically to analyze in this change — see design.md)
   - `gazepy --help` exits 0 AND stdout contains "analyze" (TC-008: assert content, not just exit code)
-- [ ] 8.2 Write `src/gaze_py/cli/main.py` — `@click.group() cli`, `analyze` subcommand (path, `--format`, `--coverage-json`), `report` subcommand (src, tests, `--format`); wire detector → classifier → complexity → scorer → formatter pipeline; catch `GazeParseError` (imported from `taxonomy/exceptions.py`) and emit warning via `click.echo(err=True)`, continue; set `line_coverage=None` when `--coverage-json` not provided; when `--coverage-json` is invalid/malformed, raise `GazeConfigError` and exit non-zero; resolve --coverage-json path with Path.resolve() before reading; `report` command accepts `<tests>` argument but ignores it with a warning ("report --tests: O1 quality assessment deferred") — in this change, report behaves identically to analyze; add `tests/testdata/coverage_sample.json` as a minimal valid coverage.py JSON fixture (format: `{"files": {"<path>": {"summary": {"percent_covered": 75.0}}}}` — coverage.py v6+ schema, field `files[path].summary.percent_covered`)
-- [ ] 8.3 Run `uv run pytest tests/test_cli.py` — MUST pass; `uv run mypy src/gaze_py/cli/` — MUST pass
+- [x] 8.2 Write `src/gaze_py/cli/main.py` — `@click.group() cli`, `analyze` subcommand (path, `--format`, `--coverage-json`), `report` subcommand (src, tests, `--format`); wire detector → classifier → complexity → scorer → formatter pipeline; catch `GazeParseError` (imported from `taxonomy/exceptions.py`) and emit warning via `click.echo(err=True)`, continue; set `line_coverage=None` when `--coverage-json` not provided; when `--coverage-json` is invalid/malformed, raise `GazeConfigError` and exit non-zero; resolve --coverage-json path with Path.resolve() before reading; `report` command accepts `<tests>` argument but ignores it with a warning ("report --tests: O1 quality assessment deferred") — in this change, report behaves identically to analyze; add `tests/testdata/coverage_sample.json` as a minimal valid coverage.py JSON fixture (format: `{"files": {"<path>": {"summary": {"percent_covered": 75.0}}}}` — coverage.py v6+ schema, field `files[path].summary.percent_covered`)
+- [x] 8.3 Run `uv run pytest tests/test_cli.py` — MUST pass; `uv run mypy src/gaze_py/cli/` — MUST pass
 
 ## 9. Full CI Gate
 

@@ -17,7 +17,6 @@ from gaze_py.crap.scorer import (
 )
 from gaze_py.taxonomy.models import FunctionTarget, Score
 
-
 # ---------------------------------------------------------------------------
 # SC-001: crap() formula
 # ---------------------------------------------------------------------------
@@ -206,7 +205,13 @@ def test_sc005_fix_strategy_none_when_crap_is_none() -> None:
 
 def test_sc005_fix_strategy_none_when_crap_below_threshold() -> None:
     """SC-005: fix_strategy returns None when CRAP < threshold."""
-    result = fix_strategy(crap_score=5.0, complexity=10, line_coverage=0.0, quadrant_label=None, threshold=15.0)
+    result = fix_strategy(
+        crap_score=5.0,
+        complexity=10,
+        line_coverage=0.0,
+        quadrant_label=None,
+        threshold=15.0,
+    )
     assert result is None
 
 
@@ -313,12 +318,10 @@ def test_sc006_recommended_actions_sort_order() -> None:
 
 def test_sc006_recommended_actions_capped_at_20() -> None:
     """SC-006: recommended_actions caps output at 20 entries."""
-    targets = [
-        _make_target_with_strategy(f"fn_{i}", float(20 + i), "add_tests")
-        for i in range(30)
-    ]
+    targets = [_make_target_with_strategy(f"fn_{i}", float(20 + i), "add_tests") for i in range(30)]
     result = recommended_actions(targets)
-    assert len(result) <= 20
+    _max_actions = 20
+    assert len(result) <= _max_actions
 
 
 def test_sc006_recommended_actions_required_keys() -> None:
@@ -354,9 +357,7 @@ def test_sc006_recommended_actions_empty_list_when_no_targets() -> None:
 
 def test_sc006_recommended_actions_correct_values() -> None:
     """SC-006: Action dict values match the FunctionTarget fields."""
-    targets = [
-        _make_target_with_strategy("my_func", 30.0, "decompose", file_path="src/foo.py")
-    ]
+    targets = [_make_target_with_strategy("my_func", 30.0, "decompose", file_path="src/foo.py")]
     result = recommended_actions(targets)
     assert len(result) == 1
     action = result[0]
