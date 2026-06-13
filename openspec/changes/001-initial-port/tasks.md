@@ -21,14 +21,14 @@
 
 ## 2. Taxonomy Layer
 
-- [ ] 2.1 [P] Write `src/gaze_py/taxonomy/effects.py` — `SideEffectType` (38-value StrEnum per EC-001 with note about 37-vs-38 contract bug), `Tier` enum, `TIER_MAP: dict[SideEffectType, Tier]`
-- [ ] 2.2 [P] Write `src/gaze_py/taxonomy/models.py` — `@dataclass(frozen=True)` for value objects: `Signal`, `ClassificationResult`, `SideEffect`, `Score`; mutable dataclasses: `FunctionTarget`, `AnalysisResult`; all nullable fields typed `X | None`; include `contract_coverage_reason: str | None = None` on `Score`; include `effect_confidence_range: tuple[int, int] | None = None` on `Score`; include `caller_count: int = 0` on `FunctionTarget`; write `Summary` dataclass with fields: `function_count: int`, `crapload: int`, `gaze_crapload: int | None`, `avg_line_coverage: float | None`, `avg_contract_coverage: float | None`, `quadrant_counts: dict | None`, `fix_strategy_counts: dict | None`, `recommended_actions: list[dict] | None`, `crap_threshold: float`, `gaze_crap_threshold: float`
-- [ ] 2.3 [P] Write `src/gaze_py/taxonomy/exceptions.py` — define `GazeParseError(RuntimeError)` and `GazeConfigError(ValueError)` here and ONLY here (AP-008: shared exceptions belong in the taxonomy module, never in subpackages that other subpackages import). Both `analysis/detector.py` and `cli/main.py` import `GazeParseError` from this module; `config/loader.py` imports `GazeConfigError` from this module.
-- [ ] 2.4 [P] Write `src/gaze_py/config/loader.py` — `GazeConfig` dataclass with fields: `contractual_threshold: int = 80`, `incidental_threshold: int = 50`, `crap_threshold: float = 15.0`, `gaze_crap_threshold: float = 15.0`; `load_config(start_path: Path) -> GazeConfig` with walk-up discovery of `.gaze.yaml`; resolve start_path with `Path.resolve()` before walking; stop walk at first ancestor containing `pyproject.toml` or `.git`; YAML key hierarchy: `classification.thresholds.contractual/incidental`, `scoring.crap_threshold/gaze_crap_threshold`; unknown keys MUST be silently ignored (forward-compatibility); validation raises `GazeConfigError` (imported from `taxonomy/exceptions.py`) on out-of-range values
+- [x] 2.1 [P] Write `src/gaze_py/taxonomy/effects.py` — `SideEffectType` (38-value StrEnum per EC-001 with note about 37-vs-38 contract bug), `Tier` enum, `TIER_MAP: dict[SideEffectType, Tier]`
+- [x] 2.2 [P] Write `src/gaze_py/taxonomy/models.py` — `@dataclass(frozen=True)` for value objects: `Signal`, `ClassificationResult`, `SideEffect`, `Score`; mutable dataclasses: `FunctionTarget`, `AnalysisResult`; all nullable fields typed `X | None`; include `contract_coverage_reason: str | None = None` on `Score`; include `effect_confidence_range: tuple[int, int] | None = None` on `Score`; include `caller_count: int = 0` on `FunctionTarget`; write `Summary` dataclass with fields: `function_count: int`, `crapload: int`, `gaze_crapload: int | None`, `avg_line_coverage: float | None`, `avg_contract_coverage: float | None`, `quadrant_counts: dict | None`, `fix_strategy_counts: dict | None`, `recommended_actions: list[dict] | None`, `crap_threshold: float`, `gaze_crap_threshold: float`
+- [x] 2.3 [P] Write `src/gaze_py/taxonomy/exceptions.py` — define `GazeParseError(RuntimeError)` and `GazeConfigError(ValueError)` here and ONLY here (AP-008: shared exceptions belong in the taxonomy module, never in subpackages that other subpackages import). Both `analysis/detector.py` and `cli/main.py` import `GazeParseError` from this module; `config/loader.py` imports `GazeConfigError` from this module.
+- [x] 2.4 [P] Write `src/gaze_py/config/loader.py` — `GazeConfig` dataclass with fields: `contractual_threshold: int = 80`, `incidental_threshold: int = 50`, `crap_threshold: float = 15.0`, `gaze_crap_threshold: float = 15.0`; `load_config(start_path: Path) -> GazeConfig` with walk-up discovery of `.gaze.yaml`; resolve start_path with `Path.resolve()` before walking; stop walk at first ancestor containing `pyproject.toml` or `.git`; YAML key hierarchy: `classification.thresholds.contractual/incidental`, `scoring.crap_threshold/gaze_crap_threshold`; unknown keys MUST be silently ignored (forward-compatibility); validation raises `GazeConfigError` (imported from `taxonomy/exceptions.py`) on out-of-range values
 
 ## 2b. Config Tests
 
-- [ ] 2.5 Write `tests/test_config.py` — config loader tests (do NOT include these in test_classifier.py):
+- [x] 2.5 Write `tests/test_config.py` — config loader tests (do NOT include these in test_classifier.py):
   - Happy path: `.gaze.yaml` with all four threshold fields loads correctly
   - Missing file: no `.gaze.yaml` found → defaults apply (`contractual=80`, `incidental=50`, `crap=15.0`, `gaze_crap=15.0`)
   - Invalid YAML: malformed `.gaze.yaml` → `GazeConfigError` raised
@@ -37,12 +37,12 @@
   - Unknown keys: `.gaze.yaml` with an unrecognised key → silently ignored, defaults used for unknown fields
   - Walk terminates at project root sentinel: walk stops at directory containing `pyproject.toml` and does NOT read `.gaze.yaml` above it
   - GazeConfigError raised from invalid YAML has `__cause__` set (exception chaining) and message contains the file path
-- [ ] 2.6 Run `uv run pytest tests/test_config.py` — MUST pass
+- [x] 2.6 Run `uv run pytest tests/test_config.py` — MUST pass
 
 ## 3. Taxonomy Tests (EC-001)
 
-- [ ] 3.1 Write `tests/test_taxonomy.py` — EC-001: assert 38 types (with comment referencing the 37-vs-38 contract bug), assert tier counts (P0=5 P1=8 P2=10 P3=9 P4=6), assert all named types present, assert TIER_MAP covers all 38 types; assert `Score` has `contract_coverage_reason` field; assert `Score` has `effect_confidence_range` field typed `tuple[int, int] | None`; assert `FunctionTarget` has `caller_count` field; assert `Summary` has `crap_threshold` and `gaze_crap_threshold` fields
-- [ ] 3.2 Run `uv run pytest tests/test_taxonomy.py` — MUST pass
+- [x] 3.1 Write `tests/test_taxonomy.py` — EC-001: assert 38 types (with comment referencing the 37-vs-38 contract bug), assert tier counts (P0=5 P1=8 P2=10 P3=9 P4=6), assert all named types present, assert TIER_MAP covers all 38 types; assert `Score` has `contract_coverage_reason` field; assert `Score` has `effect_confidence_range` field typed `tuple[int, int] | None`; assert `FunctionTarget` has `caller_count` field; assert `Summary` has `crap_threshold` and `gaze_crap_threshold` fields
+- [x] 3.2 Run `uv run pytest tests/test_taxonomy.py` — MUST pass
 
 ## 4. AST Detector (R1)
 

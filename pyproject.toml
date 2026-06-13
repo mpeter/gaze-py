@@ -44,6 +44,12 @@ ignore = [
 python_version = "3.11"
 strict = true
 
+[[tool.mypy.overrides]]
+# types-pyyaml stubs are installed but mypy may not locate them in some
+# environments. Suppress the import-untyped error for yaml only.
+module = "yaml"
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # Pytest
 # ---------------------------------------------------------------------------
@@ -58,3 +64,8 @@ addopts = "-ra"
 # ---------------------------------------------------------------------------
 [tool.coverage.run]
 source = ["gaze_py"]
+
+[dependency-groups]
+dev = [
+    "types-pyyaml>=6.0.12.20260518",
+]
