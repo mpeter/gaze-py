@@ -88,7 +88,7 @@ specification.
 
 **Write tests FIRST — ensure they FAIL before implementing.**
 
-- [ ] T006 [S2] Create `tests/testdata/quality/` with paired
+- [x] T006 [S2] Create `tests/testdata/quality/` with paired
   fixtures:
   `src_basic.py` + `test_basic.py` (SC-014: return value, covered),
   `src_raises.py` + `test_raises.py` (SC-015: pytest.raises),
@@ -97,7 +97,7 @@ specification.
   `src_inline.py` + `test_inline.py` (SC-019: inline call),
   `src_no_assert.py` + `test_no_assert.py` (SC-016: gap_hints)
 
-- [ ] T007 [S2] Write `tests/test_quality.py` — one test per
+- [x] T007 [S2] Write `tests/test_quality.py` — one test per
   acceptance scenario SC-014 through SC-019, plus edge cases.
   Tests MUST fail before T008.
   IMPORTANT: Construct `SideEffect` objects directly (do NOT call
@@ -108,7 +108,7 @@ specification.
     `over_spec.suggestions[0]` is a non-empty string
   NOTE: T007 depends on T006 (fixtures must exist). Do NOT mark [P].
 
-- [ ] T008 [S2] Implement `src/gaze_py/quality.py`:
+- [x] T008 [S2] Implement `src/gaze_py/quality.py`:
   - `AssertionVisitor(ast.NodeVisitor)` with recognised patterns
     per plan.md assertion mapper design
   - `map_assertions(test_source: str, target_effects: list[SideEffect], target_func: str) -> QualityReport`
@@ -122,7 +122,7 @@ specification.
   - Malformed test file: raises `GazeParseError`
   - Empty test file: returns `ContractCoverage(percentage=0.0, ...)`
 
-- [ ] T009 [P] [S2] Verify all T007 tests pass. Fix until green.
+- [x] T009 [P] [S2] Verify all T007 tests pass. Fix until green.
   Run: `uv run pytest tests/test_quality.py -v`
 
 **Checkpoint**: `uv run pytest tests/test_quality.py` — all green.
