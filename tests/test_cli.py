@@ -69,13 +69,14 @@ def test_sc028_analyze_json_exit_0() -> None:
 
 
 def test_sc030_report_exit_0() -> None:
-    """SC-030: gaze-py report <src_path> <tests_path> exits 0."""
+    """SC-030: gaze-py report <src_path> <tests_path> exits 0 with non-empty output."""
     runner = CliRunner()
     result = runner.invoke(
         main,
         ["report", str(TESTDATA_ANALYSIS), str(TESTDATA_QUALITY)],
     )
     assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}. Output:\n{result.output}"
+    assert result.output.strip(), "Expected non-empty output from report command"
 
 
 # ---------------------------------------------------------------------------
@@ -247,40 +248,40 @@ def test_report_missing_tests_exits_1() -> None:
 
 
 def test_schema_stub_exit_0() -> None:
-    """schema command exits 0 (stub)."""
+    """schema command exits 0 and mentions 'schema' in output (stub)."""
     runner = CliRunner()
     result = runner.invoke(main, ["schema"])
     assert result.exit_code == 0
-    assert result.output.strip()
+    assert "schema" in result.output.lower(), f"Expected 'schema' in output, got: {result.output!r}"
 
 
 def test_docscan_stub_exit_0() -> None:
-    """docscan command exits 0 (stub)."""
+    """docscan command exits 0 and mentions 'docscan' in output (stub)."""
     runner = CliRunner()
     result = runner.invoke(main, ["docscan"])
     assert result.exit_code == 0
-    assert result.output.strip()
+    assert "docscan" in result.output.lower(), f"Expected 'docscan' in output, got: {result.output!r}"
 
 
 def test_init_stub_exit_0() -> None:
-    """init command exits 0 (stub)."""
+    """init command exits 0 and mentions 'init' in output (stub)."""
     runner = CliRunner()
     result = runner.invoke(main, ["init"])
     assert result.exit_code == 0
-    assert result.output.strip()
+    assert "init" in result.output.lower(), f"Expected 'init' in output, got: {result.output!r}"
 
 
 def test_self_check_stub_exit_0() -> None:
-    """self-check command exits 0 (stub)."""
+    """self-check command exits 0 and mentions 'self-check' in output (stub)."""
     runner = CliRunner()
     result = runner.invoke(main, ["self-check"])
     assert result.exit_code == 0
-    assert result.output.strip()
+    assert "self-check" in result.output.lower(), f"Expected 'self-check' in output, got: {result.output!r}"
 
 
 def test_crap_stub_exit_0() -> None:
-    """crap command exits 0 (stub)."""
+    """crap command exits 0 and mentions 'crap' in output (stub)."""
     runner = CliRunner()
     result = runner.invoke(main, ["crap"])
     assert result.exit_code == 0
-    assert result.output.strip()
+    assert "crap" in result.output.lower(), f"Expected 'crap' in output, got: {result.output!r}"

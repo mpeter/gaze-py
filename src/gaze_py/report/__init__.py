@@ -18,6 +18,7 @@ ADR-002 adaptations vs. Go gaze:
 
 from __future__ import annotations
 
+import datetime
 import sys
 import time
 
@@ -48,7 +49,7 @@ def build_metadata(start_ns: int, warnings: list[str] | None = None) -> dict[str
         - ``gaze_py_version``: The gaze-py version string (Python-specific).
         - ``python_version``: The Python interpreter version (e.g. "3.12.0").
         - ``duration_ms``: Elapsed milliseconds since ``start_ns`` (int ≥ 0).
-        - ``timestamp``: Empty string (reserved for future use).
+        - ``timestamp``: ISO 8601 UTC timestamp of the report generation.
         - ``warnings``: List of warning strings (may be empty).
     """
     elapsed_ms = (time.perf_counter_ns() - start_ns) // 1_000_000
@@ -58,6 +59,6 @@ def build_metadata(start_ns: int, warnings: list[str] | None = None) -> dict[str
         "gaze_py_version": __version__,
         "python_version": f"{vi.major}.{vi.minor}.{vi.micro}",
         "duration_ms": int(elapsed_ms),
-        "timestamp": "",
+        "timestamp": datetime.datetime.now(tz=datetime.UTC).isoformat(),
         "warnings": warnings or [],
     }

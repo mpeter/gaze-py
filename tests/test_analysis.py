@@ -320,6 +320,23 @@ def test_analyze_path_excludes_hidden_and_pycache(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# False-positive regression test
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_path_pure_function_no_false_positives(tmp_path: Path) -> None:
+    """analyze_path() produces zero side effects for a pure function."""
+    pure_file = tmp_path / "pure_check.py"
+    pure_file.write_text("def no_effects(x: int) -> None:\n    y = x + 1\n")
+    results = analyze_path(tmp_path, root=tmp_path)
+    no_effects_results = [r for r in results if r.target.function == "no_effects"]
+    assert len(no_effects_results) == 1
+    assert no_effects_results[0].side_effects == [], (
+        f"Pure function produced false-positive effects: {no_effects_results[0].side_effects}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Performance benchmark
 # ---------------------------------------------------------------------------
 

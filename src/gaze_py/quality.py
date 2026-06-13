@@ -491,33 +491,6 @@ def _compute_over_specification(
     )
 
 
-# ---------------------------------------------------------------------------
-# Target function resolution
-# ---------------------------------------------------------------------------
-
-
-def _resolve_target_func(
-    stmts: list[ast.stmt],
-    target_func: str,
-) -> str:
-    """Resolve the target function name from the test body.
-
-    Resolution order (per plan.md S2 design):
-    1. If ``target_func`` is explicitly provided and non-empty, use it.
-    2. Scan the body for calls to ``target_func`` — if found, confirm.
-    3. Fall back to the provided name unchanged.
-
-    Args:
-        stmts: Statement list of the test function body.
-        target_func: Caller-provided target function name.
-
-    Returns:
-        The resolved target function name.
-    """
-    # If the caller provided a name, trust it (the caller knows best).
-    return target_func
-
-
 def _find_test_function_body(
     tree: ast.Module,
 ) -> list[ast.stmt] | None:

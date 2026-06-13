@@ -98,7 +98,7 @@ def _validate_path_exists(path_str: str, label: str = "path") -> Path:
     """
     p = Path(path_str)
     if not p.exists():
-        click.echo(f"error: {label} does not exist: {path_str}", err=False)
+        click.echo(f"error: {label} does not exist: {path_str}", err=True)
         sys.exit(1)
     return p
 
@@ -133,7 +133,7 @@ def _validate_no_traversal(path: Path, root: Path | None = None) -> Path:
     except ValueError:
         click.echo(
             f"error: path escapes project root: {resolved_path}",
-            err=False,
+            err=True,
         )
         sys.exit(1)
     return resolved_path
@@ -211,10 +211,10 @@ def analyze(
         raw_results = _analyze_tolerant(src_path, root=root_for_analysis, warn=output_format != "json")
     except ValueError:
         # Path traversal detected inside analyze_path.
-        click.echo(f"error: path escapes project root: {src_path.resolve()}", err=False)
+        click.echo(f"error: path escapes project root: {src_path.resolve()}", err=True)
         sys.exit(1)
     except GazeParseError as exc:
-        click.echo(f"error: {exc}", err=False)
+        click.echo(f"error: {exc}", err=True)
         sys.exit(1)
 
     results: list[AnalysisResult] = raw_results  # type: ignore[assignment]
@@ -315,7 +315,7 @@ def quality(
         if not cov_path.exists():
             click.echo(
                 f"error: coverprofile does not exist: {coverprofile}",
-                err=False,
+                err=True,
             )
             sys.exit(1)
 
@@ -427,7 +427,7 @@ def report(
     try:
         raw_results = _analyze_tolerant(src, root=root_src, warn=output_format != "json")
     except ValueError:
-        click.echo(f"error: path escapes project root: {src.resolve()}", err=False)
+        click.echo(f"error: path escapes project root: {src.resolve()}", err=True)
         sys.exit(1)
 
     results: list[AnalysisResult] = raw_results  # type: ignore[assignment]

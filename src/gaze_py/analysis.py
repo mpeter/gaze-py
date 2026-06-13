@@ -29,6 +29,7 @@ import ast
 import datetime
 import hashlib
 import sys
+import time
 from pathlib import Path
 
 import gaze_py
@@ -549,6 +550,8 @@ def analyze_module(source: str, module_path: str) -> list[AnalysisResult]:
     Raises:
         GazeParseError: When *source* cannot be parsed by ``ast.parse()``.
     """
+    start_ns = time.perf_counter_ns()
+
     try:
         tree = ast.parse(source, filename=module_path)
     except SyntaxError as exc:
@@ -557,10 +560,16 @@ def analyze_module(source: str, module_path: str) -> list[AnalysisResult]:
             line=exc.lineno,
             msg=str(exc.msg),
         ) from exc
+    except RecursionError as exc:
+        raise GazeParseError(
+            path=module_path,
+            line=None,
+            msg="source nesting depth exceeds Python recursion limit",
+            code="RECURSION_LIMIT",
+        ) from exc
 
     source_lines = source.splitlines()
     results: list[AnalysisResult] = []
-    now = datetime.datetime.now(tz=datetime.UTC).isoformat()
     version = gaze_py.__version__
     python_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 
@@ -591,11 +600,13 @@ def analyze_module(source: str, module_path: str) -> list[AnalysisResult]:
             receiver=receiver,
             location=f"{module_path}:{func_node.lineno}",
         )
+        elapsed_ms = (time.perf_counter_ns() - start_ns) // 1_000_000
         metadata = Metadata(
             gaze_version=version,
+            gaze_py_version=version,
             python_version=python_ver,
-            duration_ms=0,
-            timestamp=now,
+            duration_ms=elapsed_ms,
+            timestamp=datetime.datetime.now(tz=datetime.UTC).isoformat(),
             warnings=[],
         )
         return AnalysisResult(

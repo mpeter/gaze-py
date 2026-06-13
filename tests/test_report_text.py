@@ -156,16 +156,16 @@ def quality_report(p0_target: FunctionTarget) -> QualityReport:
 
 
 def test_analysis_text_nonempty(analysis_result_with_effects: AnalysisResult) -> None:
-    """SC-025: write_analysis_text produces non-empty output for a result with effects.
+    """SC-025: write_analysis_text produces output containing the function name.
 
     Given an AnalysisResult with one or more side effects,
     When write_analysis_text is called,
-    Then the output is a non-empty string.
+    Then the output contains the function name from the fixture.
     """
     out = io.StringIO()
     write_analysis_text([analysis_result_with_effects], out)
     content = out.getvalue()
-    assert len(content) > 0
+    assert "compute" in content, f"Expected 'compute' in output, got: {content!r}"
 
 
 def test_analysis_text_contains_tier(analysis_result_with_effects: AnalysisResult) -> None:
@@ -186,16 +186,16 @@ def test_analysis_text_contains_tier(analysis_result_with_effects: AnalysisResul
 
 
 def test_analysis_text_empty_results() -> None:
-    """Edge case: write_analysis_text with empty list produces a message.
+    """Edge case: write_analysis_text with empty list produces the empty-state message.
 
     Given an empty results list,
     When write_analysis_text is called,
-    Then the output is non-empty (e.g., 'No functions analyzed.').
+    Then the output contains the 'No functions analyzed.' message.
     """
     out = io.StringIO()
     write_analysis_text([], out)
     content = out.getvalue()
-    assert len(content) > 0
+    assert "no" in content.lower(), f"Expected empty-state message in output, got: {content!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -204,29 +204,29 @@ def test_analysis_text_empty_results() -> None:
 
 
 def test_quality_text_nonempty(quality_report: QualityReport) -> None:
-    """SC-025: write_quality_text produces non-empty output for a quality report.
+    """SC-025: write_quality_text produces output containing coverage percentage.
 
-    Given a QualityReport with coverage and over-specification data,
+    Given a QualityReport with 50% contract coverage,
     When write_quality_text is called,
-    Then the output is a non-empty string.
+    Then the output contains the coverage percentage.
     """
     out = io.StringIO()
     write_quality_text([quality_report], out)
     content = out.getvalue()
-    assert len(content) > 0
+    assert "50%" in content, f"Expected '50%' in output, got: {content!r}"
 
 
 def test_quality_text_empty_reports() -> None:
-    """Edge case: write_quality_text with empty list produces a message.
+    """Edge case: write_quality_text with empty list produces the empty-state message.
 
     Given an empty reports list,
     When write_quality_text is called,
-    Then the output is non-empty (e.g., 'No quality reports.').
+    Then the output contains the 'No quality reports.' message.
     """
     out = io.StringIO()
     write_quality_text([], out)
     content = out.getvalue()
-    assert len(content) > 0
+    assert "no" in content.lower(), f"Expected empty-state message in output, got: {content!r}"
 
 
 # ---------------------------------------------------------------------------

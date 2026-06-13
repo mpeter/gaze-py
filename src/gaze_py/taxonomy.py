@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -148,12 +146,6 @@ TIER_MAP: dict[SideEffectType, Tier] = {
 # ---------------------------------------------------------------------------
 
 
-def _generate_side_effect_id() -> str:
-    """Generate a unique side-effect ID in the format ``se-XXXXXXXX``."""
-    raw = hashlib.sha256(f"{time.time_ns()}".encode()).hexdigest()[:8]
-    return f"se-{raw}"
-
-
 @dataclass
 class FunctionTarget:
     package: str
@@ -231,6 +223,7 @@ class SideEffect:
 @dataclass
 class Metadata:
     gaze_version: str
+    gaze_py_version: str
     python_version: str
     duration_ms: int
     timestamp: str
@@ -239,6 +232,7 @@ class Metadata:
     def to_dict(self) -> dict[str, object]:
         return {
             "gaze_version": self.gaze_version,
+            "gaze_py_version": self.gaze_py_version,
             "python_version": self.python_version,
             "duration_ms": self.duration_ms,
             "timestamp": self.timestamp,

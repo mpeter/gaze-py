@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from gaze_py.taxonomy import (
     TIER_MAP,
     AnalysisResult,
@@ -15,7 +13,6 @@ from gaze_py.taxonomy import (
     SideEffectType,
     Signal,
     Tier,
-    _generate_side_effect_id,
 )
 
 
@@ -79,18 +76,6 @@ class TestTierMap:
         assert TIER_MAP[SideEffectType.CgoCall] == Tier.P4
 
 
-class TestSideEffectId:
-    """Test the ``se-XXXXXXXX`` ID generation format."""
-
-    def test_format(self) -> None:
-        sid = _generate_side_effect_id()
-        assert re.match(r"^se-[0-9a-f]{8}$", sid), f"Bad ID format: {sid}"
-
-    def test_unique(self) -> None:
-        ids = {_generate_side_effect_id() for _ in range(100)}
-        assert len(ids) == 100, "Generated duplicate IDs"
-
-
 class TestToDict:
     """Verify JSON-serialisable dict output from domain objects."""
 
@@ -137,6 +122,7 @@ class TestToDict:
         target = FunctionTarget(package="main", function="Run")
         meta = Metadata(
             gaze_version="0.1.0",
+            gaze_py_version="0.1.0",
             python_version="3.11.0",
             duration_ms=123,
             timestamp="2025-01-01T00:00:00Z",
@@ -147,6 +133,7 @@ class TestToDict:
         assert d["target"]["function"] == "Run"
         assert d["target"]["receiver"] is None
         assert d["metadata"]["gaze_version"] == "0.1.0"
+        assert d["metadata"]["gaze_py_version"] == "0.1.0"
         assert d["side_effects"] == []
 
     def test_function_target_optional_fields(self) -> None:
