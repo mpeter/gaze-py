@@ -32,7 +32,7 @@ on the fixture set.
   Each fixture contains 2–3 functions with known, predetermined
   side effects.
 
-- [ ] T002 [S1] Write `tests/test_analysis.py` — one test per
+- [x] T002 [S1] Write `tests/test_analysis.py` — one test per
   acceptance scenario SC-001 through SC-013, plus edge cases.
   Tests MUST fail before T003. Use `@pytest.mark.parametrize`
   for fixture-driven cases. Include:
@@ -45,7 +45,7 @@ on the fixture set.
   NOTE: T002 depends on T001 (fixtures must exist before
   parametrize paths are referenced). Do NOT mark as [P].
 
-- [ ] T003 [S1] Add domain types to `src/gaze_py/taxonomy.py`:
+- [x] T003 [S1] Add domain types to `src/gaze_py/taxonomy.py`:
   - `QualityReport` dataclass (fields per plan.md Domain Types)
   - `ContractCoverage` dataclass
   - `OverSpecificationScore` dataclass
@@ -55,7 +55,7 @@ on the fixture set.
     `ReceiverMutation`, `PointerArgMutation`, `GlobalMutation`)
   - All dataclasses include `to_dict()` methods
 
-- [ ] T004 [S1] Implement `src/gaze_py/analysis.py`:
+- [x] T004 [S1] Implement `src/gaze_py/analysis.py`:
   - `GazeParseError(Exception)` — typed wrapper for parse failures
   - `FunctionEffectVisitor(ast.NodeVisitor)` with visit methods
     per the detection table in plan.md (including Tier column)
@@ -71,7 +71,7 @@ on the fixture set.
     — catches encoding errors → raises `GazeParseError`
   - ID generation: `"se-" + sha256(module:func:type:location)[:8]`
 
-- [ ] T005 [P] [S1] Verify all T002 tests pass. Fix until green.
+- [x] T005 [P] [S1] Verify all T002 tests pass. Fix until green.
   Run: `uv run pytest tests/test_analysis.py -v`
   (Skip `@pytest.mark.slow` unless running explicitly.)
 
@@ -330,17 +330,17 @@ scaffold.
 
 All of the following MUST be true before this spec is marked Done:
 
-- [ ] `uv run pytest -m "not slow"` — all green (gaze-py repo)
-- [ ] `uv run pytest --cov=gaze_py --cov-fail-under=85` — passes
-- [ ] `uv run ruff check .` — clean
-- [ ] `uv run ruff format --check .` — clean
-- [ ] `uv run mypy src/` — clean
-- [ ] Analysis JSON validates against `ANALYSIS_SCHEMA`
-- [ ] Quality JSON validates against `QUALITY_SCHEMA`
+- [x] `uv run pytest -m "not slow"` — all green (gaze-py repo)
+- [x] `uv run pytest --cov=gaze_py --cov-fail-under=85` — passes
+- [x] `uv run ruff check .` — clean
+- [x] `uv run ruff format --check .` — clean
+- [x] `uv run mypy src/` — clean
+- [x] Analysis JSON validates against `ANALYSIS_SCHEMA`
+- [x] Quality JSON validates against `QUALITY_SCHEMA`
 - [ ] `go test ./...` — all green (unbound-force repo)
 - [ ] `uf init --dry-run` on Python project shows gaze-py step with pinned version
-- [ ] AGENTS.md updated in both repos
-- [ ] CHANGELOG.md entries in both repos
+- [x] AGENTS.md updated in both repos
+- [x] CHANGELOG.md entries in both repos
 - [ ] `unbound-force/website` issue filed for new CLI commands (`analyze`, `quality`, `report`) and `uf init` gaze-py step
 - [ ] `/review-council` run and all REQUEST CHANGES resolved
 

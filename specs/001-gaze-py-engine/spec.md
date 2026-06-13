@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-gaze-py-engine`
 **Created**: 2026-06-13
-**Status**: In Progress
+**Status**: S1–S4 Complete | S5 In Progress | Code Review In Progress
 **Repos**: `gaze-py` (S1–S4), `unbound-force` (S5)
 
 ## Context

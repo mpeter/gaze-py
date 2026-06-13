@@ -139,6 +139,22 @@ def _validate_no_traversal(path: Path, root: Path | None = None) -> Path:
     return resolved_path
 
 
+def _derive_target_func(test_file: Path) -> str:
+    """Derive the source function name from a test file name.
+
+    Strips the ``test_`` prefix from the file stem when present.
+    For example, ``test_basic.py`` → ``"basic"``.
+
+    Args:
+        test_file: Path to the test file.
+
+    Returns:
+        The inferred source function name.
+    """
+    stem = test_file.stem
+    return stem[len("test_") :] if stem.startswith("test_") else stem
+
+
 # ---------------------------------------------------------------------------
 # Main group
 # ---------------------------------------------------------------------------
@@ -307,9 +323,13 @@ def quality(
 
     # Validate tests_path exists.
     tests_dir = _validate_path_exists(tests_path, label="tests_path")
-    _validate_no_traversal(tests_dir)
+    abs_tests = tests_dir.absolute()
+    root_for_tests = abs_tests if abs_tests.is_dir() else abs_tests.parent
+    _validate_no_traversal(tests_dir, root=root_for_tests)
 
-    # Validate coverprofile path if provided — exit 1 if missing (SC-031).
+    # --coverprofile: validates path exists but does NOT yet read the .coverage SQLite DB.
+    # Full coverage.CoverageData integration is deferred (see plan.md flag disposition).
+    # TODO: implement coverage.CoverageData reading in a future spec.
     if coverprofile is not None:
         cov_path = Path(coverprofile)
         if not cov_path.exists():
@@ -336,8 +356,7 @@ def quality(
 
         # Derive target function name from test file name convention.
         # e.g. test_basic.py → "basic"
-        stem = test_file.stem  # e.g. "test_basic"
-        target_func = stem[len("test_") :] if stem.startswith("test_") else stem
+        target_func = _derive_target_func(test_file)
 
         try:
             report = map_assertions(
@@ -345,8 +364,8 @@ def quality(
                 target_effects=[],
                 target_func=target_func,
             )
-        except GazeParseError:
-            # Malformed test file — skip with a warning (per spec edge case).
+        except GazeParseError as exc:
+            click.echo(f"warning: skipping {test_file}: {exc}", err=True)
             continue
         reports.append(report)
 
@@ -447,8 +466,7 @@ def report(
         except UnicodeDecodeError:
             continue
 
-        stem = test_file.stem
-        target_func = stem[len("test_") :] if stem.startswith("test_") else stem
+        target_func = _derive_target_func(test_file)
         effects = func_to_effects.get(target_func, [])
 
         try:
@@ -457,7 +475,8 @@ def report(
                 target_effects=effects,
                 target_func=target_func,
             )
-        except GazeParseError:
+        except GazeParseError as exc:
+            click.echo(f"warning: skipping {test_file}: {exc}", err=True)
             continue
         reports.append(rpt)
 

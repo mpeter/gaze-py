@@ -148,8 +148,8 @@ def test_sc017_over_specification() -> None:
     When mapped against a ReturnValue effect,
     Then:
     - contract_coverage.percentage == 100.0 (value assertion covers ReturnValue)
-    - over_specification.count >= 0 (isinstance may be flagged as incidental)
-    - over_specification.suggestions is a list
+    - over_specification.count == 1 (isinstance flagged as incidental after value assert)
+    - over_specification.suggestions has exactly one entry
     """
     test_source = (TESTDATA / "test_incidental.py").read_text()
     target_effects = [_make_return_effect()]
@@ -158,8 +158,10 @@ def test_sc017_over_specification() -> None:
     assert report.contract_coverage.percentage == 100.0, (
         f"Expected 100.0% (result==16 covers ReturnValue), got {report.contract_coverage.percentage}"
     )
-    assert report.over_specification.count >= 0, "over_specification.count must be non-negative"
-    assert isinstance(report.over_specification.suggestions, list), "over_specification.suggestions must be a list"
+    assert report.over_specification.count == 1, (
+        f"Expected exactly 1 incidental assertion (isinstance check), got {report.over_specification.count}"
+    )
+    assert len(report.over_specification.suggestions) == 1
 
 
 # ---------------------------------------------------------------------------

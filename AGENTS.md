@@ -2,7 +2,7 @@
 
 gaze-py is a Python-native GazeCRAP analysis engine — the Python companion to [gaze](https://github.com/unbound-force/gaze). It detects observable side effects in Python functions, classifies them as contractual or incidental, and computes GazeCRAP scores that measure both complexity and meaningful test coverage.
 
-- **Language**: Python 3.12+
+- **Language**: Python 3.11+
 - **Module**: `gaze-py` (package: `gaze_py`)
 - **License**: Apache 2.0
 - **Package Manager**: uv
