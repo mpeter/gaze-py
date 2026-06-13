@@ -107,6 +107,8 @@ def _parse_config(candidate: Path, _current: Path) -> GazeConfig:
     """
     try:
         raw = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+    except OSError as e:
+        raise GazeConfigError(f"Cannot read {candidate}: {e}") from e
     except yaml.YAMLError as e:
         raise GazeConfigError(f"Failed to parse {candidate}: {e}") from e
     return _build_config(raw, candidate)

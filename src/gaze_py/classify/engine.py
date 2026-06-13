@@ -14,7 +14,6 @@ from gaze_py.classify.signals.docstring import docstring_signal
 from gaze_py.classify.signals.interface import interface_signal
 from gaze_py.classify.signals.naming import naming_signal
 from gaze_py.classify.signals.visibility import visibility_signal
-from gaze_py.config.loader import GazeConfig
 from gaze_py.taxonomy.effects import TIER_MAP, Tier
 from gaze_py.taxonomy.models import ClassificationResult, FunctionTarget, SideEffect, Signal
 
@@ -48,14 +47,21 @@ class ClassificationEngine:
     Per CC-001 through CC-006.
     """
 
-    def __init__(self, config: GazeConfig) -> None:
-        """Initialize the engine with configuration thresholds.
+    def __init__(
+        self,
+        contractual_threshold: int = 80,
+        incidental_threshold: int = 50,
+    ) -> None:
+        """Initialize the engine with classification thresholds.
 
         Args:
-            config: GazeConfig providing contractual_threshold and
-                incidental_threshold for label assignment.
+            contractual_threshold: Minimum confidence score for the
+                'contractual' label. Must be in [0, 100]. Default: 80.
+            incidental_threshold: Maximum confidence score (exclusive) for
+                the 'incidental' label. Must be in [0, 100]. Default: 50.
         """
-        self._config = config
+        self._contractual_threshold = contractual_threshold
+        self._incidental_threshold = incidental_threshold
 
     def classify(
         self,
@@ -138,8 +144,8 @@ class ClassificationEngine:
         # CC-003: Assign label based on thresholds.
         label = _assign_label(
             final_score,
-            contractual_threshold=self._config.contractual_threshold,
-            incidental_threshold=self._config.incidental_threshold,
+            contractual_threshold=self._contractual_threshold,
+            incidental_threshold=self._incidental_threshold,
         )
 
         return ClassificationResult(

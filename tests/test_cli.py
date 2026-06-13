@@ -247,3 +247,50 @@ def test_cli_json_functions_have_required_fields() -> None:
         assert "fix_strategy" in fn, f"Missing fix_strategy in {fn.get('name')}"
         fn_name = fn.get("name")
         assert "effect_confidence_range" in fn, f"Missing effect_confidence_range in {fn_name}"
+
+
+# ---------------------------------------------------------------------------
+# OC-003: Pipeline-level contract_coverage_reason and recommended_actions
+# ---------------------------------------------------------------------------
+
+
+def test_cli_pure_function_has_no_effects_detected_reason() -> None:
+    """OC-003: pipeline sets contract_coverage_reason='no_effects_detected' for pure functions."""
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["analyze", str(_TESTDATA / "pure_function.py"), "--format=json"],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    fns = data.get("functions", [])
+    # pure_function.py should produce at least one function entry
+    assert len(fns) > 0, "Expected at least one function entry from pure_function.py"
+    # All functions in pure_function.py have no effects → no_effects_detected
+    reasons = [f.get("contract_coverage_reason") for f in fns]
+    assert any(r == "no_effects_detected" for r in reasons), (
+        f"Expected no_effects_detected in at least one function, got: {reasons}"
+    )
+
+
+def test_cli_coverage_json_empty_recommended_actions_when_below_threshold(
+    tmp_path: Path,
+) -> None:
+    """OC-003: recommended_actions=[] (not null) when coverage provided but no CRAPload."""
+    runner = CliRunner()
+    # Use pure_function.py — complexity=1, so CRAP << threshold even at 0% coverage
+    fixture = _TESTDATA / "pure_function.py"
+    # Create a coverage file mapping the fixture to 100% coverage
+    cov: dict[str, object] = {"files": {str(fixture): {"summary": {"percent_covered": 100.0}}}}
+    cov_file = tmp_path / "coverage.json"
+    cov_file.write_text(json.dumps(cov), encoding="utf-8")
+    result = runner.invoke(
+        cli,
+        ["analyze", str(fixture), "--format=json", "--coverage-json", str(cov_file)],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    # recommended_actions should be [] (empty list) not None (OC-003)
+    assert data["summary"]["recommended_actions"] == [], (
+        f"Expected [] but got: {data['summary']['recommended_actions']}"
+    )

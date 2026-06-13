@@ -22,36 +22,39 @@ from gaze_py.taxonomy.models import FunctionTarget, Score
 # ---------------------------------------------------------------------------
 
 
-def test_sc001_crap_formula_basic() -> None:
-    """SC-001: crap(complexity=1, line_coverage=1.0) → 1.0."""
-    # complexity^2 * (1 - 1.0)^3 + complexity = 1 * 0 + 1 = 1.0
-    result = crap(1, 1.0)
-    assert result == pytest.approx(1.0)
+@pytest.mark.parametrize(
+    "complexity,line_coverage,expected",
+    [
+        (1, 1.0, 1.0),
+        (1, 0.0, 2.0),
+        (1, 0.5, 1.125),
+        (5, 1.0, 5.0),
+        (5, 0.5, 8.125),
+        (5, 0.0, 30.0),
+        (10, 1.0, 10.0),
+        (10, 0.5, 22.5),
+        (10, 0.0, 110.0),
+        (15, 1.0, 15.0),
+        (15, 0.0, 240.0),
+        (20, 1.0, 20.0),
+        (20, 0.5, 70.0),
+    ],
+)
+def test_sc001_crap_reference_values(
+    complexity: int, line_coverage: float, expected: float
+) -> None:
+    """SC-001: CRAP reference values — formula: complexity² × (1 - coverage)³ + complexity.
 
-
-def test_sc001_crap_formula_zero_coverage() -> None:
-    """SC-001: crap(complexity=5, line_coverage=0.0) → 30.0."""
-    # 5^2 * (1 - 0)^3 + 5 = 25 + 5 = 30.0
-    result = crap(5, 0.0)
-    assert result == pytest.approx(30.0)
-
-
-def test_sc001_crap_formula_partial_coverage() -> None:
-    """SC-001: crap(complexity=3, line_coverage=0.5) → 4.125."""
-    # 3^2 * (1 - 0.5)^3 + 3 = 9 * 0.125 + 3 = 1.125 + 3 = 4.125
-    result = crap(3, 0.5)
-    assert result == pytest.approx(4.125)
+    Coverage inputs are fractions in [0.0, 1.0].
+    """
+    result = crap(complexity, line_coverage)
+    assert result == pytest.approx(expected, rel=1e-6)
 
 
 def test_sc001_crap_returns_none_when_coverage_is_none() -> None:
-    """SC-001: crap(complexity=5, line_coverage=None) → None."""
+    """SC-001: crap(complexity=5, line_coverage=None) → None (OC-003)."""
     result = crap(5, None)
     assert result is None
-
-
-def test_sc001_crap_complexity_1_full_coverage() -> None:
-    """SC-001: crap(1, 1.0) → 1.0 (perfect function)."""
-    assert crap(1, 1.0) == pytest.approx(1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -59,20 +62,27 @@ def test_sc001_crap_complexity_1_full_coverage() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_sc002_gaze_crap_formula_basic() -> None:
-    """SC-002: gaze_crap(complexity=1, contract_coverage=1.0) → 1.0."""
-    result = gaze_crap(1, 1.0)
-    assert result == pytest.approx(1.0)
+@pytest.mark.parametrize(
+    "complexity,contract_coverage,expected",
+    [
+        (1, 1.0, 1.0),
+        (5, 0.5, 8.125),
+        (10, 0.0, 110.0),
+    ],
+)
+def test_sc002_gaze_crap_reference_values(
+    complexity: int, contract_coverage: float, expected: float
+) -> None:
+    """SC-002: GazeCRAP reference values — same formula as CRAP over contract coverage.
 
-
-def test_sc002_gaze_crap_formula_zero_coverage() -> None:
-    """SC-002: gaze_crap(complexity=5, contract_coverage=0.0) → 30.0."""
-    result = gaze_crap(5, 0.0)
-    assert result == pytest.approx(30.0)
+    Coverage inputs are fractions in [0.0, 1.0].
+    """
+    result = gaze_crap(complexity, contract_coverage)
+    assert result == pytest.approx(expected, rel=1e-6)
 
 
 def test_sc002_gaze_crap_returns_none_when_coverage_is_none() -> None:
-    """SC-002: gaze_crap(complexity=5, contract_coverage=None) → None."""
+    """SC-002: gaze_crap(complexity=5, contract_coverage=None) → None (OC-003)."""
     result = gaze_crap(5, None)
     assert result is None
 
@@ -258,6 +268,19 @@ def test_sc005_rule1_takes_priority_over_rule3() -> None:
         complexity_threshold=15,
     )
     assert result == "decompose_and_test"
+
+
+def test_sc005_rule3_add_assertions() -> None:
+    """SC-005 Rule 3: Q3_SimpleButUnderspecified with complexity < threshold → add_assertions."""
+    result = fix_strategy(
+        crap_score=20.0,
+        complexity=5,  # below complexity_threshold=15 so Rules 1+2 don't fire
+        line_coverage=0.3,
+        quadrant_label="Q3_SimpleButUnderspecified",
+        threshold=15.0,
+        complexity_threshold=15,
+    )
+    assert result == "add_assertions"
 
 
 def test_sc005_fix_strategy_none_when_crap_exactly_below_threshold() -> None:

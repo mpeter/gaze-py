@@ -130,6 +130,10 @@ _FS_META_CALLS: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# Positional argument index for the mode parameter in open() calls.
+# open(path, mode) — mode is the second positional argument (index 1).
+_OPEN_MODE_ARG_INDEX: int = 1
+
 
 # ---------------------------------------------------------------------------
 # Effect ID computation
@@ -1062,7 +1066,6 @@ def _extract_open_mode(call: ast.Call) -> str:
         The mode string if found and is a string literal, else empty string.
     """
     # Positional: open(path, mode) — mode is the second positional argument (index 1)
-    _OPEN_MODE_ARG_INDEX = 1
     if len(call.args) > _OPEN_MODE_ARG_INDEX:
         mode_arg = call.args[_OPEN_MODE_ARG_INDEX]
         if isinstance(mode_arg, ast.Constant) and isinstance(mode_arg.value, str):
