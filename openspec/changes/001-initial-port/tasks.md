@@ -204,11 +204,11 @@
 
 ## 9. Full CI Gate
 
-- [ ] 9.1 Run full CI gate: `uv run ruff check . && uv run ruff format --check . && uv run mypy --strict src/ && uv run pytest --cov=gaze_py --cov-fail-under=85`; fix any failures
-- [ ] 9.2 `rm -rf dist/ && uv build` — confirm wheel named `gaze_py-0.1.0-py3-none-any.whl`
-- [ ] 9.3 `uv tool install --force dist/gaze_py-0.1.0-py3-none-any.whl` — confirm `gazepy --help` works from PATH
-- [ ] 9.4 Write minimal `README.md` — installation (local wheel only, NOT PyPI), basic usage (`gazepy analyze <path>`), `--coverage-json` flag explanation, Python 3.11+ requirement
-- [ ] 9.4b Create `CHANGELOG.md` with a `## [0.1.0] — YYYY-MM-DD` entry listing capabilities delivered in this change (R1 side effect detection, R2 classification, R3/R4 CRAP scoring and quadrants, R5 output formatting, gazepy CLI, package infrastructure). Use Keep a Changelog format.
-- [ ] 9.5 Commit on feature branch `opsx/001-initial-port`, push, open PR against `main`
+- [x] 9.1 Run full CI gate: `uv run ruff check . && uv run ruff format --check . && uv run mypy --strict src/ && uv run pytest --cov=gaze_py --cov-fail-under=85`; fix any failures
+- [x] 9.2 `rm -rf dist/ && uv build` — confirm wheel named `gaze_py-0.1.0-py3-none-any.whl`
+- [x] 9.3 `uv tool install --force dist/gaze_py-0.1.0-py3-none-any.whl` — confirm `gazepy --help` works from PATH
+- [x] 9.4 Write minimal `README.md` — installation (local wheel only, NOT PyPI), basic usage (`gazepy analyze <path>`), `--coverage-json` flag explanation, Python 3.11+ requirement
+- [x] 9.4b Create `CHANGELOG.md` with a `## [0.1.0] — YYYY-MM-DD` entry listing capabilities delivered in this change (R1 side effect detection, R2 classification, R3/R4 CRAP scoring and quadrants, R5 output formatting, gazepy CLI, package infrastructure). Use Keep a Changelog format.
+- [x] 9.5 Commit on feature branch `opsx/001-initial-port`, push, open PR against `main`
 
 <!-- spec-review: passed -->
