@@ -25,24 +25,24 @@ pip install gaze-py
 uv tool install gaze-py
 
 # Analyze side effects in your source
-gaze-py analyze src/mypackage/ --format=text
+gazepy analyze src/mypackage/ --format=text
 
 # Full quality report (side effects + assertion mapping + GazeCRAP scores)
-gaze-py report src/mypackage/ tests/ --format=json
+gazepy report src/mypackage/ tests/ --format=json
 
 # Map test assertions to side effects for one subpackage
-gaze-py quality tests/ --format=text
+gazepy quality tests/ --format=text
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `gaze-py analyze <src>` | Detect side effects in Python functions |
-| `gaze-py quality <tests>` | Map test assertions to detected side effects |
-| `gaze-py report <src> <tests>` | Full pipeline: detect → map → GazeCRAP scores |
-| `gaze-py crap <src>` | Compute CRAP scores (complexity × line coverage) |
-| `gaze-py schema` | Print the JSON Schema for analysis output |
+| `gazepy analyze <src>` | Detect side effects in Python functions |
+| `gazepy quality <tests>` | Map test assertions to detected side effects |
+| `gazepy report <src> <tests>` | Full pipeline: detect → map → GazeCRAP scores |
+| `gazepy crap <src>` | Compute CRAP scores (complexity × line coverage) |
+| `gazepy schema` | Print the JSON Schema for analysis output |
 
 All commands support `--format=text` (default) and `--format=json`.
 
@@ -59,7 +59,7 @@ pip install gaze-py
 git clone https://github.com/mpeter/gaze-py
 cd gaze-py
 uv sync
-uv run gaze-py --help
+uv run gazepy --help
 ```
 
 Requires Python 3.11+.

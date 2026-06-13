@@ -2,9 +2,16 @@
 
 ## [Unreleased] — 2026-06-13
 
+### Breaking Changes
+- Binary renamed from `gaze-py` to `gazepy`. The PyPI package name (`gaze-py`)
+  and Python import path (`gaze_py`) are unchanged. Update any scripts or
+  PATH references from `gaze-py` to `gazepy`.
+
+
+
 Spec: openspec/changes/quality-call-scanning/proposal.md
 
-### Breaking Changes
+### Also Breaking
 - `report --format=json` output schema changed from analysis format
   (`version` + `results`) to quality format (`quality_reports` +
   `quality_summary`). Consumers of `gaze-py report --format=json`
