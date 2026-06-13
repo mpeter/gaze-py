@@ -2,7 +2,7 @@
 
 **Input**: `specs/001-gaze-py-engine/spec.md` and `plan.md`
 **Prerequisites**: plan.md (required), spec.md (required)
-**Repos**: `gaze-py` (T001–T021), `unbound-force` (T022–T026)
+**Repos**: `gaze-py` (T001–T020), `unbound-force` (T021–T026)
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -25,29 +25,58 @@ on the fixture set.
   file per effect type:
   `returns.py`, `raises.py`, `globals.py`, `arg_mutation.py`,
   `receiver_mutation.py`, `stdout.py`, `stderr.py`,
-  `env_mutation.py`, `pure.py`
+  `env_mutation.py` (include BOTH subscript and `.update()` forms),
+  `pure.py`, `multi_return.py` (two return statements, for SC-013),
+  `syntax_error.py` (deliberately invalid Python, for SC-012),
+  `large_module.py` (50 functions, for performance benchmark)
   Each fixture contains 2–3 functions with known, predetermined
   side effects.
 
-- [ ] T002 [P] [S1] Write `tests/test_analysis.py` — one test per
-  acceptance scenario in spec.md US1 (SC-001 through SC-010),
-  plus edge cases. Tests MUST fail before T003.
-  Use `@pytest.mark.parametrize` for fixture-driven cases.
+- [ ] T002 [S1] Write `tests/test_analysis.py` — one test per
+  acceptance scenario SC-001 through SC-013, plus edge cases.
+  Tests MUST fail before T003. Use `@pytest.mark.parametrize`
+  for fixture-driven cases. Include:
+  - `test_sc012_syntax_error_raises_parse_error`
+  - `test_sc013_multi_return_deduplicated`
+  - `test_sc011_env_mutation_call_form`
+  - `test_performance_50_functions` (`@pytest.mark.slow`)
+  - `test_cli_path_traversal_rejected`
+  - `test_cli_directory_walk_excludes_hidden_and_pycache`
+  NOTE: T002 depends on T001 (fixtures must exist before
+  parametrize paths are referenced). Do NOT mark as [P].
 
-- [ ] T003 [S1] Implement `src/gaze_py/analysis.py`:
+- [ ] T003 [S1] Add domain types to `src/gaze_py/taxonomy.py`:
+  - `QualityReport` dataclass (fields per plan.md Domain Types)
+  - `ContractCoverage` dataclass
+  - `OverSpecificationScore` dataclass
+  - `PackageSummary` dataclass
+  - `taxonomy.is_contractual(effect_type: SideEffectType) -> bool`
+    (returns True for P0–P1 types: `ReturnValue`, `ErrorReturn`,
+    `ReceiverMutation`, `PointerArgMutation`, `GlobalMutation`)
+  - All dataclasses include `to_dict()` methods
+
+- [ ] T004 [S1] Implement `src/gaze_py/analysis.py`:
+  - `GazeParseError(Exception)` — typed wrapper for parse failures
   - `FunctionEffectVisitor(ast.NodeVisitor)` with visit methods
-    per the detection table in plan.md
+    per the detection table in plan.md (including Tier column)
+  - `self._arg_names: set[str]` populated from `node.args` in
+    `visit_FunctionDef` (distinguishes arg mutations from other)
   - `analyze_function(node: ast.FunctionDef, module: str) -> list[SideEffect]`
   - `analyze_module(source: str, module_path: str) -> list[AnalysisResult]`
+    — catches `SyntaxError` → raises `GazeParseError`
+    — catches `RecursionError` → appends `RECURSION_LIMIT` warning
+  - `analyze_path(path: Path) -> list[AnalysisResult]`
+    — resolves with `Path.resolve()`, validates within project root
+    — walks with `Path.rglob("*.py")`, excludes hidden dirs and `__pycache__/`
+    — catches encoding errors → raises `GazeParseError`
   - ID generation: `"se-" + sha256(module:func:type:location)[:8]`
-  - Nested function scoping: skip inner `FunctionDef` bodies by
-    default
 
-- [ ] T004 [P] [S1] Verify all T002 tests pass. Fix until green.
+- [ ] T005 [P] [S1] Verify all T002 tests pass. Fix until green.
   Run: `uv run pytest tests/test_analysis.py -v`
+  (Skip `@pytest.mark.slow` unless running explicitly.)
 
-**Checkpoint**: `uv run pytest tests/test_analysis.py` — all green,
-zero false positives on `pure.py` fixture.
+**Checkpoint**: `uv run pytest tests/test_analysis.py -m "not slow"`
+— all green, zero false positives on `pure.py` fixture.
 
 ---
 
@@ -59,175 +88,225 @@ specification.
 
 **Write tests FIRST — ensure they FAIL before implementing.**
 
-- [ ] T005 [S2] Create `tests/testdata/quality/` with paired
+- [ ] T006 [S2] Create `tests/testdata/quality/` with paired
   fixtures:
-  `src_basic.py` + `test_basic.py` (return value, covered),
-  `src_raises.py` + `test_raises.py` (pytest.raises, covered),
-  `src_multi.py` + `test_partial.py` (50% coverage),
-  `src_incidental.py` + `test_incidental.py` (over-specification),
-  `src_inline.py` + `test_inline.py` (inline call pattern)
+  `src_basic.py` + `test_basic.py` (SC-014: return value, covered),
+  `src_raises.py` + `test_raises.py` (SC-015: pytest.raises),
+  `src_multi.py` + `test_partial.py` (SC-018: 50% coverage),
+  `src_incidental.py` + `test_incidental.py` (SC-017: over-spec),
+  `src_inline.py` + `test_inline.py` (SC-019: inline call),
+  `src_no_assert.py` + `test_no_assert.py` (SC-016: gap_hints)
 
-- [ ] T006 [P] [S2] Write `tests/test_quality.py` — one test per
-  acceptance scenario in spec.md US2 (SC-001 through SC-006),
-  plus edge cases. Tests MUST fail before T007.
+- [ ] T007 [S2] Write `tests/test_quality.py` — one test per
+  acceptance scenario SC-014 through SC-019, plus edge cases.
+  Tests MUST fail before T008.
+  IMPORTANT: Construct `SideEffect` objects directly (do NOT call
+  `analyze_function()`) to keep S2 tests isolated from S1.
+  Include assertions on specific field values:
+  - SC-016: assert `coverage.gap_hints` is `list[str]`, non-empty
+  - SC-017: assert `over_spec.count == 1` and
+    `over_spec.suggestions[0]` is a non-empty string
+  NOTE: T007 depends on T006 (fixtures must exist). Do NOT mark [P].
 
-- [ ] T007 [S2] Implement `src/gaze_py/quality.py`:
+- [ ] T008 [S2] Implement `src/gaze_py/quality.py`:
   - `AssertionVisitor(ast.NodeVisitor)` with recognised patterns
     per plan.md assertion mapper design
   - `map_assertions(test_source: str, target_effects: list[SideEffect], target_func: str) -> QualityReport`
   - `compute_contract_coverage(report: QualityReport) -> ContractCoverage`
+    — delegates to `taxonomy.is_contractual()` for classification
+    — `gap_hints` is `list[str]`, parallel to `gaps`
   - `compute_over_specification(report: QualityReport) -> OverSpecificationScore`
+    — `suggestions` is `list[str]`, one per incidental assertion
   - Target function resolution: name convention + call inspection
+  - `pytest.warns` maps to `StderrWrite` only (not `LogWrite`)
+  - Malformed test file: raises `GazeParseError`
+  - Empty test file: returns `ContractCoverage(percentage=0.0, ...)`
 
-- [ ] T008 [P] [S2] Verify all T006 tests pass. Fix until green.
+- [ ] T009 [P] [S2] Verify all T007 tests pass. Fix until green.
   Run: `uv run pytest tests/test_quality.py -v`
 
 **Checkpoint**: `uv run pytest tests/test_quality.py` — all green.
-Contract coverage formula verified against hand-computed values.
+Coverage formula verified against hand-computed values for SC-018.
 
 ---
 
 ## Phase 3 — S3: Report Formatters + GazeCRAP Update
 
 **Goal**: JSON and text formatters. Schema-compatible output.
-GazeCRAP formula updated to use contract coverage.
+GazeCRAP formula aliased for contract coverage.
 
-- [ ] T009 [S3] Create `src/gaze_py/report/__init__.py` (empty
-  package root).
+**Write tests FIRST — ensure they FAIL before implementing.**
 
-- [ ] T010 [P] [S3] Implement `src/gaze_py/report/schema.py`:
+- [ ] T010 [S3] Write `tests/test_report_json.py` (BEFORE
+  implementing formatters):
+  - Tests MUST fail initially (no implementation yet)
+  - Validate analysis JSON against `ANALYSIS_SCHEMA` via
+    `jsonschema.validate()` (SC-022)
+  - Validate quality JSON against `QUALITY_SCHEMA` via
+    `jsonschema.validate()` (SC-026)
+  - Verify top-level keys are `"version"` and `"results"` (SC-023)
+  - Verify `metadata` fields: `"gaze_py_version"` present,
+    `"python_version"` present, `"go_version"` absent,
+    `"duration_ms"` present (SC-024)
+  - Verify `jq`-compatible structure (assert via Python dict
+    key access: `output["results"][0]["side_effects"]`)
+
+- [ ] T011 [P] [S3] Write `tests/test_report_text.py` (BEFORE
+  implementing text formatter):
+  - Smoke tests: text output is non-empty, contains function name,
+    contains tier labels (`P0`–`P4`), contains GazeCRAP score
+
+- [ ] T012 [S3] Create `src/gaze_py/report/__init__.py`:
+  - Export `build_metadata(version: str, start_ns: int) -> dict`
+    — assembles `gaze_version`, `gaze_py_version`, `python_version`,
+    `duration_ms` (from `start_ns` to now), `timestamp`, `warnings`
+    — single source of truth for metadata assembly across formatters
+
+- [ ] T013 [P] [S3] Implement `src/gaze_py/report/schema.py`:
   - `ANALYSIS_SCHEMA` constant: Draft 2020-12 JSON Schema for
-    analysis report (mirrors Go `internal/report/schema.go` with
-    ADR-002 adaptations: `python_version`, `gaze_py_version`,
-    no `ssa_degraded`)
+    analysis report (ADR-002 adaptations: `python_version`,
+    `gaze_py_version`, no `ssa_degraded`)
   - `QUALITY_SCHEMA` constant: Draft 2020-12 JSON Schema for
     quality report
+  - Add `jsonschema>=4.18` to `pyproject.toml` dev dependencies
 
-- [ ] T011 [P] [S3] Implement `src/gaze_py/report/json.py`:
+- [ ] T014 [P] [S3] Implement `src/gaze_py/report/json.py`:
   - `write_analysis_json(results: list[AnalysisResult], version: str, out: IO) -> None`
   - `write_quality_json(reports: list[QualityReport], summary: PackageSummary, version: str, out: IO) -> None`
+  - Uses `report.build_metadata()` for metadata — no duplication
   - Top-level keys: `version`, `results` (analysis) /
     `quality_reports`, `quality_summary` (quality)
-  - Metadata: `gaze_version`, `gaze_py_version`, `python_version`,
-    `duration_ms`, `timestamp`, `warnings`
 
-- [ ] T012 [P] [S3] Implement `src/gaze_py/report/text.py`:
+- [ ] T015 [P] [S3] Implement `src/gaze_py/report/text.py`:
   - `write_analysis_text(results: list[AnalysisResult], out: IO) -> None`
   - `write_quality_text(reports: list[QualityReport], out: IO) -> None`
+  - Use `rich.Table` / `rich.Console` for output (python.md CS-009)
   - Per-function table: effect type, tier, location, description
   - Summary line: GazeCRAP score, contract coverage %
 
-- [ ] T013 [P] [S3] Update `src/gaze_py/crap.py`:
-  - Add `compute_gazecrap(complexity: int, contract_coverage: float) -> float`
-    using contract coverage in place of line coverage
-  - Preserve existing `compute_crap` (line-coverage CRAP) for
-    backwards compatibility — do not remove
+- [ ] T016 [P] [S3] Update `src/gaze_py/crap.py`:
+  - Verify `gaze_crap_score(complexity, contract_coverage_pct)`
+    already exists and matches S3 SC-020/SC-021 formula
+  - Add `compute_gazecrap` as an alias:
+    `compute_gazecrap = gaze_crap_score`
+  - Preserve `crap_score()` (line-coverage CRAP) unchanged
+  - Do NOT rename or remove any existing functions
 
-- [ ] T014 [P] [S3] Write `tests/test_report_json.py`:
-  - Validate JSON output against `ANALYSIS_SCHEMA` using
-    `jsonschema.validate()`
-  - Add `jsonschema` to `pyproject.toml` dev dependencies
-  - Verify `jq '.results[0].side_effects'` parses correctly
-  - Verify ADR-002 fields: `python_version` present,
-    `go_version` absent, `gaze_py_version` present
+- [ ] T017 [S3] Verify all schema and crap tests pass:
+  `uv run pytest tests/test_report_json.py tests/test_report_text.py tests/test_crap.py -v`
+  Add new parametrized test cases to `test_crap.py` for SC-020
+  and SC-021 (complexity=5 / coverage=0% → 30; coverage=100% → 5).
 
-- [ ] T015 [P] [S3] Write `tests/test_report_text.py`:
-  - Smoke tests: text output is non-empty, contains function name,
-    contains tier labels (`P0`–`P4`)
-
-- [ ] T016 [S3] Verify GazeCRAP formula: `uv run pytest tests/test_crap.py -v`
-  (existing tests + new contract-coverage cases)
-
-**Checkpoint**: `uv run pytest tests/test_report_json.py tests/test_report_text.py tests/test_crap.py` — all green. JSON validates against schema.
+**Checkpoint**: All Phase 3 tests green. Both `ANALYSIS_SCHEMA`
+and `QUALITY_SCHEMA` validated. Ruff and mypy clean on new files.
 
 ---
 
 ## Phase 4 — S4: CLI Commands
 
 **Goal**: `gaze-py analyze`, `gaze-py quality`, `gaze-py report`
-with `--format` and `--coverprofile` flags.
+with `--format`, `--coverprofile`, and exit code contract.
 
-- [ ] T017 [S4] Expand `src/gaze_py/cli.py`:
-  - Add `analyze` subcommand: accepts `src_path`, `--format=text|json`
-    delegates to `analysis.analyze_module()` + report formatters
-  - Add `quality` subcommand: accepts `tests_path`,
-    `--coverprofile=.coverage`, `--format=text|json`
-    delegates to `quality.map_assertions()` + report formatters
-  - Add `report` subcommand: accepts `src_path tests_path`,
-    `--format=text|json`
-    runs full pipeline: analyze → quality → GazeCRAP → output
-  - Error handling: non-zero exit + clear message for bad paths,
-    missing coverprofile
-
-- [ ] T018 [P] [S4] Write `tests/test_cli.py`:
+- [ ] T018 [S4] Write `tests/test_cli.py` BEFORE expanding cli.py:
+  - Tests MUST fail initially
   - Integration tests using `click.testing.CliRunner`
-  - Test each subcommand with `--format=json` and `--format=text`
-  - Test error paths: missing path, missing coverprofile
+  - Test SC-027 through SC-031 for each subcommand
+  - Test exit codes: 0 on success, 1 on missing path, 1 on
+    missing coverprofile
+  - Test path traversal rejection (SC-012 edge case)
 
-- [ ] T019 [P] [S4] Verify all existing tests still pass:
+- [ ] T019 [S4] Expand `src/gaze_py/cli.py`:
+  - Implement `analyze` subcommand per existing stub:
+    preserve all existing flags; add `--format=text|json`;
+    validate path with `analyze_path()` before analysis begins
+  - Implement `quality` subcommand per existing stub:
+    preserve all existing flags; implement `--coverprofile`
+    (reads `.coverage` via `coverage.CoverageData`); add
+    `--format=text|json`; validate coverprofile path before
+    analysis begins (exit 1 if missing, no partial output)
+  - Implement `report` subcommand: `src_path tests_path`,
+    `--format=text|json`; full pipeline: analyze → quality →
+    GazeCRAP → output
+  - Exit code contract: 0=success, 1=input error, 2=internal
+    error, 3=config error; see spec.md S4 Exit Code Contract
+  - `--ai-mapper` / `--min-contract-coverage` stubs retained
+    but not implemented (deferred per plan.md flag disposition)
+  - Add `coverage` to runtime dependencies in `pyproject.toml`
+
+- [ ] T020 [P] [S4] Verify all existing tests still pass:
   `uv run pytest -x --tb=short`
 
-- [ ] T020 [S4] Run full CI parity check:
+- [ ] T021 [S4] Run full CI parity check:
   `uv run ruff check .`
   `uv run ruff format --check .`
   `uv run mypy src/`
-  `uv run pytest --cov=gaze_py --cov-report=term-missing`
+  `uv run pytest --cov=gaze_py --cov-fail-under=85 --cov-report=term-missing`
   Fix all issues before marking complete.
 
-**Checkpoint**: All tests green. Ruff clean. Mypy clean. Coverage
-report shows new modules at meaningful coverage.
+**Checkpoint**: All tests green. Ruff clean. Mypy clean.
+Coverage ≥ 85% overall; new modules at per-module targets
+(analysis.py ≥ 90%, quality.py ≥ 85%, report/*.py ≥ 80%).
 
 ---
 
 ## Phase 5 — S5: uf init Integration (unbound-force repo)
 
-**Prerequisites**: T020 complete. S4 CLI surface is stable.
+**Prerequisites**: T021 complete. S4 CLI surface is stable.
 Work in `unbound-force` repo on branch `001-gaze-py-engine`.
 
-- [ ] T021 [S5] Add `installGazePy()` to
+- [ ] T022 [S5] Add `installGazePy()` to
   `unbound-force/internal/setup/setup.go`:
   - Check `gaze-py --version` (already installed → skip)
-  - Method dispatch: `uv tool install gaze-py` (preferred),
-    fall back to `pip install gaze-py`
+  - Method dispatch: `uv tool install gaze-py==<version>` (preferred),
+    fall back to `pip install --user gaze-py==<version>`
+  - Version MUST be pinned (not `latest`)
+  - Network failure: return non-nil error with actionable message
+    and manual install command; non-fatal for overall `uf init`
   - Dry-run support: report what would be installed
   - Follow `installGaze()` pattern exactly
 
-- [ ] T022 [P] [S5] Add `gaze-py` to the setup step list in
-  `setup.go`, gated on `detectLang(opts.TargetDir) == "python"`:
+- [ ] T023 [S5] Add `gaze-py` to the setup step list in
+  `setup.go`, gated on `detectLang(opts.TargetDir) == "python"`.
+  NOTE: T023 depends on T022 (`installGazePy` must be defined
+  before it can be referenced). Do NOT mark as [P].
   ```go
   {name: "gaze-py", tool: "gaze-py", install: installGazePy,
    gate: func() bool { return lang == "python" },
    gateDetail: "not a Python project"},
   ```
 
-- [ ] T023 [P] [S5] Create scaffold asset
+- [ ] T024 [P] [S5] Create scaffold asset
   `unbound-force/internal/scaffold/assets/opencode/commands/gaze-report.md`:
   - Description: "Run gaze-py quality analysis on this Python project"
-  - Body: invokes `gaze-py report src/ tests/ --format=json`
+  - Body: checks `gaze-py` on PATH; emits clear error if not found
+    (SC-038); falls back to `.gaze.yaml` for path config;
+    defaults to `gaze-py report src/ tests/ --format=json`
   - Deployed by scaffold for Python projects (language-gated)
 
-- [ ] T024 [S5] Write tests for new setup step in
+- [ ] T025 [S5] Write tests for new setup step in
   `unbound-force/internal/setup/setup_test.go`:
-  - Python project: gaze-py step runs
-  - Go-only project: gaze-py step skipped
-  - Already installed: step returns "already installed"
-  - Dry-run: step reports without executing
+  - SC-032: Python project → gaze-py step runs at pinned version
+  - SC-033: Go-only project → gaze-py step skipped
+  - SC-034: Already installed → step returns "already installed"
+  - SC-036: Dry-run → step reports without executing
+  - SC-037: Network failure → step returns error with message
 
-- [ ] T025 [P] [S5] Run `unbound-force` CI parity:
+- [ ] T026 [P] [S5] Run `unbound-force` CI parity:
   `go test ./...`
   `go vet ./...`
   Fix all issues before marking complete.
 
-- [ ] T026 [P] [S5] Update documentation:
+- [ ] T027 [S5] Update documentation (after T026 green):
   - `unbound-force/AGENTS.md`: note gaze-py install step
   - `unbound-force/CHANGELOG.md`: entry for S5
   - `gaze-py/AGENTS.md`: update architecture tree (analysis.py,
-    quality.py, report/ modules now exist)
+    quality.py, report/ modules now exist; update flat layout note)
   - `gaze-py/CHANGELOG.md`: entry for 001-gaze-py-engine
 
 **Checkpoint**: `go test ./internal/setup/...` green.
 `uf init --dry-run` on a pyproject.toml project reports gaze-py
-step. `/gaze-report` command file deployed by scaffold.
+step with pinned version. `/gaze-report` command deployed by
+scaffold.
 
 ---
 
@@ -235,13 +314,16 @@ step. `/gaze-report` command file deployed by scaffold.
 
 All of the following MUST be true before this spec is marked Done:
 
-- [ ] `uv run pytest` — all green (gaze-py repo)
+- [ ] `uv run pytest -m "not slow"` — all green (gaze-py repo)
+- [ ] `uv run pytest --cov=gaze_py --cov-fail-under=85` — passes
 - [ ] `uv run ruff check .` — clean
 - [ ] `uv run ruff format --check .` — clean
 - [ ] `uv run mypy src/` — clean
-- [ ] JSON output validates against `ANALYSIS_SCHEMA` and `QUALITY_SCHEMA`
+- [ ] Analysis JSON validates against `ANALYSIS_SCHEMA`
+- [ ] Quality JSON validates against `QUALITY_SCHEMA`
 - [ ] `go test ./...` — all green (unbound-force repo)
-- [ ] `uf init --dry-run` on Python project shows gaze-py step
+- [ ] `uf init --dry-run` on Python project shows gaze-py step with pinned version
 - [ ] AGENTS.md updated in both repos
 - [ ] CHANGELOG.md entries in both repos
+- [ ] `unbound-force/website` issue filed for new CLI commands (`analyze`, `quality`, `report`) and `uf init` gaze-py step
 - [ ] `/review-council` run and all REQUEST CHANGES resolved
