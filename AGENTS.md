@@ -58,10 +58,17 @@ Source layout using the `src/` convention:
 src/gaze_py/
   __init__.py      Package root
   cli.py           CLI layer (click commands)
-  taxonomy.py      Domain types: SideEffect, AnalysisResult, Tier, etc.
+  taxonomy.py      Domain types: SideEffect, AnalysisResult, Tier,
+                   QualityReport, ContractCoverage,
+                   OverSpecificationScore, PackageSummary,
+                   AssertionMapping, etc.
   classify.py      Contractual classification engine
   config.py        Configuration file handling (.gaze.yaml)
   crap.py          CRAP score computation and reporting
+  analysis.py      AST side-effect detection engine (S1)
+  quality.py       Assertion mapper and contract coverage (S2)
+  report/          JSON (schema-compatible with Go gaze) and text
+                   formatters (S3)
 tests/
   testdata/        Test fixture packages for analysis
 ```
@@ -70,7 +77,9 @@ All business logic lives under `src/gaze_py/` and is importable as `gaze_py.*`.
 
 ### Key Patterns
 
-- **AST-based analysis**: Python's `ast` module for detecting side effects, return patterns, and mutations.
+- **AST-based analysis**: Python's `ast` module for detecting side effects, return patterns, and mutations. Implemented in `analysis.py`.
+- **Assertion mapping**: `quality.py` maps detected side effects to test assertions, computing contract coverage per function.
+- **Report formatters**: `report/` provides JSON output (schema-compatible with Go gaze, Draft 2020-12) and human-readable text output.
 - **Dataclass domain types**: All domain objects (SideEffect, Score, etc.) are `@dataclass` classes with JSON serialization support.
 - **Testable CLI pattern**: Click commands delegate to core functions. Core functions accept typed parameters and return result objects — no business logic in the CLI layer.
 - **Options dataclasses**: Configurable behavior uses dataclass options rather than long parameter lists.
