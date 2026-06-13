@@ -1,6 +1,11 @@
-"""Test fixture: covers only ReturnValue, not ErrorReturn (SC-018, 50% coverage)."""
+"""Test fixture: covers only ReturnValue, not ErrorReturn (SC-018, 50% coverage).
 
-from tests.testdata.quality.src_multi import process
+This file is parsed as AST by the quality engine — it is never executed.
+The import is intentionally absent; the engine detects calls by name, not
+by resolved symbol.
+"""
+
+# ruff: noqa: F821
 
 
 def test_process_partial() -> None:

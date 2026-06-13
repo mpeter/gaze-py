@@ -1,6 +1,11 @@
-"""Test fixture: calls function but has no assertions (SC-016)."""
+"""Test fixture: calls function but has no assertions (SC-016).
 
-from tests.testdata.quality.src_no_assert import multiply
+This file is parsed as AST by the quality engine — it is never executed.
+The import is intentionally absent; the engine detects calls by name, not
+by resolved symbol.
+"""
+
+# ruff: noqa: F821
 
 
 def test_multiply_no_assert() -> None:
