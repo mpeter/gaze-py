@@ -250,13 +250,240 @@ class Metadata:
 
 @dataclass
 class AnalysisResult:
+    """Complete analysis result for one function under test."""
+
     target: FunctionTarget
     side_effects: list[SideEffect] = field(default_factory=list)
     metadata: Optional[Metadata] = None
 
     def to_dict(self) -> dict[str, object]:
+        """Return a JSON-serialisable dict representation."""
         return {
             "target": self.target.to_dict(),
             "side_effects": [se.to_dict() for se in self.side_effects],
             "metadata": self.metadata.to_dict() if self.metadata else None,
         }
+
+
+# ---------------------------------------------------------------------------
+# Quality / assertion mapper domain types (S2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AssertionMapping:
+    """Mapping of one test assertion to a side effect.
+
+    Attributes:
+        assertion_text: Source text of the assert statement.
+        location: File and line reference in ``file.py:line`` format.
+        confidence: Mapping confidence score in the range 0–100.
+        mapped_effect: The matched ``SideEffectType``, or ``None`` if
+            the assertion could not be mapped to any known effect.
+        unmapped_reason: Short token explaining why the assertion was
+            not mapped.  One of ``"helper_param"``, ``"inline_call"``,
+            or ``"no_effect_match"``.  ``None`` when ``mapped_effect``
+            is set.
+    """
+
+    assertion_text: str
+    location: str
+    confidence: int
+    mapped_effect: SideEffectType | None = None
+    unmapped_reason: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-serialisable dict representation."""
+        d: dict[str, object] = {
+            "assertion_text": self.assertion_text,
+            "location": self.location,
+            "confidence": self.confidence,
+        }
+        if self.mapped_effect is not None:
+            d["mapped_effect"] = self.mapped_effect.value
+        if self.unmapped_reason is not None:
+            d["unmapped_reason"] = self.unmapped_reason
+        return d
+
+
+@dataclass
+class ContractCoverage:
+    """Contract coverage metrics for one test function.
+
+    Attributes:
+        percentage: Fraction of contractual effects covered, expressed
+            as a value in the range 0.0–100.0.
+        covered_count: Number of contractual effects that have at least
+            one mapped assertion.
+        total_contractual: Total number of contractual effects detected
+            in the function under test.
+        gaps: Contractual ``SideEffect`` instances that have no
+            corresponding assertion in the test.
+        gap_hints: Suggested assert snippets, one per entry in
+            ``gaps``, to guide the developer toward full coverage.
+    """
+
+    percentage: float
+    covered_count: int
+    total_contractual: int
+    gaps: list[SideEffect] = field(default_factory=list)
+    gap_hints: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-serialisable dict representation."""
+        return {
+            "percentage": self.percentage,
+            "covered_count": self.covered_count,
+            "total_contractual": self.total_contractual,
+            "gaps": [e.to_dict() for e in self.gaps],
+            "gap_hints": self.gap_hints,
+        }
+
+
+@dataclass
+class OverSpecificationScore:
+    """Over-specification metrics for one test function.
+
+    Attributes:
+        count: Number of assertions that target incidental effects.
+        ratio: Fraction of all assertions that are over-specified,
+            in the range 0.0–1.0.
+        incidental_assertions: ``AssertionMapping`` entries whose
+            ``mapped_effect`` is classified as incidental.
+        suggestions: One plain-English suggestion per entry in
+            ``incidental_assertions`` explaining how to remove the
+            over-specification.
+    """
+
+    count: int
+    ratio: float
+    incidental_assertions: list[AssertionMapping] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-serialisable dict representation."""
+        return {
+            "count": self.count,
+            "ratio": self.ratio,
+            "incidental_assertions": [a.to_dict() for a in self.incidental_assertions],
+            "suggestions": self.suggestions,
+        }
+
+
+@dataclass
+class QualityReport:
+    """Quality analysis result for one test function.
+
+    Attributes:
+        test_function: Fully-qualified name of the test function.
+        test_location: File and line reference for the test function.
+        target_function: Identity and location of the function under
+            test.
+        contract_coverage: Coverage metrics for contractual effects.
+        over_specification: Over-specification metrics.
+        ambiguous_effects: ``SideEffect`` instances whose
+            classification could not be determined with confidence.
+        unmapped_assertions: Assertions that could not be mapped to
+            any detected side effect.
+        assertion_count: Total number of assert statements found in
+            the test function.
+        assertion_detection_confidence: Overall confidence (0–100)
+            that all assertions in the test were detected correctly.
+    """
+
+    test_function: str
+    test_location: str
+    target_function: FunctionTarget
+    contract_coverage: ContractCoverage
+    over_specification: OverSpecificationScore
+    ambiguous_effects: list[SideEffect] = field(default_factory=list)
+    unmapped_assertions: list[AssertionMapping] = field(default_factory=list)
+    assertion_count: int = 0
+    assertion_detection_confidence: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-serialisable dict representation."""
+        return {
+            "test_function": self.test_function,
+            "test_location": self.test_location,
+            "target_function": self.target_function.to_dict(),
+            "contract_coverage": self.contract_coverage.to_dict(),
+            "over_specification": self.over_specification.to_dict(),
+            "ambiguous_effects": [e.to_dict() for e in self.ambiguous_effects],
+            "unmapped_assertions": [a.to_dict() for a in self.unmapped_assertions],
+            "assertion_count": self.assertion_count,
+            "assertion_detection_confidence": self.assertion_detection_confidence,
+        }
+
+
+@dataclass
+class PackageSummary:
+    """Summary metrics across all test functions in a package.
+
+    Attributes:
+        total_tests: Total number of test functions analysed.
+        average_contract_coverage: Mean contract coverage percentage
+            across all test functions (0.0–100.0).
+        total_over_specifications: Sum of over-specification counts
+            across all test functions.
+        assertion_detection_confidence: Mean assertion-detection
+            confidence across all test functions (0–100).
+        worst_coverage_tests: ``QualityReport`` entries for the test
+            functions with the lowest contract coverage, sorted
+            ascending by ``contract_coverage.percentage``.
+    """
+
+    total_tests: int
+    average_contract_coverage: float
+    total_over_specifications: int
+    assertion_detection_confidence: int
+    worst_coverage_tests: list[QualityReport] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-serialisable dict representation."""
+        return {
+            "total_tests": self.total_tests,
+            "average_contract_coverage": self.average_contract_coverage,
+            "total_over_specifications": self.total_over_specifications,
+            "assertion_detection_confidence": self.assertion_detection_confidence,
+            "worst_coverage_tests": [r.to_dict() for r in self.worst_coverage_tests],
+        }
+
+
+# ---------------------------------------------------------------------------
+# Classification helpers
+# ---------------------------------------------------------------------------
+
+# Contractual effect types: P0 and P1 effects that are expected
+# observable outputs of a function.  Used by the assertion mapper (S2).
+# Design note: frozenset chosen over a set literal so that membership
+# tests are O(1) and the constant cannot be mutated at runtime
+# (SOLID Open/Closed — extend by adding new types, not by modifying
+# this set directly; callers should use ``is_contractual()``).
+_CONTRACTUAL_TYPES: frozenset[SideEffectType] = frozenset(
+    {
+        SideEffectType.ReturnValue,
+        SideEffectType.ErrorReturn,
+        SideEffectType.SentinelError,
+        SideEffectType.ReceiverMutation,
+        SideEffectType.PointerArgMutation,
+        SideEffectType.GlobalMutation,
+    }
+)
+
+
+def is_contractual(effect_type: SideEffectType) -> bool:
+    """Return ``True`` if the side effect type is contractual (P0–P1).
+
+    Contractual effects are expected observable outputs that tests
+    should assert on.  Incidental effects are implementation details
+    that tests should not over-specify.
+
+    Args:
+        effect_type: The ``SideEffectType`` to classify.
+
+    Returns:
+        ``True`` when *effect_type* is in the contractual set,
+        ``False`` otherwise.
+    """
+    return effect_type in _CONTRACTUAL_TYPES

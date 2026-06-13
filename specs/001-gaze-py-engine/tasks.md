@@ -21,7 +21,7 @@ on the fixture set.
 
 **Write tests FIRST — ensure they FAIL before implementing.**
 
-- [ ] T001 [S1] Create `tests/testdata/analysis/` with one fixture
+- [x] T001 [S1] Create `tests/testdata/analysis/` with one fixture
   file per effect type:
   `returns.py`, `raises.py`, `globals.py`, `arg_mutation.py`,
   `receiver_mutation.py`, `stdout.py`, `stderr.py`,
