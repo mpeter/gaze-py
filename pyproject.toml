@@ -5,6 +5,20 @@ description = "Python-native GazeCRAP analysis engine for contract-aware test qu
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "Jay Flowers" }]
+readme = "README.md"
+keywords = ["testing", "static-analysis", "code-quality", "crap-score", "side-effects", "test-coverage"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
 dependencies = [
     "click>=8.1",
     "coverage>=7.0",
@@ -12,6 +26,12 @@ dependencies = [
     "rich>=13.0",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/unbound-force/gaze-py"
+Repository = "https://github.com/mpeter/gaze-py"
+Issues = "https://github.com/mpeter/gaze-py/issues"
+Changelog = "https://github.com/mpeter/gaze-py/blob/main/CHANGELOG.md"
 
 [project.scripts]
 gaze-py = "gaze_py.cli:main"
@@ -45,6 +65,7 @@ exclude = ["tests/testdata/analysis/syntax_error.py"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "TCH", "RUF"]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 markers = [
     "slow: marks tests as slow (deselect with '-m not slow')",
 ]
