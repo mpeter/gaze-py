@@ -6,7 +6,7 @@ compatibility: Requires openspec CLI.
 metadata:
   author: openspec
   version: "1.0"
-  generatedBy: "1.2.0"
+  generatedBy: "1.4.1"
 ---
 
 Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
@@ -56,10 +56,10 @@ Depending on what the user brings, you might:
 │     Use ASCII diagrams liberally        │
 ├─────────────────────────────────────────┤
 │                                         │
-│   ┌────────┐         ┌────────┐        │
-│   │ State  │────────▶│ State  │        │
-│   │   A    │         │   B    │        │
-│   └────────┘         └────────┘        │
+│      ┌────────┐         ┌────────┐      │
+│      │ State  │────────▶│ State  │      │
+│      │   A    │         │   B    │      │
+│      └────────┘         └────────┘      │
 │                                         │
 │   System diagrams, state machines,      │
 │   data flows, architecture sketches,    │
@@ -72,50 +72,6 @@ Depending on what the user brings, you might:
 - Identify what could go wrong
 - Find gaps in understanding
 - Suggest spikes or investigations
-
-**Use Dewey for investigation**
-
-When exploring ideas or investigating problems, use Dewey as
-the primary context source:
-
-- `dewey_semantic_search` to find conceptually related content
-  across all indexed sources (specs, issues, docs)
-- `dewey_similar` to find documents similar to the one being
-  explored
-- `dewey_traverse` to follow relationships between related
-  documents
-- `dewey_semantic_search_filtered` to narrow searches by source
-  type (e.g., only GitHub issues, only web docs)
-
-Dewey provides cross-repo context that direct file reads cannot
--- it finds related content even when different terminology is
-used.
-
-If Dewey is unavailable, fall back to direct file reads using
-the Read and Grep tools, and reference convention packs for
-standards.
-
-**Dewey Availability Tiers**
-
-Adjust context retrieval based on Dewey availability:
-
-**Tier 3 (Full Dewey)**: Use `dewey_semantic_search`,
-`dewey_search`, `dewey_traverse`, and
-`dewey_semantic_search_filtered` for comprehensive cross-repo
-and toolstack context.
-
-**Tier 2 (Graph-only, no embedding model)**: Use
-`dewey_search` and `dewey_traverse` for keyword-based and
-structural queries. Semantic search is unavailable.
-
-**Tier 1 (No Dewey)**: Fall back to direct file operations:
-- Use the Read tool to read local specs, backlog items, and
-  convention packs
-- Use the Grep tool for keyword search across the codebase
-- Reference `.opencode/uf/packs/` for coding standards
-
-All tiers produce valid results. Higher tiers provide richer
-cross-repo context but are never required.
 
 ---
 
@@ -146,11 +102,10 @@ Think freely. When insights crystallize, you might offer:
 
 If the user mentions a change or you detect one is relevant:
 
-1. **Read existing artifacts for context**
-   - `openspec/changes/<name>/proposal.md`
-   - `openspec/changes/<name>/design.md`
-   - `openspec/changes/<name>/tasks.md`
-   - etc.
+1. **Resolve and read existing artifacts for context**
+   - Run `openspec status --change "<name>" --json`.
+   - Use `changeRoot`, `artifactPaths`, and `actionContext` from the status JSON.
+   - Read existing files from `artifactPaths.<artifact>.existingOutputPaths`.
 
 2. **Reference them naturally in conversation**
    - "Your design mentions using Redis, but we just realized SQLite fits better..."
@@ -158,14 +113,14 @@ If the user mentions a change or you detect one is relevant:
 
 3. **Offer to capture when decisions are made**
 
-   | Insight Type | Where to Capture |
-   |--------------|------------------|
-   | New requirement discovered | `specs/<capability>/spec.md` |
-   | Requirement changed | `specs/<capability>/spec.md` |
-   | Design decision made | `design.md` |
-   | Scope changed | `proposal.md` |
-   | New work identified | `tasks.md` |
-   | Assumption invalidated | Relevant artifact |
+    | Insight Type               | Where to Capture               |
+    |----------------------------|--------------------------------|
+    | New requirement discovered | `specs/<capability>/spec.md` |
+    | Requirement changed        | `specs/<capability>/spec.md` |
+    | Design decision made       | `design.md`                  |
+    | Scope changed              | `proposal.md`                |
+    | New work identified        | `tasks.md`                   |
+    | Assumption invalidated     | Relevant artifact              |
 
    Example offers:
    - "That's a design decision. Capture it in design.md?"
@@ -271,7 +226,7 @@ User: A CLI tool that tracks local dev environments
 You: That changes everything.
 
      ┌─────────────────────────────────────────────────┐
-     │         CLI TOOL DATA STORAGE                  │
+     │          CLI TOOL DATA STORAGE                  │
      └─────────────────────────────────────────────────┘
 
      Key constraints:

@@ -6,7 +6,7 @@ compatibility: Requires openspec CLI.
 metadata:
   author: openspec
   version: "1.0"
-  generatedBy: "1.2.0"
+  generatedBy: "1.4.1"
 ---
 
 Implement tasks from an OpenSpec change.
@@ -24,60 +24,13 @@ Implement tasks from an OpenSpec change.
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx-apply <other>`).
 
-1a. **Validate branch**
-
-   Run `git rev-parse --abbrev-ref HEAD` to get the current branch.
-
-   - If the current branch is `opsx/<change-name>`: proceed.
-   - If the current branch is NOT `opsx/<change-name>`: **STOP** with error:
-     > "Must be on branch `opsx/<change-name>` to implement this change.
-     > Run: `git checkout opsx/<change-name>`"
-
-1b. **Retrieve implementation context from Dewey**
-
-   Before implementing, query Dewey for relevant patterns:
-
-   - `dewey_semantic_search` with the task description to find
-     similar implementations in other repos
-   - `dewey_semantic_search_filtered` with `source_type: "web"`
-     to find relevant toolstack documentation
-   - `dewey_search` for convention pack references related to the
-     task's domain
-
-   Use the retrieved context to follow established patterns and
-   avoid reinventing solutions that already exist in the ecosystem.
-
-   If Dewey is unavailable, proceed with direct file reads of
-   convention packs and local code examples.
-
-   **Dewey Availability Tiers**
-
-   Adjust context retrieval based on Dewey availability:
-
-   **Tier 3 (Full Dewey)**: Use `dewey_semantic_search`,
-   `dewey_search`, `dewey_traverse`, and
-   `dewey_semantic_search_filtered` for comprehensive cross-repo
-   and toolstack context.
-
-   **Tier 2 (Graph-only, no embedding model)**: Use
-   `dewey_search` and `dewey_traverse` for keyword-based and
-   structural queries. Semantic search is unavailable.
-
-   **Tier 1 (No Dewey)**: Fall back to direct file operations:
-   - Use the Read tool to read local specs, backlog items, and
-     convention packs
-   - Use the Grep tool for keyword search across the codebase
-   - Reference `.opencode/uf/packs/` for coding standards
-
-   All tiers produce valid results. Higher tiers provide richer
-   cross-repo context but are never required.
-
 2. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json
    ```
    Parse the JSON to understand:
    - `schemaName`: The workflow being used (e.g., "spec-driven")
+   - `planningHome`, `changeRoot`, and `actionContext`: planning scope and edit constraints
    - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
 
 3. **Get apply instructions**
@@ -87,7 +40,7 @@ Implement tasks from an OpenSpec change.
    ```
 
    This returns:
-   - Context file paths (varies by schema - could be proposal/specs/design/tasks or spec/tests/implementation/docs)
+   - `contextFiles`: artifact ID -> array of concrete file paths (varies by schema - could be proposal/specs/design/tasks or spec/tests/implementation/docs)
    - Progress (total, complete, remaining)
    - Task list with status
    - Dynamic instruction based on current state
@@ -97,9 +50,11 @@ Implement tasks from an OpenSpec change.
    - If `state: "all_done"`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
+   **Workspace guard:** If status JSON reports `actionContext.mode: "workspace-planning"` and `allowedEditRoots` is empty, explain that full workspace apply is not supported in this slice. Treat linked repos and folders as read-only context, ask the user to select an affected area through an explicit implementation workflow, and STOP before editing files.
+
 4. **Read context files**
 
-   Read the files listed in `contextFiles` from the apply instructions output.
+   Read every file path listed under `contextFiles` from the apply instructions output.
    The files depend on the schema being used:
    - **spec-driven**: proposal, specs, design, tasks
    - Other schemas: follow the contextFiles from CLI output
@@ -118,17 +73,6 @@ Implement tasks from an OpenSpec change.
    - Show which task is being worked on
    - Make the code changes required
    - Keep changes minimal and focused
-   - **Test generation step** (after code changes, before marking complete):
-     1. Check if `gaze` is available (`which gaze` or `go run ./cmd/gaze` in the gaze repo). If not available, silently skip this step (gaze is optional — composability).
-     2. Identify changed `.go` files: `git diff --name-only` (exclude `*_test.go` files)
-     3. For each changed `.go` file, determine its package path
-     4. Run `gaze quality --format=json ./path/to/package/...` to get contract coverage data
-     5. Check if any new/modified functions have `ContractCoverage.Gaps`
-     6. If gaps exist, invoke the `gaze-test-generator` agent (via Task tool with `subagent_type: general`) with the function source, gaps, hints, and fix strategy
-     7. Verify generated tests compile and pass
-     8. **Mode enforcement**: Read `.gaze.yaml` for `test_generation.mode` (default: `mandatory`)
-        - `mandatory`: block task completion until generated tests compile and pass. If tests fail, pause and ask for guidance.
-        - `advisory`: show results but proceed to mark `[x]` regardless
    - Mark task complete in the tasks file: `- [ ]` → `- [x]`
    - Continue to next task
 
@@ -136,7 +80,6 @@ Implement tasks from an OpenSpec change.
    - Task is unclear → ask for clarification
    - Implementation reveals a design issue → suggest updating artifacts
    - Error or blocker encountered → report and wait for guidance
-   - Test generation fails in mandatory mode → report and wait for guidance
    - User interrupts
 
 7. **On completion or pause, show status**
