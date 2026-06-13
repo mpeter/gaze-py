@@ -103,3 +103,5 @@
 - [x] `ruff`, `mypy` clean
 - [x] Coverage ≥ 85%
 - [x] fieldkit-cmd smoke test passes (quality_reports > 0)
+
+<!-- code-review: passed -->
