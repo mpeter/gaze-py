@@ -162,7 +162,10 @@ def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
         )
         raise SystemExit(1)
 
-    raw_text = cov_path.read_text(encoding="utf-8")
+    try:
+        raw_text = cov_path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise GazeConfigError(f"Cannot read coverage JSON {cov_path}: {e}") from e
     try:
         raw = json.loads(raw_text)
     except json.JSONDecodeError as e:
@@ -353,7 +356,7 @@ def _run_pipeline(
     root = src_path.resolve() if src_path.is_dir() else src_path.resolve().parent
     py_files = _collect_py_files(src_path.resolve())
 
-    engine = ClassificationEngine(config)
+    engine = ClassificationEngine(config.contractual_threshold, config.incidental_threshold)
     all_targets: list[FunctionTarget] = []
 
     for py_file in py_files:

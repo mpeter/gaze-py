@@ -7,6 +7,7 @@ is performed here.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -367,8 +368,6 @@ def test_text_output_is_plain_string() -> None:
 
 def test_text_output_renders_known_complexity() -> None:
     """to_text() renders the actual complexity value as a number."""
-    import re
-
     _known_complexity = 7
     target = _make_target(complexity=_known_complexity)
     result = _make_result(targets=[target])

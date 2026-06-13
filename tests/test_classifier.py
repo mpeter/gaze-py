@@ -9,7 +9,6 @@ from __future__ import annotations
 import pytest
 
 from gaze_py.classify.engine import ClassificationEngine
-from gaze_py.config.loader import GazeConfig
 from gaze_py.taxonomy.effects import TIER_MAP, SideEffectType
 from gaze_py.taxonomy.models import FunctionTarget, SideEffect
 
@@ -87,11 +86,7 @@ def _engine(
     incidental_threshold: int = _DEFAULT_INCIDENTAL_THRESHOLD,
 ) -> ClassificationEngine:
     """Build a ClassificationEngine with the given thresholds."""
-    cfg = GazeConfig(
-        contractual_threshold=contractual_threshold,
-        incidental_threshold=incidental_threshold,
-    )
-    return ClassificationEngine(cfg)
+    return ClassificationEngine(contractual_threshold, incidental_threshold)
 
 
 # ---------------------------------------------------------------------------
