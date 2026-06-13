@@ -63,7 +63,7 @@ The one exception is PyPI publication, which changes the install path.
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` (v1.0.0).
+Assessed against `.specify/memory/constitution.md` (v1.1.1).
 
 ### I. Accuracy
 
@@ -108,3 +108,23 @@ against known fixture inputs.
 All items here are either explicitly OPTIONAL in requirements.md (O1–O7) or
 are fields defined in taxonomy-reference.md as nullable (effect_confidence_range).
 No item contradicts any porting contract.
+
+### VI. Composability First
+
+**Assessment**: PASS
+
+O1-O7 are additive capabilities — each can be implemented independently
+without breaking the existing R1–R5 pipeline. No new required runtime
+dependencies are introduced by any deferred item. Optional integrations
+continue to degrade gracefully when absent.
+
+### VII. Supply Chain Integrity
+
+**Assessment**: PASS
+
+No new supply chain items are introduced by this tracking change. All
+deferred capabilities (O1–O7) will require their own OpenSpec changes, each
+of which must include a supply chain assessment. Dependabot configuration
+(`.github/dependabot.yml`, `ecosystem: github-actions`) is tracked as a
+follow-up obligation per the constitution v1.1.0 amendment note and does not
+block this change.

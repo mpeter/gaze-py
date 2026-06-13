@@ -40,7 +40,7 @@ All source code is new — the repo is currently a clean scaffold with no
 - **CLI**: `gazepy analyze <path>` and `gazepy report <src> <tests>` commands
   via Click, installed as the `gazepy` binary.
 - **Package infrastructure**: `pyproject.toml` with `name = "gaze-py"`,
-  `import gaze`, ruff/mypy/pytest config, CI workflow.
+  `import gaze_py`, ruff/mypy/pytest config, CI workflow.
 
 ### Modified Capabilities
 
@@ -52,7 +52,7 @@ None.
 
 ## Impact
 
-- Creates `src/gaze/` package tree (taxonomy, analysis, classify, crap,
+- Creates `src/gaze_py/` package tree (taxonomy, analysis, classify, crap,
   report, cli subpackages)
 - Creates `tests/` with conformance test suite and `tests/testdata/` fixtures
 - Creates `pyproject.toml`
@@ -136,3 +136,6 @@ is introduced.
   config loading. No `rich` dependency is added (CS-009 exception documented
   in design.md — gaze-py output is agent-consumed, not interactive terminal UI).
 - New dependencies are documented in `pyproject.toml` with version constraints.
+- Dependabot configuration (`.github/dependabot.yml`, `ecosystem: github-actions`)
+  is a known pending obligation per the constitution v1.1.0 amendment note. It
+  is tracked as a follow-up OpenSpec change and does not block this initial port.
