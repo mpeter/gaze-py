@@ -32,7 +32,18 @@ When ready to implement, run /opsx-apply
    ```
    This creates a scaffolded change in the planning home resolved by the CLI with `.openspec.yaml`.
 
-3. **Get the artifact build order**
+3. **Create and checkout a branch**
+
+   Run `git rev-parse --abbrev-ref HEAD` to get the current branch.
+
+   - If already on `opsx/<name>` (exact match): skip branch creation, proceed.
+   - If on a different `opsx/*` branch: **STOP** with error: "Already on branch `opsx/<other>` — finish or archive that change first."
+   - If on `main` or any non-opsx branch: create and checkout the branch:
+     ```bash
+     git checkout -b opsx/<name>
+     ```
+
+4. **Get the artifact build order**
    ```bash
    openspec status --change "<name>" --json
    ```
@@ -41,7 +52,19 @@ When ready to implement, run /opsx-apply
    - `artifacts`: list of all artifacts with their status and dependencies
    - `planningHome`, `changeRoot`, `artifactPaths`, and `actionContext`: path and scope context. Use these instead of assuming repo-local paths.
 
-4. **Create artifacts in sequence until apply-ready**
+5. **Retrieve context from Dewey**
+
+   Before drafting the proposal, query Dewey for relevant context:
+
+   - Use `dewey_semantic_search` with the change description to find related specs, past proposals, and similar changes
+   - Use `dewey_semantic_search_filtered` with `source_type: "github"` to find related issues across the organization
+   - Use `dewey_traverse` on any discovered related specs to understand dependencies
+
+   Use the retrieved context to inform the proposal's scope, identify potential conflicts with existing work, and reference relevant prior decisions.
+
+   If Dewey is unavailable, proceed without cross-repo context — use direct file reads of local specs and backlog items instead.
+
+6. **Create artifacts in sequence until apply-ready**
 
    Use the **TodoWrite tool** to track progress through the artifacts.
 
@@ -73,7 +96,7 @@ When ready to implement, run /opsx-apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
-5. **Show final status**
+7. **Show final status**
    ```bash
    openspec status --change "<name>"
    ```
@@ -102,3 +125,10 @@ After completing all artifacts, summarize:
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
 - Verify each artifact file exists after writing before proceeding to next
+
+## Guardrails
+
+- **NEVER implement code changes** — this command creates artifacts ONLY (proposal, design, specs, tasks)
+- **NEVER commit, push, or create PRs** — those are /finale's responsibility
+- **NEVER run /unleash, /opsx-apply, or /cobalt-crush** — the user decides when to implement
+- After artifacts are complete, STOP and prompt the user to run /unleash, /opsx-apply, or /cobalt-crush
