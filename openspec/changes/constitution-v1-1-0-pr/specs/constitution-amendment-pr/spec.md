@@ -16,7 +16,7 @@ The implementation SHALL create a dedicated branch `opsx/constitution-v1.1.0` an
 #### Scenario: Commit body contains SYNC IMPACT REPORT
 - **GIVEN** the commit has been made
 - **WHEN** `git log -1 --format=%B` is run
-- **THEN** the commit body contains the version change (`1.0.0 → 1.1.0`), the two new principle names, and the Autonomous Collaboration scope-out note
+- **THEN** the commit body contains both version changes (`1.0.0 → 1.1.0` MINOR and `1.1.0 → 1.1.1` PATCH), the two new principle names, the taxonomy count clarification (37→38), and the Autonomous Collaboration scope-out note
 
 ### Requirement: CI passes on the branch before PR submission
 The implementation SHALL verify that the GitHub Actions CI workflow passes green on `opsx/constitution-v1.1.0` before the PR is opened. The CI gate is a mandatory merge prerequisite per the constitution's Development Workflow section.
@@ -45,13 +45,13 @@ The implementation SHALL open a PR from `opsx/constitution-v1.1.0` to `main` wit
 #### Scenario: PR created with correct base and head
 - **GIVEN** the branch has been pushed and CI is green
 - **WHEN** the PR is opened using `gh pr create`
-- **THEN** base is `main`, head is `opsx/constitution-v1.1.0`, and the title is `chore: ratify gaze-py constitution v1.1.0`
+- **THEN** base is `main`, head is `opsx/constitution-v1.1.0`, and the title is `chore: ratify gaze-py constitution v1.1.1`
 
 #### Scenario: PR description complete
 - **GIVEN** the PR has been created
 - **WHEN** the PR description is read
 - **THEN** it contains all of the following:
-  - Summary of v1.1.0 changes (version bump, two new principles, parent constitution reference)
+  - Summary of v1.1.1 changes (MINOR v1.1.0: two new principles, parent constitution reference; PATCH v1.1.1: taxonomy count clarification 37→38)
   - Names and brief descriptions of Principle VI (Composability First) and Principle VII (Supply Chain Integrity)
   - Autonomous Collaboration scope-out rationale consistent with the SYNC IMPACT REPORT in `.specify/memory/constitution.md` (lines 14–22 of the v1.1.0 header)
   - Review-council sign-off checklist naming each of the four applicable reviewers (Guard, Architect, SRE, Adversary) with their final verdict and review date

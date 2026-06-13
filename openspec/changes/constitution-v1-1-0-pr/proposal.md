@@ -1,6 +1,6 @@
 ## Why
 
-The gaze-py constitution was amended from v1.0.0 to v1.1.0 (adding Principles VI and VII, parent constitution reference, and SHA-pinned CI actions) but the changes sit uncommitted on `main`. The constitution's own governance rules require all amendments to go through a feature branch, review-council approval, and PR — this change formalizes that process and gets the amendment merged correctly.
+The gaze-py constitution was amended from v1.0.0 to v1.1.1 (MINOR v1.1.0: Principles VI and VII, parent constitution reference, SHA-pinned CI actions; PATCH v1.1.1: taxonomy count clarification 37→38) but the changes sit uncommitted on `main`. The constitution's own governance rules require all amendments to go through a feature branch, review-council approval, and PR — this change formalizes that process and gets the amendment merged correctly.
 
 Note: although the constitution's Development Workflow section exempts "constitution amendments" from the spec-first requirement, that exemption applies to the *content* of the amendment (the edits to `constitution.md`). The *PR process itself* (branching, review-council, merge) is governed by the Governance section and is not exempt — hence this OpenSpec.
 
@@ -11,6 +11,7 @@ Note: although the constitution's Development Workflow section exempts "constitu
 - Run `/review-council` to obtain APPROVE from all applicable Divisor reviewers (Guard, Architect, SRE, Adversary)
 - Resolve any REQUEST CHANGES findings
 - Open and merge the PR against `main` using a merge commit (not squash, not rebase)
+- PR title: `chore: ratify gaze-py constitution v1.1.1`
 
 ## Capabilities
 
