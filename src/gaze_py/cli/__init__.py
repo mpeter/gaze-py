@@ -1,4 +1,4 @@
-"""gaze-py CLI — Click-based command interface matching Go gaze flags.
+"""gazepy CLI — Click-based command interface matching Go gaze flags.
 
 Architecture note (AP-002): CLI commands are thin delegation layers.
 All business logic lives in ``analysis``, ``quality``, and ``report``
@@ -198,9 +198,9 @@ def _derive_target_func(test_file: Path) -> str:
 
 
 @click.group()
-@click.version_option(version=__version__, prog_name="gaze-py")
+@click.version_option(version=__version__, prog_name="gazepy")
 def main() -> None:
-    """gaze-py: Python-native GazeCRAP analysis engine."""
+    """gazepy: Python-native GazeCRAP analysis engine."""
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +308,7 @@ def crap(
     target: str | None,
 ) -> None:
     """Compute CRAP and GazeCRAP scores."""
-    click.echo("gaze-py crap: not yet implemented")
+    click.echo("gazepy crap: not yet implemented")
 
 
 # ---------------------------------------------------------------------------
@@ -541,7 +541,7 @@ def report(
 @main.command()
 def schema() -> None:
     """Print the GazeCRAP JSON schema."""
-    click.echo("gaze-py schema: not yet implemented")
+    click.echo("gazepy schema: not yet implemented")
 
 
 # ---------------------------------------------------------------------------
@@ -553,7 +553,7 @@ def schema() -> None:
 @click.argument("target", required=False)
 def docscan(target: str | None) -> None:
     """Scan documentation for contract signals."""
-    click.echo("gaze-py docscan: not yet implemented")
+    click.echo("gazepy docscan: not yet implemented")
 
 
 # ---------------------------------------------------------------------------
@@ -565,7 +565,7 @@ def docscan(target: str | None) -> None:
 @click.option("--force", is_flag=True, default=False, help="Overwrite existing configuration.")
 def init_cmd(force: bool) -> None:
     """Initialize a .gaze.yaml configuration file."""
-    click.echo("gaze-py init: not yet implemented")
+    click.echo("gazepy init: not yet implemented")
 
 
 # ---------------------------------------------------------------------------
@@ -583,7 +583,7 @@ def self_check(
     output_format: str,
 ) -> None:
     """Run self-check diagnostics."""
-    click.echo("gaze-py self-check: not yet implemented")
+    click.echo("gazepy self-check: not yet implemented")
 
 
 if __name__ == "__main__":

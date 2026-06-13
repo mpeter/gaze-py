@@ -34,7 +34,7 @@ Issues = "https://github.com/mpeter/gaze-py/issues"
 Changelog = "https://github.com/mpeter/gaze-py/blob/main/CHANGELOG.md"
 
 [project.scripts]
-gaze-py = "gaze_py.cli:main"
+gazepy = "gaze_py.cli:main"
 
 [dependency-groups]
 dev = [
