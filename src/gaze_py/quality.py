@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field
+from pathlib import Path  # noqa: TC003
 
 from gaze_py.analysis import GazeParseError
 from gaze_py.taxonomy import (
@@ -535,6 +536,10 @@ def _extract_called_names(body: list[ast.stmt]) -> set[str]:
     bodies — only the top-level body is scanned.  This prevents test
     helpers defined inside the test function from polluting the call set.
 
+    Calls where func is not a plain name or attribute (e.g. lambda calls,
+    subscript calls) are not recorded but their arguments are still traversed
+    via generic_visit.
+
     Args:
         body: Statement list (the ``body`` of a function or module).
 
@@ -544,23 +549,84 @@ def _extract_called_names(body: list[ast.stmt]) -> set[str]:
     names: list[str] = []
 
     class _CallVisitor(ast.NodeVisitor):
+        """Collects plain function names from ast.Call nodes."""
+
         def visit_Call(self, node: ast.Call) -> None:
+            """Record the callee name and recurse into arguments."""
             if isinstance(node.func, ast.Name):
                 names.append(node.func.id)
             elif isinstance(node.func, ast.Attribute):
                 names.append(node.func.attr)
+            # Other func types (ast.Lambda, ast.Subscript, ast.IfExp, nested
+            # ast.Call) have no extractable plain name and are intentionally
+            # skipped. generic_visit still recurses into their arguments.
             self.generic_visit(node)
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            """Do not descend into nested function defs."""
             pass  # do not descend into nested function defs
 
         def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            """Do not descend into nested async function defs."""
             pass  # do not descend into nested async function defs
 
     visitor = _CallVisitor()
     for stmt in body:
         visitor.visit(stmt)
     return set(names)
+
+
+def build_test_index(test_dir: Path) -> tuple[dict[str, list[str]], list[str]]:
+    """Build an inverted index mapping source function names to test file sources.
+
+    Scans all ``test_*.py`` files under ``test_dir`` in one pass.  For each
+    test file, discovers every test function (top-level and class methods via
+    ``_iter_test_functions``), collects all function names called in their
+    bodies (via ``_extract_called_names``), and records the file's source text
+    under each called name.
+
+    The result is used by the ``report`` CLI command to match source functions
+    to the test files that cover them, without relying on filename conventions.
+
+    Args:
+        test_dir: Root directory to walk for test files.
+
+    Returns:
+        A tuple of ``(index, warnings)`` where:
+
+        - ``index`` maps plain function name → list of test file source texts
+          (as strings) that contain tests calling that function.  A single
+          source text may appear under multiple keys when the test file
+          calls multiple source functions.  Values are references (not copies)
+          — the source text is stored once per file, referenced from each key.
+        - ``warnings`` is a list of human-readable warning strings for test
+          files that could not be parsed (e.g. syntax errors, recursion limit
+          exceeded).  The caller decides whether to emit them.
+    """
+    index: dict[str, list[str]] = {}
+    warnings: list[str] = []
+    resolved = test_dir.resolve()
+    for test_file in sorted(resolved.rglob("test_*.py")):
+        if any(part.startswith(".") for part in test_file.parts):
+            continue
+        try:
+            src_text = test_file.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue  # binary file — skip silently
+        try:
+            tree = ast.parse(src_text)
+        except SyntaxError as exc:
+            warnings.append(f"skipping {test_file}: syntax error at line {exc.lineno}")
+            continue
+        except RecursionError:
+            warnings.append(f"skipping {test_file}: source nesting depth exceeds Python recursion limit")
+            continue
+        all_called: set[str] = set()
+        for _fn_name, body in _iter_test_functions(tree):
+            all_called |= _extract_called_names(body)
+        for called_name in all_called:
+            index.setdefault(called_name, []).append(src_text)
+    return index, warnings
 
 
 # ---------------------------------------------------------------------------

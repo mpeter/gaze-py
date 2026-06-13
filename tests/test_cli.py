@@ -219,7 +219,7 @@ def test_sc030_report_json_exit_0() -> None:
     """report <src_path> <tests_path> --format=json exits 0 with quality JSON.
 
     The report command emits quality_reports + quality_summary (not raw
-    analysis results). Updated as part of opsx/quality-call-scanning.
+    analysis results).
     """
     runner = CliRunner()
     result = runner.invoke(

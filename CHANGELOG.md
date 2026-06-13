@@ -2,7 +2,15 @@
 
 ## [Unreleased] — 2026-06-13
 
-Spec: specs/001-gaze-py-engine/spec.md
+Spec: openspec/changes/quality-call-scanning/proposal.md
+
+### Breaking Changes
+- `report --format=json` output schema changed from analysis format
+  (`version` + `results`) to quality format (`quality_reports` +
+  `quality_summary`). Consumers of `gaze-py report --format=json`
+  must update their parsers. The previous output was incorrect
+  (emitted raw analysis data instead of quality coverage metrics);
+  this is the intended schema per the original spec.
 
 ### Fixed (opsx/quality-call-scanning)
 - `quality.py`: `map_assertions()` now finds all test functions including

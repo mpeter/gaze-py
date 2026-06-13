@@ -386,20 +386,28 @@ def test_map_assertions_multi_test_merged() -> None:
         "        with pytest.raises(ValueError):\n"
         "            fn(-1)\n"
     )
-    from gaze_py.taxonomy import SideEffectType, Tier
-
     effects = [
         _make_return_effect(),
-        SideEffect(
-            id="se-00000002",
-            type=SideEffectType.ErrorReturn,
-            tier=Tier.P0,
-            location="src.py:2",
-            description="raises",
-            target="ValueError",
-        ),
+        _make_error_effect(),
     ]
     report = map_assertions(test_source, effects, "fn")
     assert report.contract_coverage.percentage == 100.0, (
         f"Both effects should be covered by merged test bodies, got {report.contract_coverage.percentage}%"
     )
+
+
+def test_map_assertions_fallback_when_no_call_detected() -> None:
+    """map_assertions falls back to all test bodies when target_func not called by name.
+
+    When no test function explicitly calls the target, map_assertions uses all
+    test bodies and sets assertion_detection_confidence = 0.
+    """
+    # test_helper calls 'helper', not 'compute' — fallback should activate
+    test_source = "def test_helper():\n    result = helper(1, 2)\n    assert result == 3\n"
+    report = map_assertions(test_source, [_make_return_effect()], "compute")
+    # Fallback activated — confidence must be 0
+    assert report.assertion_detection_confidence == 0, (
+        f"Expected confidence=0 for fallback path, got {report.assertion_detection_confidence}"
+    )
+    # The report must be a well-formed QualityReport (no exception raised)
+    assert isinstance(report.contract_coverage.percentage, float)

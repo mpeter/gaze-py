@@ -357,6 +357,8 @@ def quality(
 
         # Derive target function name from test file name convention.
         # e.g. test_basic.py → "basic"
+        # NOTE: quality command still uses filename heuristic (test_foo.py → foo).
+        # Call-scanning for quality command is tracked as a future OpenSpec change.
         target_func = _derive_target_func(test_file)
 
         try:
@@ -426,10 +428,8 @@ def report(
 
     Exit codes: 0=success, 1=input error, 2=internal error.
     """
-    import ast as _ast
-
     from gaze_py.analysis import GazeParseError
-    from gaze_py.quality import _extract_called_names, _iter_test_functions, map_assertions
+    from gaze_py.quality import build_test_index, map_assertions
     from gaze_py.report.json import write_quality_json
     from gaze_py.report.text import write_quality_text
     from gaze_py.taxonomy import AnalysisResult, PackageSummary
@@ -462,28 +462,14 @@ def report(
 
     results: list[AnalysisResult] = raw_results  # type: ignore[assignment]
 
-    # Phase 2: map assertions — inverted index approach.
-    # Build {func_name: [test_source_text]} in one pass over all test files,
-    # then match each source function to the test files that call it.
-    # This handles module-named test files, class-based suites, and
-    # scenario-named tests without any filename-convention heuristic.
+    # Phase 2: build inverted index and map assertions per source function.
+    # build_test_index() scans all test files once and maps function names
+    # to the test file sources that call them. Handles non-convention layouts
+    # (module-named test files, class-based test suites) without filename heuristics.
     resolved_tests = tests.resolve()
-    test_files = sorted(resolved_tests.rglob("test_*.py"))
-
-    func_to_test_sources: dict[str, list[str]] = {}
-    for test_file in test_files:
-        if any(part.startswith(".") for part in test_file.parts):
-            continue
-        try:
-            src_text = test_file.read_text(encoding="utf-8")
-            tree = _ast.parse(src_text)
-        except (UnicodeDecodeError, SyntaxError):
-            continue
-        all_called: set[str] = set()
-        for _fn_name, body in _iter_test_functions(tree):
-            all_called |= _extract_called_names(body)
-        for called_name in all_called:
-            func_to_test_sources.setdefault(called_name, []).append(src_text)
+    func_to_test_sources, index_warnings = build_test_index(resolved_tests)
+    for warning in index_warnings:
+        click.echo(f"warning: {warning}", err=True)
 
     reports = []
     for result in results:
