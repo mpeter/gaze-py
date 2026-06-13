@@ -194,7 +194,7 @@ MAY produce zero detections.
 
 #### Scenario: ClosureCaptureMutation detected
 - **GIVEN** a function containing `nonlocal x` followed by `x = new_value`
-- **WHEN** the detector runs on the enclosing function
+- **WHEN** the detector runs on the **inner** (nested) function containing the `nonlocal` statement
 - **THEN** a `ClosureCaptureMutation` effect is present
 
 ---
@@ -216,6 +216,11 @@ See CC-002 for clamping specification.
 - **GIVEN** a P1 effect with no signals
 - **WHEN** classified
 - **THEN** score is 60 (50 + 10)
+
+#### Scenario: P2-P4 baseline
+- **GIVEN** a P2 effect with no signals
+- **WHEN** classified
+- **THEN** score is 50 (50 + 0 tier boost)
 
 #### Scenario: Contradiction penalty
 - **GIVEN** an effect with one positive signal (+10) and one negative signal (-10)
@@ -317,6 +322,11 @@ specified in contracts.md.
 - **GIVEN** a function named `GetUser` with a `ReturnValue` effect
 - **WHEN** the naming signal analyzer runs
 - **THEN** a signal with `source="naming"` and `weight=10` is returned
+
+#### Scenario: Naming — contractual prefix does NOT fire for non-implied effect type
+- **GIVEN** a function named `GetUser` with a `LogWrite` effect (logging, not implied by `Get*`)
+- **WHEN** the naming signal analyzer runs
+- **THEN** no naming signal with weight=10 is returned for the LogWrite effect
 
 #### Scenario: Naming — sentinel special case
 - **GIVEN** a module-level exception class named `ErrNotFound`
@@ -596,8 +606,10 @@ taxonomy-reference.md. The following fields MUST be present in the output
 | `fix_strategy_counts` | Summary | Yes (null — O1 deferred) |
 | `gaze_crapload` | Summary | Yes (null — O1 deferred) |
 | `avg_contract_coverage` | Summary | Yes (null — O1 deferred) |
-| `recommended_actions` | Summary | Yes (null when CRAP is null; `[]` when CRAP non-null but no functions in CRAPload) |
-| `effect_confidence_range` | Score | Deferred to future change |
+| `recommended_actions` | Summary | Yes (null when CRAP is null; `[]` when CRAP non-null but no functions in CRAPload). Each entry: `{function: str, file: str, strategy: str, crap: float}` |
+| `crap_threshold` | Summary | Yes (always non-null — from GazeConfig) |
+| `gaze_crap_threshold` | Summary | Yes (always non-null — from GazeConfig) |
+| `effect_confidence_range` | Score | Yes (null — deferred to future change; field MUST be present in Score dataclass and serialize as null per OC-003, not absent) |
 | `ssa_degraded_packages` | Summary | N/A — no SSA in Python |
 
 #### Scenario: Required fields present
@@ -605,7 +617,7 @@ taxonomy-reference.md. The following fields MUST be present in the output
 - **WHEN** serialized to JSON
 - **THEN** the following top-level keys are present: `side_effects`,
   `line_coverage`, `crap`, `gaze_crap`, `contract_coverage`, `fix_strategy`,
-  `quadrant`, `recommended_actions`
+  `quadrant`, `recommended_actions`, `crap_threshold`, `gaze_crap_threshold`
 
 #### Scenario: snake_case enforcement
 - **GIVEN** any JSON output field name
@@ -665,7 +677,7 @@ is null.
 
 The package MUST be buildable as a local wheel via `uv build`, installable
 via `uv tool install dist/gaze_py-*.whl`, expose the `gazepy` binary, and be
-importable as `import gaze`. PyPI publication is deferred to a future change.
+importable as `import gaze_py`. PyPI publication is deferred to a future change.
 
 ---
 
@@ -675,12 +687,11 @@ Recommended actions MUST be sorted by fix strategy priority (add_tests=0,
 add_assertions=1, decompose_and_test=2, decompose=3), then by CRAP score
 descending within each strategy group. The list MUST be capped at 20 entries.
 
-#### Scenario: Sort order
-- **GIVEN** functions with strategies add_tests (CRAP 20), decompose (CRAP 18),
-  add_tests (CRAP 25), add_assertions (CRAP 16)
+#### Scenario: Sort order (including secondary sort within strategy group)
+- **GIVEN** functions: add_tests/CRAP=25, add_tests/CRAP=20, add_assertions/CRAP=22, add_assertions/CRAP=16, decompose/CRAP=18
 - **WHEN** recommended_actions is built
-- **THEN** order is: add_tests/CRAP=25, add_tests/CRAP=20, add_assertions/CRAP=16,
-  decompose/CRAP=18
+- **THEN** order is: add_tests/25, add_tests/20, add_assertions/22, add_assertions/16, decompose/18
+  (primary sort: strategy priority ascending; secondary sort: CRAP descending within each group)
 
 #### Scenario: Cap at 20
 - **GIVEN** 25 functions all in the CRAPload
@@ -692,7 +703,7 @@ descending within each strategy group. The list MUST be capped at 20 entries.
 ### Requirement: Coverage Strategy
 
 All new code MUST have a documented coverage strategy per constitution
-Principle IV. The `--cov=gaze` flag measures coverage of the `src/gaze/`
+Principle IV. The `--cov=gaze_py` flag measures coverage of the `src/gaze_py/`
 package. The 85% floor (`--cov-fail-under=85`) is a floor, not a target.
 
 | Module | Coverage approach |

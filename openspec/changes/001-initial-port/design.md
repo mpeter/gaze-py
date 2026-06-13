@@ -3,7 +3,7 @@
 ## Package Layout
 
 ```
-src/gaze/
+src/gaze_py/
 ├── __init__.py              # __version__ = "0.1.0" only
 ├── taxonomy/
 │   ├── __init__.py
@@ -42,7 +42,7 @@ src/gaze/
     ├── __init__.py
     └── main.py              # @click.group(); analyze + report commands
 
-# Note: src/gaze/quality/ (O1 — assertion mapping) is NOT created in this
+# Note: src/gaze_py/quality/ (O1 — assertion mapping) is NOT created in this
 # change. It will be added in a future OpenSpec change. AGENTS.md documents
 # the target structure including quality/; that structure is aspirational.
 
@@ -231,11 +231,11 @@ exchange for implementation simplicity. These are documented here to bound the
 implementation and prevent over-engineering.
 
 **GlobalMutation**: Detected when a function body contains an explicit
-`ast.Global` statement for name `N` followed by an assignment to `N`. Direct
-assignment to module-level names inside a function body WITHOUT a `global`
-declaration does NOT count as `GlobalMutation` — this clause would require a
-pre-pass to collect all module-level names and is omitted to keep the detector
-stateless per function. The `global_mutation.py` fixture MUST use the explicit
+`ast.Global` statement for name `N` followed by an assignment to `N` within
+the same function body (no implicit module-level name detection — keeps
+detector stateless per function). Direct assignment to module-level names
+inside a function body WITHOUT a `global` declaration does NOT count as
+`GlobalMutation`. The `global_mutation.py` fixture MUST use the explicit
 `global X; X = val` pattern.
 
 **DeferredReturnMutation**: Detected when a `finally:` block contains
@@ -243,6 +243,10 @@ stateless per function. The `global_mutation.py` fixture MUST use the explicit
 contains `ast.Return` whose value is `ast.Name(id=N)`. Name-matching only —
 no cross-block data-flow analysis. This bounds the implementation to a simple
 two-pass within the function node.
+
+> **Important**: The `return` statement MUST be in the main function body,
+> NOT inside the `finally` block. Only name-matching between the `finally`
+> assignment target and the `return` value is performed.
 
 **HTTPResponseWrite**: Detected by parameter name pattern — `.write()` or
 attribute assignment on any function parameter named `response` or `resp`.
@@ -255,6 +259,9 @@ are accepted. This heuristic limitation is intentional.
 ChannelClose. No import tracking or type inference. The `channel_send.py`
 fixture uses `def send(q): q.put(x)` where `q` is a function parameter (no
 `import queue` needed in the fixture).
+
+**ClosureCaptureMutation**: The effect is attributed to the **inner** (nested)
+function containing the `nonlocal` statement, not the outer function.
 
 **CallerDependency data flow**: The `callers: dict[str, int]` map (function
 qualified name → caller module count) is built by the CLI in a pre-pass and
@@ -307,12 +314,18 @@ each analyzed file. This is the output of `coverage json` or
 `pytest --cov-report=json`.
 
 **Failure modes for `--coverage-json`**:
+- Path resolved with `Path.resolve()` before any existence or read operation;
+  resolved path is used for all subsequent operations
 - File does not exist → `GazeConfigError` with actionable message, exit non-zero
 - File exists but is not valid JSON → `GazeConfigError` with file path and parse error, exit non-zero
 - File is valid JSON but lacks the `files` key → `GazeConfigError` with field
   name and expected schema, exit non-zero
 - A specific path in the coverage JSON does not match any analyzed file →
   warning emitted, that file analyzed with `line_coverage=None`
+
+When wrapping a `json.JSONDecodeError` when parsing coverage JSON, use
+`raise GazeConfigError(...) from e` to preserve the original parse traceback
+and include the original message in GazeConfigError's message string.
 
 A minimal valid test fixture is provided at `tests/testdata/coverage_sample.json`.
 
@@ -400,7 +413,8 @@ class AnalysisResult:
 ```
 
 `FunctionTarget` carries: `name: str`, `file_path: str`, `line: int`,
-`complexity: int`, `effects: list[SideEffect]`, `score: Score | None`.
+`complexity: int`, `caller_count: int = 0`, `effects: list[SideEffect]`,
+`score: Score | None`.
 
 `Score` carries: `line_coverage: float | None`, `crap: float | None`,
 `gaze_crap: float | None`, `contract_coverage: float | None`,
@@ -410,7 +424,13 @@ class AnalysisResult:
 `Summary` carries: `function_count: int`, `crapload: int`,
 `gaze_crapload: int | None`, `avg_line_coverage: float | None`,
 `avg_contract_coverage: float | None`, `quadrant_counts: dict | None`,
-`fix_strategy_counts: dict | None`, `recommended_actions: list[dict] | None`.
+`fix_strategy_counts: dict | None`,
+`recommended_actions: list[RecommendedAction] | None`,
+`crap_threshold: float`, `gaze_crap_threshold: float`.
+
+Each `RecommendedAction` is a dict with keys: `function` (str — qualified
+function name), `file` (str — relative path), `strategy` (str — fix strategy
+value), `crap` (float — CRAP score).
 
 ### pyproject.toml naming
 
@@ -424,15 +444,15 @@ name = "gaze-py"          # PyPI name (avoids collision with existing "gaze" pac
 requires-python = ">=3.11"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gaze"]   # maps PyPI name "gaze-py" to import name "gaze"
+packages = ["src/gaze_py"]   # maps PyPI name "gaze-py" to import name "gaze_py"
 
 [project.scripts]
-gazepy = "gaze.cli.main:cli"
+gazepy = "gaze_py.cli.main:cli"
 ```
 
-Import: `import gaze` (the directory is `src/gaze/`). Hatchling's `packages`
+Import: `import gaze_py` (the directory is `src/gaze_py/`). Hatchling's `packages`
 setting explicitly maps the src-layout package, ensuring the installed import
-name is `gaze` regardless of the PyPI distribution name. The built wheel will
+name is `gaze_py` regardless of the PyPI distribution name. The built wheel will
 be named `gaze_py-0.1.0-py3-none-any.whl` (hatchling normalizes `gaze-py`).
 
 ### Config loading
@@ -442,6 +462,12 @@ argument to an absolute path, then walk up ancestor directories until
 `.gaze.yaml` is found or the filesystem root is reached. This matches the
 behavior of ruff, mypy, and pyproject.toml discovery.
 
+The path argument MUST be resolved with `Path.resolve()` before the walk begins.
+The walk MUST stop at the first ancestor containing `pyproject.toml` or `.git`
+(project root sentinel) — do not walk above the project root. If neither
+sentinel is found, stop at the filesystem root. This matches ruff/mypy behavior
+and prevents reading malicious `.gaze.yaml` files placed above the project root.
+
 If not found, defaults apply: `contractual_threshold=80`,
 `incidental_threshold=50`, `crap_threshold=15.0`, `gaze_crap_threshold=15.0`.
 
@@ -449,6 +475,17 @@ Config loader MUST validate all threshold values are in sane ranges:
 `contractual_threshold` and `incidental_threshold` in [0, 100];
 `crap_threshold` and `gaze_crap_threshold` > 0. Raise `GazeConfigError` on
 invalid values.
+
+When wrapping a `yaml.YAMLError`, use `raise GazeConfigError(...) from e` to
+preserve the original parse traceback and include the original message in
+GazeConfigError's message string. Same pattern for `json.JSONDecodeError` when
+parsing coverage JSON.
+
+**GazeConfig threshold data flow** (AP-006): GazeConfig is loaded by the CLI
+and threshold values are passed as parameters to `crap()`, `fix_strategy()`,
+`crapload()`, and `ClassificationEngine.classify()` — NOT imported from
+`config/` by those modules. This preserves AP-006 (imports flow toward the
+domain core, not sideways).
 
 ### Report command behavior
 
@@ -514,12 +551,12 @@ the package is published.
 | PointerArgMutation | P0 | Item assignment on a parameter (`param[key] = val`) — see disambiguation above |
 | SliceMutation | P1 | List method calls on a parameter (`.append()`, `.extend()`, `.insert()`, `.pop()`, `.remove()`, `.clear()`) |
 | MapMutation | P1 | Dict method calls on a parameter (`.update()`, `.setdefault()`, `.pop()`, `.clear()`) |
-| GlobalMutation | P1 | `ast.Global` statement + subsequent assignment, or direct assignment to a module-level name |
+| GlobalMutation | P1 | `ast.Global` statement for name N followed by assignment to N within the same function body (no implicit module-level name detection — keeps detector stateless per function) |
 | WriterOutput | P1 | `.write()` called on a function parameter (injected writer pattern) |
 | HTTPResponseWrite | P1 | `.write()` or attribute assignment on a parameter named `response`/`resp` |
 | ChannelSend | P1 | `queue.Queue.put()`, `asyncio.Queue.put()`, `multiprocessing.Queue.put()` |
 | ChannelClose | P1 | `multiprocessing.Queue.close()`, `asyncio.Queue` shutdown patterns |
-| DeferredReturnMutation | P1 | Assignment in `finally:` block to a variable subsequently returned by the function |
+| DeferredReturnMutation | P1 | Assignment in `finally:` block to a variable subsequently returned by the function (return MUST be outside the finally block) |
 | FileSystemWrite | P2 | `open(..., 'w'/'a'/'wb')`, `pathlib.Path.write_text/write_bytes`, `shutil.copy*` |
 | FileSystemDelete | P2 | `os.remove()`, `os.unlink()`, `pathlib.Path.unlink()`, `shutil.rmtree()` |
 | FileSystemMeta | P2 | `os.chmod()`, `os.chown()`, `os.utime()`, `os.symlink()`, `os.link()`, `pathlib.Path.chmod()` |
@@ -539,7 +576,7 @@ the package is published.
 | ReflectionMutation | P4 | `setattr(...)`, `object.__setattr__(...)` |
 | CgoCall | P4 | `ctypes.*`, `cffi.*` |
 | FinalizerRegistration | P4 | `weakref.finalize(...)` |
-| ClosureCaptureMutation | P4 | Assignment to a `nonlocal` variable (`nonlocal x; x = ...`) |
+| ClosureCaptureMutation | P4 | Assignment to a `nonlocal` variable (`nonlocal x; x = ...`) (effect attributed to the **inner** nested function where `nonlocal` is declared) |
 
 Types with no meaningful Python equivalent — defined in taxonomy, detection
 always returns empty, covered by no-op tests asserting empty result:
