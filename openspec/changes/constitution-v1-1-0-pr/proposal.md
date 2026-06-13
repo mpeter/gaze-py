@@ -7,7 +7,7 @@ Note: although the constitution's Development Workflow section exempts "constitu
 ## What Changes
 
 - Create feature branch `opsx/constitution-v1.1.0` from current `main`
-- Commit exactly two files: `.specify/memory/constitution.md` and `.github/workflows/test.yml` — no other files
+- Commit exactly three files: `.specify/memory/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` — no other files
 - Run `/review-council` to obtain APPROVE from all applicable Divisor reviewers (Guard, Architect, SRE, Adversary)
 - Resolve any REQUEST CHANGES findings
 - Open and merge the PR against `main` using a merge commit (not squash, not rebase)

@@ -22,8 +22,8 @@
 
 - [ ] 1.1 Verify no branch named `opsx/constitution-v1.1.0` already exists: `git branch | grep constitution`. If it exists, delete it: `git branch -D opsx/constitution-v1.1.0`
 - [ ] 1.2 Create and switch to branch: `git checkout -b opsx/constitution-v1.1.0`
-- [ ] 1.3 Stage only the amendment files: `git add .specify/memory/constitution.md .github/workflows/test.yml`
-- [ ] 1.4 Verify staged diff is exactly the two expected files: `git diff --cached --name-only` (MUST show only `.specify/memory/constitution.md` and `.github/workflows/test.yml`)
+- [ ] 1.3 Stage only the amendment files: `git add .specify/memory/constitution.md .github/workflows/test.yml .github/dependabot.yml`
+- [ ] 1.4 Verify staged diff is exactly the three expected files: `git diff --cached --name-only` (MUST show only `.specify/memory/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml`)
 - [ ] 1.5 Commit with full body (subject + SYNC IMPACT REPORT summary):
   ```
   git commit -m "chore: ratify gaze-py constitution v1.1.0
@@ -42,9 +42,10 @@
     I. Autonomous Collaboration (org v1.2.0) — not applicable to a standalone
     CLI tool. Revisit if gaze-py gains a service mode or participates in a hero pipeline.
 
-  CI change: uv sync --frozen; actions pinned by SHA (checkout v4.2.2, setup-uv v5.4.2)."
+  CI change: uv sync --frozen; actions pinned by SHA (checkout v4.2.2, setup-uv v5.4.2).
+  Dependabot: .github/dependabot.yml added (github-actions, weekly) to satisfy Principle VII."
   ```
-- [ ] 1.6 Verify commit contains exactly the two expected files: `git show --name-only HEAD`
+- [ ] 1.6 Verify commit contains exactly the three expected files: `git show --name-only HEAD` (MUST show `.specify/memory/constitution.md`, `.github/workflows/test.yml`, `.github/dependabot.yml`)
 - [ ] 1.7 Verify unrelated files remain as working-tree modifications only: `git status` (AGENTS.md, python-custom.md, agent-file-template.md MUST appear as modified but unstaged)
 - [ ] 1.8 Push branch: `git push -u origin opsx/constitution-v1.1.0`
 
