@@ -62,7 +62,37 @@ src = ["src"]
 exclude = ["tests/testdata/analysis/syntax_error.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "TCH", "RUF"]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear (includes B904: exception chaining — CR-005)
+    "A",    # flake8-builtins
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific
+    "PL",   # pylint (includes PLR0913: too many args — supports CR-003)
+    "TRY",  # flake8-try-except-raise (TRY003, TRY300 — supports CR-001, CR-005)
+    "EM",   # flake8-errmsg (no string literals in raise — cleaner exceptions)
+    "G",    # flake8-logging-format
+]
+ignore = [
+    "TRY003",  # allow long exception messages (we prefer descriptive errors)
+    "EM101",   # allow string literals directly in raise (readability)
+    "EM102",   # allow f-strings in raise
+    "PLR0913", # too-many-arguments: enforced in review via CR-003, not as hard error
+    "PLR2004", # magic value comparisons: acceptable in tests
+    "PLC0415", # import not at top of file: enforced in review via CR-004, not as hard error
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/testdata/**" = [
+    "PLW0603", # global statement: intentional in analysis fixtures
+    "F821",    # undefined name: intentional in quality fixtures (bare call sites)
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

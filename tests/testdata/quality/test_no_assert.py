@@ -5,7 +5,6 @@ The import is intentionally absent; the engine detects calls by name, not
 by resolved symbol.
 """
 
-# ruff: noqa: F821
 
 
 def test_multiply_no_assert() -> None:

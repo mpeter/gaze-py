@@ -251,7 +251,7 @@ def test_analysis_text_fallback_no_rich(
     write_analysis_text([analysis_result_with_effects], out)
     content = out.getvalue()
     assert "compute" in content
-    assert any(label in content for label in {"P0", "P1", "P2", "P3", "P4"})
+    assert any(label in content for label in ("P0", "P1", "P2", "P3", "P4"))
 
 
 def test_quality_text_fallback_no_rich(
