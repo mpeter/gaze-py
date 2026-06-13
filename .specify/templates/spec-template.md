@@ -117,6 +117,17 @@
 - **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
 - **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
 
+## Porting Contract Compliance *(mandatory for gaze-py)*
+
+List the porting contract IDs this feature implements or touches, and confirm alignment:
+
+| Contract ID | Description | Status |
+|-------------|-------------|--------|
+| EC-001 | Tier membership — 37 types across P0–P4 | [ ] Verified |
+| SC-001 | CRAP formula | [ ] Verified |
+
+*Add rows for all contracts this feature implements. See `../gaze/docs/porting/contracts.md`.*
+
 ## Assumptions
 
 <!--
