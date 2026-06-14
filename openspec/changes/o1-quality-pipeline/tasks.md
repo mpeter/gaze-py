@@ -1,39 +1,39 @@
 ## 1. Taxonomy additions (output types → taxonomy/models.py)
 
-- [ ] 1.1 Add to `src/gaze_py/taxonomy/models.py`:
+- [x] 1.1 Add to `src/gaze_py/taxonomy/models.py`:
       `AssertionKind` (StrEnum), `AssertionSite` (frozen dataclass),
       `TestTargetPair` (frozen dataclass), `ContractCoverageResult`
       (frozen dataclass with `percentage: float | None` and `reason: str | None`),
       `QualityReport` (frozen dataclass with tuple fields).
       See design.md "taxonomy/models.py additions" for exact signatures.
-- [ ] 1.2 Create `src/gaze_py/quality/__init__.py` with module docstring only
+- [x] 1.2 Create `src/gaze_py/quality/__init__.py` with module docstring only
       (CR-001 — no re-exports, no imports)
-- [ ] 1.3 Create `src/gaze_py/quality/models.py` with `TestFunc` dataclass only
+- [x] 1.3 Create `src/gaze_py/quality/models.py` with `TestFunc` dataclass only
       (mutable @dataclass, not frozen — contains ast.FunctionDef).
 
 ## 2. Test fixtures (tests/testdata/quality/)
 
-- [ ] 2.1 Create `tests/testdata/quality/src/simple.py` — single function
+- [x] 2.1 Create `tests/testdata/quality/src/simple.py` — single function
       returning a computed value; its only effect is ReturnValue
-- [ ] 2.2 Create `tests/testdata/quality/tests/test_simple.py` — `def test_simple():`
+- [x] 2.2 Create `tests/testdata/quality/tests/test_simple.py` — `def test_simple():`
       calls the function, asserts on the return value (100% coverage expected).
       Add `# ruff: noqa: F821` header and AST-fixture comment (CR-002).
-- [ ] 2.3 Create `tests/testdata/quality/src/raises_fn.py` — function that
+- [x] 2.3 Create `tests/testdata/quality/src/raises_fn.py` — function that
       raises a specific exception type
-- [ ] 2.4 Create `tests/testdata/quality/tests/test_raises.py` — uses
+- [x] 2.4 Create `tests/testdata/quality/tests/test_raises.py` — uses
       `pytest.raises(...)` to assert the exception is raised (covers
       RaiseException effect). Add CR-002 noqa header.
-- [ ] 2.5 Create `tests/testdata/quality/src/attribute_mutation.py` — function
+- [x] 2.5 Create `tests/testdata/quality/src/attribute_mutation.py` — function
       that mutates an attribute on a passed-in object (AttributeMutation effect;
       more reliably detectable than GlobalMutation via AST)
-- [ ] 2.6 Create `tests/testdata/quality/tests/test_attribute_mutation.py` —
+- [x] 2.6 Create `tests/testdata/quality/tests/test_attribute_mutation.py` —
       asserts on the mutated attribute after calling the function. CR-002 header.
-- [ ] 2.7 Create `tests/testdata/quality/src/undertested.py` — function with
+- [x] 2.7 Create `tests/testdata/quality/src/undertested.py` — function with
       a contractual ReturnValue effect
-- [ ] 2.8 Create `tests/testdata/quality/tests/test_undertested.py` — calls
+- [x] 2.8 Create `tests/testdata/quality/tests/test_undertested.py` — calls
       the function but makes zero assertions (0% contract coverage expected).
       CR-002 header.
-- [ ] 2.9 Confirm that existing `norecursedirs = ["tests/testdata"]` in
+- [x] 2.9 Confirm that existing `norecursedirs = ["tests/testdata"]` in
       `pyproject.toml` already recursively covers `tests/testdata/quality/`
       — no `pyproject.toml` change needed. Verify using exit code 5
       (EXIT_NOTESTSCOLLECTED): `uv run pytest --collect-only tests/testdata/;
@@ -42,12 +42,12 @@
 
 ## 3. A.1 — Pairing (quality/pairing.py)
 
-- [ ] 3.1 Create `src/gaze_py/quality/pairing.py` with:
+- [x] 3.1 Create `src/gaze_py/quality/pairing.py` with:
       - `find_test_functions(filepath: Path) -> list[TestFunc]`
       - `_extract_call_name(node: ast.Call) -> str | None`
       - `pair_to_targets(test_func: TestFunc, source_functions: list[FunctionTarget]) -> TestTargetPair`
         (three strategies per design.md; empty source_functions → immediate unmatched return)
-- [ ] 3.2 Tests in `tests/test_quality_pairing.py`:
+- [x] 3.2 Tests in `tests/test_quality_pairing.py`:
       - `test_pair_empty_source_functions` — source_functions=[] →
         target_name=None, method="unmatched", confidence=0.0
       - `test_pair_name_convention_exact` — test_foo → foo → confidence=0.9
@@ -62,12 +62,12 @@
 
 ## 4. A.2 — Assertion detection (quality/assertions.py)
 
-- [ ] 4.1 Create `src/gaze_py/quality/assertions.py` with:
+- [x] 4.1 Create `src/gaze_py/quality/assertions.py` with:
       - `detect_assertions(test_func: TestFunc, *, pkg_ast: dict[str, ast.Module] | None = None, max_depth: int = 3) -> list[AssertionSite]`
       - `_extract_referenced_names(expr: ast.expr) -> frozenset[str]`
         (handles Name, Attribute, Subscript, Call — see design.md)
       - Location format: `"file:line:col"` — use `col=0` when unavailable
-- [ ] 4.2 Tests in `tests/test_quality_assertions.py`:
+- [x] 4.2 Tests in `tests/test_quality_assertions.py`:
       - `assert x == y` → STDLIB_EQUALITY, referenced_names={"x","y"}
       - `assert f() == g()` → STDLIB_EQUALITY, referenced_names includes
         "f" and "g" (call names extracted)
@@ -90,11 +90,11 @@
 
 ## 5. A.3 — Assertion mapping (quality/mapper.py)
 
-- [ ] 5.1 Create `src/gaze_py/quality/mapper.py` with:
+- [x] 5.1 Create `src/gaze_py/quality/mapper.py` with:
       - `build_call_bindings(test_func: TestFunc, target_name: str) -> dict[str, str]`
       - `map_assertions_to_effects(assertions: list[AssertionSite], target: FunctionTarget, call_bindings: dict[str, str]) -> list[tuple[AssertionSite, SideEffectType | None]]`
         using first-match-wins across three passes (see design.md)
-- [ ] 5.2 Tests in `tests/test_quality_mapper.py`:
+- [x] 5.2 Tests in `tests/test_quality_mapper.py`:
       - return value binding → maps to ReturnValue (Pass 1)
       - error return binding → maps to ErrorReturn (Pass 1)
       - pytest.raises → maps to RaiseException (Pass 2)
@@ -115,11 +115,11 @@
 
 ## 6. A.4 — Contract coverage (quality/coverage.py)
 
-- [ ] 6.1 Create `src/gaze_py/quality/coverage.py` with:
+- [x] 6.1 Create `src/gaze_py/quality/coverage.py` with:
       - `compute_contract_coverage(target: FunctionTarget, mapped: list[tuple[AssertionSite, SideEffectType | None]], *, config: GazeConfig) -> ContractCoverageResult`
         (uses ClassificationEngine internally to classify each effect; correct field
         name is `effect.type` not `effect.effect_type`; see design.md A.4)
-- [ ] 6.2 Tests in `tests/test_quality_coverage.py`:
+- [x] 6.2 Tests in `tests/test_quality_coverage.py`:
       - all contractual effects covered → percentage=100.0, covered_effects=N,
         total_contractual=N, over_specification_count=0, reason=None
       - zero assertions, contractual effects exist → percentage=0.0,
@@ -139,7 +139,7 @@
 
 ## 7. assess() — pipeline.py
 
-- [ ] 7.1 Create `src/gaze_py/quality/pipeline.py` with:
+- [x] 7.1 Create `src/gaze_py/quality/pipeline.py` with:
       `assess(src_path: Path, tests_path: Path, *, config: GazeConfig, target_func: str | None = None) -> list[QualityReport]`
       - Run `_run_detect_classify()` on src_path
       - Discover test functions in tests_path via `find_test_functions()`
@@ -148,7 +148,7 @@
         `compute_contract_coverage()`
       - If `target_func` is set, filter to reports whose target matches
       - Return list of QualityReport
-- [ ] 7.2 Integration tests in `tests/test_quality_integration.py` using
+- [x] 7.2 Integration tests in `tests/test_quality_integration.py` using
       testdata fixtures from task 2:
       - simple fixture: `percentage == 100.0`, `contract_coverage` non-None
       - raises fixture: RaiseException effect covered, `percentage > 0`
@@ -162,7 +162,7 @@
 
 ## 8. Output wiring (A.5)
 
-- [ ] 8.1 Update `_score_target()` signature in `src/gaze_py/cli/main.py` to:
+- [x] 8.1 Update `_score_target()` signature in `src/gaze_py/cli/main.py` to:
       `_score_target(target, *, line_coverage_frac, config, quality_result=None)`
       Populate `Score.gaze_crap`, `Score.contract_coverage`, `Score.quadrant`,
       `Score.contract_coverage_reason` per design.md A.5 wiring.
@@ -170,7 +170,7 @@
       to `gaze_crap()` and `quadrant()`.
       Existing callers pass no `quality_result` — default None preserves
       backward compatibility.
-- [ ] 8.2 Update `_build_summary()` in `src/gaze_py/cli/main.py` to populate:
+- [x] 8.2 Update `_build_summary()` in `src/gaze_py/cli/main.py` to populate:
       - `gaze_crapload`: count where `score.gaze_crap >= config.gaze_crap_threshold`
       - `avg_contract_coverage`: mean of non-None `score.contract_coverage` values
       - `quadrant_counts`: dict counting each quadrant label
@@ -180,7 +180,7 @@
       - Update `Summary.fix_strategy_counts` docstring in `taxonomy/models.py`
         to reflect it is populated whenever CRAP scores are available (not only
         when O1 has run)
-- [ ] 8.3 Implement the `quality` CLI command in `src/gaze_py/cli/main.py`:
+- [x] 8.3 Implement the `quality` CLI command in `src/gaze_py/cli/main.py`:
       - Remove stub body and stub error message
       - `PATH` positional (required; use `click.Path(exists=False)` and validate
         manually, emitting exit 2 with error if not found)
@@ -199,10 +199,10 @@
       - CI threshold: `--min-contract-coverage` exits 1 if avg coverage below threshold
       - Text output format per design.md (table with Function, Coverage, Status)
       - JSON output: array of QualityReport dicts (NOT wrapped in AnalysisResult)
-- [ ] 8.4 Update `SCHEMA` constant in `src/gaze_py/report/json_formatter.py`
+- [x] 8.4 Update `SCHEMA` constant in `src/gaze_py/report/json_formatter.py`
       to add quality-related fields (gaze_crap, contract_coverage, quadrant,
       gaze_crapload, avg_contract_coverage, quadrant_counts, fix_strategy_counts)
-- [ ] 8.5 Tests for `quality` command in `tests/test_cli.py`:
+- [x] 8.5 Tests for `quality` command in `tests/test_cli.py`:
       - `test_quality_runs_pipeline` — with testdata/quality/src/simple.py fixture,
         exits 0; assert `contract_coverage == 100.0` (not just non-null);
         assert `gaze_crap == complexity` (SC-002: at 100% coverage the cubic
@@ -228,9 +228,9 @@
 
 ## 9. CI gate
 
-- [ ] 9.1 `uv run ruff check .`
-- [ ] 9.2 `uv run ruff format --check .`
-- [ ] 9.3 `uv run mypy --strict src/`
-- [ ] 9.4 `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+- [x] 9.1 `uv run ruff check .`
+- [x] 9.2 `uv run ruff format --check .`
+- [x] 9.3 `uv run mypy --strict src/`
+- [x] 9.4 `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
 
 <!-- spec-review: passed -->

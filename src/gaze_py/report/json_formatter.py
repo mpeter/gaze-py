@@ -20,11 +20,20 @@ from gaze_py.taxonomy.models import AnalysisResult
 # JSON schema for the AnalysisResult output format.
 # Extracted as a module-level constant so the `schema` CLI command can emit it
 # directly without re-serializing a live object (task 6.1).
+# Updated in task 8.4 to reflect quality-related output fields populated by
+# the O1 pipeline (gaze_crap, contract_coverage, quadrant, gaze_crapload,
+# avg_contract_coverage, quadrant_counts, fix_strategy_counts).
 SCHEMA: str = json.dumps(
     {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "AnalysisResult",
-        "description": "gaze-py analysis result envelope (analyze and crap commands).",
+        "description": (
+            "gaze-py analysis result envelope (analyze and crap commands). "
+            "Quality-related fields (gaze_crap, contract_coverage, quadrant, "
+            "gaze_crapload, avg_contract_coverage, quadrant_counts, "
+            "fix_strategy_counts) are populated by the O1 quality pipeline "
+            "when the 'quality' command is used."
+        ),
         "type": "object",
         "required": ["functions", "summary"],
         "properties": {
@@ -40,13 +49,33 @@ SCHEMA: str = json.dumps(
                         "complexity": {"type": "integer"},
                         "side_effects": {"type": "array"},
                         "classification": {"type": ["object", "null"]},
-                        "line_coverage": {"type": ["number", "null"]},
-                        "crap": {"type": ["number", "null"]},
-                        "gaze_crap": {"type": ["number", "null"]},
-                        "contract_coverage": {"type": ["number", "null"]},
+                        "line_coverage": {
+                            "type": ["number", "null"],
+                            "description": "Line coverage fraction [0.0, 1.0] from coverage.py, "
+                            "or null when --coverprofile was not provided.",
+                        },
+                        "crap": {
+                            "type": ["number", "null"],
+                            "description": "CRAP score, or null when line_coverage is null.",
+                        },
+                        "gaze_crap": {
+                            "type": ["number", "null"],
+                            "description": "GazeCRAP score from O1 quality pipeline, "
+                            "or null when O1 has not run.",
+                        },
+                        "contract_coverage": {
+                            "type": ["number", "null"],
+                            "description": "Contract coverage percentage [0, 100] from O1, "
+                            "or null when O1 has not run.",
+                        },
                         "contract_coverage_reason": {"type": ["string", "null"]},
                         "fix_strategy": {"type": ["string", "null"]},
-                        "quadrant": {"type": ["string", "null"]},
+                        "quadrant": {
+                            "type": ["string", "null"],
+                            "description": "Quadrant label (Q1_Safe, Q2_ComplexButTested, "
+                            "Q3_SimpleButUnderspecified, Q4_Dangerous) from O1, "
+                            "or null when both line and contract coverage are unavailable.",
+                        },
                         "effect_confidence_range": {"type": ["array", "null"]},
                     },
                 },
@@ -57,11 +86,29 @@ SCHEMA: str = json.dumps(
                 "properties": {
                     "function_count": {"type": "integer"},
                     "crapload": {"type": ["integer", "null"]},
-                    "gaze_crapload": {"type": ["integer", "null"]},
+                    "gaze_crapload": {
+                        "type": ["integer", "null"],
+                        "description": "Count of functions where GazeCRAP >= gaze_crap_threshold. "
+                        "Populated when O1 quality results are available.",
+                    },
                     "avg_line_coverage": {"type": ["number", "null"]},
-                    "avg_contract_coverage": {"type": ["number", "null"]},
-                    "quadrant_counts": {"type": ["object", "null"]},
-                    "fix_strategy_counts": {"type": ["object", "null"]},
+                    "avg_contract_coverage": {
+                        "type": ["number", "null"],
+                        "description": "Mean contract coverage across all functions with "
+                        "non-null coverage. Populated when O1 quality results are available.",
+                    },
+                    "quadrant_counts": {
+                        "type": ["object", "null"],
+                        "description": "Count of functions per quadrant label. "
+                        "Populated when both line and contract coverage are available.",
+                        "additionalProperties": {"type": "integer"},
+                    },
+                    "fix_strategy_counts": {
+                        "type": ["object", "null"],
+                        "description": "Count of functions per fix strategy. "
+                        "Populated whenever CRAP scores are available (does not require O1).",
+                        "additionalProperties": {"type": "integer"},
+                    },
                     "recommended_actions": {"type": ["array", "null"]},
                     "crap_threshold": {"type": "number"},
                     "gaze_crap_threshold": {"type": "number"},
@@ -80,6 +127,8 @@ def _json_default(obj: Any) -> Any:  # noqa: ANN401  # Any is required — json.
     - enum.Enum subclasses: serialized as their .value (string for StrEnum)
     - tuple: converted to list (dataclasses.asdict converts tuples to lists
       for most cases, but nested tuples in frozen dataclasses may survive)
+    - frozenset: converted to sorted list (AssertionSite.referenced_names is
+      frozenset[str]; sorted for deterministic JSON output)
 
     Args:
         obj: Object that the default JSON encoder cannot handle.
@@ -92,8 +141,8 @@ def _json_default(obj: Any) -> Any:  # noqa: ANN401  # Any is required — json.
     """
     if isinstance(obj, enum.Enum):
         return obj.value
-    if isinstance(obj, tuple):
-        return list(obj)
+    if isinstance(obj, (tuple, frozenset)):
+        return sorted(obj) if isinstance(obj, frozenset) else list(obj)
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 

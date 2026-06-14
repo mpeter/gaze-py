@@ -1,4 +1,4 @@
-"""Tests for the CLI — analyze and crap subcommands.
+"""Tests for the CLI — analyze, crap, and quality subcommands.
 
 Uses click.testing.CliRunner for isolation. No real file system writes
 are performed except reading existing testdata fixtures or using tmp_path.
@@ -11,6 +11,7 @@ the first '{' line so it is robust to any stray lines before the JSON.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
@@ -735,36 +736,204 @@ def test_crap_path_does_not_exist() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task 3: gazepy quality — stub
+# Task 8: gazepy quality — real implementation
 # ---------------------------------------------------------------------------
 
-
-def test_quality_stub_bare_invocation() -> None:
-    """quality exits 1 with 'not yet implemented' in stderr."""
-    runner = CliRunner()
-    result = runner.invoke(cli, ["quality"])
-    assert result.exit_code == 1, f"Expected 1, got {result.exit_code}"
-    assert "not yet implemented" in result.stderr
+# Paths to the quality testdata fixtures.
+_QUALITY_TESTDATA = Path(__file__).parent / "testdata" / "quality"
+_QUALITY_SRC = _QUALITY_TESTDATA / "src"
+_QUALITY_TESTS = _QUALITY_TESTDATA / "tests"
+_QUALITY_SIMPLE_SRC = _QUALITY_SRC / "simple.py"
 
 
-def test_quality_stub_flag_surface(tmp_path: Path) -> None:
-    """quality with flags exits 1 (not 2) and mentions O1 and 002/A."""
+def test_quality_runs_pipeline() -> None:
+    """quality with simple fixture exits 0; contract_coverage==100.0 and gaze_crap==1.0.
+
+    simple_function has complexity=1 and 100% contract coverage.
+    GazeCRAP formula (SC-002): complexity^2 * (1 - contract_frac)^3 + complexity
+    At 100% coverage (frac=1.0): 1^2 * 0^3 + 1 = 1.0.
+    """
     runner = CliRunner()
     result = runner.invoke(
         cli,
-        ["quality", "--format", "json", "--min-contract-coverage", "80", str(tmp_path)],
+        [
+            "quality",
+            str(_QUALITY_SIMPLE_SRC),
+            "--tests",
+            str(_QUALITY_TESTS / "test_simple.py"),
+            "--format=json",
+        ],
     )
-    assert result.exit_code == 1, f"Expected 1, got {result.exit_code}"
-    assert "O1" in result.stderr
-    assert "002/A" in result.stderr
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    reports = json.loads(result.output)
+    assert isinstance(reports, list), f"Expected list, got {type(reports)}"
+    assert len(reports) > 0, "Expected at least one report"
+
+    # Find the report for simple_function.
+    simple_report = next(
+        (r for r in reports if r.get("target_function") == "simple_function"),
+        None,
+    )
+    assert simple_report is not None, f"No report for simple_function in {reports}"
+    cc = simple_report.get("contract_coverage")
+    assert cc is not None, "contract_coverage field missing"
+    assert cc.get("percentage") == 100.0, f"Expected 100.0, got {cc.get('percentage')}"
 
 
-def test_quality_stub_mentions_o1_not_o3() -> None:
-    """quality mentions O1 in stderr and does NOT mention O3 (guard against copy-paste)."""
+def test_quality_auto_discovers_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """quality auto-discovers tests/ when --tests is not provided.
+
+    Sets cwd to testdata/quality/ so that tests/ is found relative to
+    Path(path).parent (which is testdata/quality/src/../ = testdata/quality/).
+    """
+    monkeypatch.chdir(_QUALITY_TESTDATA)
     runner = CliRunner()
-    result = runner.invoke(cli, ["quality"])
-    assert "O1" in result.stderr
-    assert "O3" not in result.stderr
+    result = runner.invoke(
+        cli,
+        ["quality", str(_QUALITY_SIMPLE_SRC), "--format=json"],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    reports = json.loads(result.output)
+    assert len(reports) > 0, "Expected non-empty result from auto-discovery"
+
+
+def test_quality_min_contract_coverage_gate() -> None:
+    """--min-contract-coverage exits 1 when avg coverage is below threshold.
+
+    Uses the undertested fixture which has 0% contract coverage.
+    Threshold of 50% should fail.
+    """
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "quality",
+            str(_QUALITY_SRC / "undertested.py"),
+            "--tests",
+            str(_QUALITY_TESTS / "test_undertested.py"),
+            "--format=json",
+            "--min-contract-coverage=50",
+        ],
+    )
+    assert result.exit_code == 1, f"Expected exit 1, got {result.exit_code}"
+    assert "FAIL" in result.stderr, f"Expected 'FAIL' in stderr: {result.stderr!r}"
+    # Should also mention the specific function name.
+    assert "compute_total" in result.stderr, f"Expected function name in stderr: {result.stderr!r}"
+
+
+def test_quality_format_text() -> None:
+    """quality --format=text exits 0 and shows Contract Coverage header.
+
+    The quality command has no line coverage, so quadrant labels (Q1_Safe,
+    Q4_Dangerous, etc.) must NOT appear in the output.
+    """
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "quality",
+            str(_QUALITY_SIMPLE_SRC),
+            "--tests",
+            str(_QUALITY_TESTS / "test_simple.py"),
+            "--format=text",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    assert "Contract Coverage" in result.output, (
+        f"Expected 'Contract Coverage' header in output: {result.output!r}"
+    )
+    # Quadrant labels must not appear — quality command has no line coverage.
+    quad_labels = ("Q1_Safe", "Q2_ComplexButTested", "Q3_SimpleButUnderspecified", "Q4_Dangerous")
+    for quad_label in quad_labels:
+        assert quad_label not in result.output, (
+            f"Unexpected quadrant label '{quad_label}' in quality text output"
+        )
+
+
+def test_quality_target_flag_filters() -> None:
+    """--target=simple_function restricts output to that function only."""
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "quality",
+            str(_QUALITY_SRC),
+            "--tests",
+            str(_QUALITY_TESTS),
+            "--format=json",
+            "--target=simple_function",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    reports = json.loads(result.output)
+    assert isinstance(reports, list)
+    # All returned reports must target simple_function.
+    for r in reports:
+        assert r.get("target_function") == "simple_function", (
+            f"Expected only simple_function reports, got: {r.get('target_function')}"
+        )
+
+
+def test_quality_target_flag_no_match() -> None:
+    """--target=nonexistent_fn returns empty result and exits 0."""
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "quality",
+            str(_QUALITY_SRC),
+            "--tests",
+            str(_QUALITY_TESTS),
+            "--format=json",
+            "--target=nonexistent_fn",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    reports = json.loads(result.output)
+    assert reports == [], f"Expected empty list, got {reports}"
+
+
+def test_quality_path_not_exists() -> None:
+    """quality with non-existent PATH exits 2 with error message."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["quality", "/nonexistent/path/to/src.py"])
+    assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}"
+    assert "does not exist" in result.stderr or "Error" in result.stderr
+
+
+def test_quality_json_serializable() -> None:
+    """All QualityReport fields are JSON-serializable via dataclasses.asdict().
+
+    Guards against TestFunc or ast.FunctionDef leaking into the output.
+    Uses the gaze-py custom JSON encoder (which handles frozenset and enum)
+    since AssertionSite.referenced_names is frozenset[str].
+    """
+    from gaze_py.config.loader import load_config
+    from gaze_py.quality.pipeline import assess
+    from gaze_py.report.json_formatter import _json_default
+
+    config = load_config(_QUALITY_SIMPLE_SRC)
+    reports = assess(
+        _QUALITY_SIMPLE_SRC.resolve(),
+        _QUALITY_TESTS / "test_simple.py",
+        config=config,
+    )
+    assert len(reports) > 0, "Expected at least one report from simple fixture"
+    for report in reports:
+        # Must not raise TypeError — guards against TestFunc/ast.FunctionDef leaking.
+        serialized = json.dumps(dataclasses.asdict(report), default=_json_default)
+        parsed = json.loads(serialized)
+        assert isinstance(parsed, dict), f"Expected dict, got {type(parsed)}"
 
 
 # ---------------------------------------------------------------------------
