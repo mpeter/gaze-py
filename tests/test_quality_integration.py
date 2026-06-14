@@ -107,10 +107,14 @@ def test_attribute_mutation_fixture_coverage() -> None:
         None,
     )
     assert report is not None, f"No report for set_label. Reports: {reports}"
-    # The function has effects and the test asserts on the mutation.
-    # Coverage may be > 0 or the function may have no contractual effects.
-    # Either way, the pipeline should not error.
-    assert report.contract_coverage is not None or report.target_function is not None
+    # The attribute_mutation fixture's set_label function mutates an attribute
+    # but the detector classifies it as incidental (not contractual), so total_contractual=0.
+    # The pipeline returns a ContractCoverageResult with percentage=None and
+    # reason='no_effects_detected'. Assert the concrete pipeline output.
+    assert report.contract_coverage is not None
+    assert report.contract_coverage.percentage is None
+    assert report.contract_coverage.reason == "no_effects_detected"
+    assert report.contract_coverage.total_contractual == 0
 
 
 # ---------------------------------------------------------------------------

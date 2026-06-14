@@ -388,7 +388,7 @@ def crap(
 
 
 # ---------------------------------------------------------------------------
-# quality command (stub — task 3)
+# quality command
 # ---------------------------------------------------------------------------
 
 
@@ -580,7 +580,6 @@ def _discover_tests_path(src_path: Path) -> Path:
     Raises:
         SystemExit(2): When no tests directory can be found.
     """
-    # H4 fix: is_file() branch returns src_path.parent; is_dir() branch returns src_path itself.
     parent = src_path.parent if src_path.is_file() else src_path
     search_roots = [parent, Path.cwd()]
 
@@ -589,8 +588,7 @@ def _discover_tests_path(src_path: Path) -> Path:
             candidate = root / candidate_name
             if candidate.is_dir():
                 return candidate
-        # H4 fix: return the first matching file (not the directory) to avoid
-        # returning a project root. Also skip if root looks like a project root.
+        # Return the first matching file (not the directory); skip project roots.
         if (root / "pyproject.toml").exists() or (root / "go.mod").exists():
             continue
         test_files = sorted(root.glob("test_*.py"))
@@ -649,14 +647,13 @@ def _emit_quality_text(reports: list[QualityReport], *, src_path: Path) -> None:
             )
             cov_str = f"null ({reason})"
 
-        # GazeCRAP is computed inline from contract coverage and complexity (H6 fix).
+        # GazeCRAP is computed inline from contract coverage and complexity.
         gaze_crap_str = _compute_gaze_crap_for_report(report)
 
         click.echo(f"{fn_col:<30}  {cov_str:>17}  {gaze_crap_str:>8}")
 
     click.echo(sep)
 
-    # Summary line — M6: use typed access instead of hasattr().
     coverages = [
         r.contract_coverage.percentage
         for r in reports
@@ -670,7 +667,7 @@ def _compute_gaze_crap_for_report(report: QualityReport) -> str:
     """Compute GazeCRAP string for a QualityReport in text output.
 
     The quality command does not call _score_target(); GazeCRAP is computed
-    inline from the report's complexity and contract coverage fields (H6 fix).
+    inline from the report's complexity and contract coverage fields.
     Returns "null" when contract coverage or complexity is unavailable.
 
     Args:
@@ -728,7 +725,7 @@ def _check_min_contract_coverage(reports: list[QualityReport], threshold: float)
 
 
 # ---------------------------------------------------------------------------
-# docscan command (stub — task 4)
+# docscan command (not yet implemented — requires O3)
 # ---------------------------------------------------------------------------
 
 
@@ -757,7 +754,7 @@ def docscan(path: str | None, config_path: str | None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# report command (stub — task 5, replaces old (src, tests) signature)
+# report command (not yet implemented — requires O2)
 # ---------------------------------------------------------------------------
 
 
@@ -1157,7 +1154,7 @@ def _run_detect_classify(
     """Run the detect pipeline and optionally classify side effects.
 
     Does NOT compute CRAP scores — use _run_crap() for the full scoring
-    pipeline. Delegates to detect_and_classify() from analysis.runner (H2 fix).
+    pipeline. Delegates to detect_and_classify() from analysis.runner.
     CLI-specific behavior (verbose output, classify flag) is handled here.
 
     Args:

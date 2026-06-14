@@ -87,3 +87,25 @@ gazepy quality src/mypackage/ --min-contract-coverage 80
 |---|---|
 | `gazepy analyze <path> --coverage-json=cov.json` | `gazepy crap <path> --coverprofile=cov.json` |
 | `gazepy report <src> <tests>` | `gazepy crap <src>` |
+
+## [0.1.0] — 2026-06-13
+
+Initial release — Python-native port of the Go gaze GazeCRAP analysis engine.
+
+### Features
+
+- **Side-effect detection engine** — AST-only static analysis of Python source
+  files. Detects 38 observable side-effect types across five tiers (P0–P4),
+  matching the Go gaze taxonomy exactly (EC-001).
+- **CRAP and GazeCRAP scoring** — Implements the CRAP formula
+  (complexity² × (1 − coverage)³ + complexity) and the GazeCRAP variant using
+  contract coverage instead of line coverage (SC-001, SC-002).
+- **Five-signal confidence classification** — Classifies each detected effect
+  as contractual or incidental using configurable confidence thresholds.
+- **JSON output** — Schema-compatible with the Go gaze implementation.
+  Null fields serialize as `null`, not `0.0` or `""` (OC-003).
+- **CLI commands**: `analyze` (detect + classify), `report` (two-argument
+  positional form: `gazepy report <src> <tests>`).
+- **`.gaze.yaml` configuration** — `contractual_threshold` and
+  `incidental_threshold` configurable per-project.
+- **Python 3.11+** — Tested on CPython 3.11, 3.12, 3.13.
