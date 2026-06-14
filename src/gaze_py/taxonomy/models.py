@@ -11,6 +11,7 @@ in report/json_formatter.py. No to_dict() methods are defined here.
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass, field
 
 from gaze_py.taxonomy.effects import SideEffectType, Tier
@@ -156,7 +157,8 @@ class Summary:
         quadrant_counts: Count of functions per quadrant, or None when O1
             has not run.
         fix_strategy_counts: Count of functions per fix strategy, or None
-            when O1 has not run.
+            when no CRAP scores are available. Populated whenever CRAP scores
+            are computed (does NOT require O1 quality assessment).
         recommended_actions: Prioritized list of recommended actions for
             CRAPload functions. None when CRAP is null (coverage not provided);
             empty list when CRAP is computed but no functions are in CRAPload.
@@ -189,3 +191,108 @@ class AnalysisResult:
 
     functions: list[FunctionTarget]
     summary: Summary
+
+
+# ---------------------------------------------------------------------------
+# O1 quality assessment types
+# ---------------------------------------------------------------------------
+
+
+class AssertionKind(enum.StrEnum):
+    """Classification of an assertion pattern found in a test function.
+
+    Values match the canonical assertion taxonomy for the O1 quality pipeline.
+    Per EC-001: StrEnum so values serialize as strings automatically.
+    """
+
+    STDLIB_EQUALITY = "stdlib_equality"
+    STDLIB_NONE_CHECK = "stdlib_none_check"
+    STDLIB_ERROR_CHECK = "stdlib_error_check"
+    STDLIB_TRUTH = "stdlib_truth"
+    STDLIB_RAISES = "stdlib_raises"
+    UNITTEST_EQUAL = "unittest_equal"
+    UNITTEST_NONE = "unittest_none"
+    UNITTEST_RAISES = "unittest_raises"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class AssertionSite:
+    """Detected assertion location in a test function.
+
+    Attributes:
+        location: Source position as "file:line:col" (three-part, matching
+            SideEffect.location format). When column is unavailable from
+            the AST node, use col=0: "file:line:0".
+        kind: Assertion pattern type.
+        depth: 0=direct in test body, 1–3=inside helper function.
+        referenced_names: Variable names referenced in the assertion expression.
+            For calls (e.g., assert f() == g()), collect the function name strings.
+            For subscripts (assert result[0] == 1), collect "result".
+            For attribute access (assert obj.value == 42), collect "obj".
+    """
+
+    location: str
+    kind: AssertionKind
+    depth: int
+    referenced_names: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
+class TestTargetPair:
+    """Pairing between a test function and its inferred target.
+
+    Attributes:
+        test_name: Name of the test function.
+        target_name: Name of the production function (None if unmatched).
+        inference_method: "name_convention" | "call_graph" | "unmatched".
+        confidence: 0.0–1.0.
+    """
+
+    test_name: str
+    target_name: str | None
+    inference_method: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class ContractCoverageResult:
+    """Contract coverage for one test-target pair.
+
+    Attributes:
+        percentage: Contract coverage as percentage [0.0, 100.0], or None
+            when there are no contractual effects (null-not-zero per OC-003).
+            Callers passing this to gaze_crap() or quadrant() MUST divide by 100.
+        covered_effects: Count of contractual effects with ≥1 mapped assertion.
+        total_contractual: Total contractual effects on the target function.
+        over_specification_count: Assertions that map to incidental effects.
+        unmapped_assertions: Assertions that did not map to any effect.
+        reason: "no_contractual_effects" | "no_effects_detected" | None.
+            Set when percentage is None.
+    """
+
+    percentage: float | None
+    covered_effects: int
+    total_contractual: int
+    over_specification_count: int
+    unmapped_assertions: int
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class QualityReport:
+    """Quality assessment result for one test-target pair.
+
+    Attributes:
+        test_function: Name of the test function.
+        target_function: Name of the target function (None if unmatched).
+        assertions: Detected assertion sites in the test function.
+        contract_coverage: Coverage result (None if no target found).
+        warnings: Non-fatal warnings from pairing or mapping.
+    """
+
+    test_function: str
+    target_function: str | None
+    assertions: tuple[AssertionSite, ...]
+    contract_coverage: ContractCoverageResult | None
+    warnings: tuple[str, ...]

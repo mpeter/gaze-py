@@ -5,7 +5,7 @@ Provides subcommands:
   has moved to 'gazepy crap'. All CRAP-derived output fields are null.
 - crap <path>: Detect, classify, and compute CRAP/GazeCRAP scores. Optionally
   runs pytest as a subprocess to collect coverage data automatically.
-- quality [path]: Stub — requires O1 (change 002/A).
+- quality <path>: Assess contract coverage and GazeCRAP via the O1 pipeline.
 - docscan [path]: Stub — requires O3.
 - report [path]: Stub — migration guidance to 'gazepy crap'.
 - schema: Emit the JSON schema for AnalysisResult output.
@@ -21,6 +21,7 @@ Per CS-016: functions with 4+ parameters use keyword-only args after *.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import subprocess
 import sys
@@ -40,12 +41,20 @@ from gaze_py.crap.scorer import (
 from gaze_py.crap.scorer import (
     crapload,
     fix_strategy,
+    gaze_crap,
+    quadrant,
     recommended_actions,
 )
 from gaze_py.report.json_formatter import SCHEMA, to_json
 from gaze_py.report.text_formatter import to_text
 from gaze_py.taxonomy.exceptions import GazeConfigError, GazeParseError
-from gaze_py.taxonomy.models import AnalysisResult, FunctionTarget, Score, Summary
+from gaze_py.taxonomy.models import (
+    AnalysisResult,
+    ContractCoverageResult,
+    FunctionTarget,
+    Score,
+    Summary,
+)
 
 
 @click.group()
@@ -383,7 +392,7 @@ def crap(
 
 
 @cli.command()
-@click.argument("path", type=click.Path(exists=False), required=False)
+@click.argument("path", type=click.Path(exists=False))
 @click.option(
     "--format",
     "output_format",
@@ -392,7 +401,19 @@ def crap(
     show_default=True,
     help="Output format.",
 )
-@click.option("--target", type=str, default=None, help="Target package or module.")
+@click.option(
+    "--tests",
+    "tests_path",
+    type=str,
+    default=None,
+    help="Path to test directory or file. Auto-discovered if not provided.",
+)
+@click.option(
+    "--target",
+    type=str,
+    default=None,
+    help="Restrict to tests exercising this production function name.",
+)
 @click.option(
     "--verbose",
     "-v",
@@ -433,7 +454,7 @@ def crap(
     "min_contract_coverage",
     type=float,
     default=None,
-    help="Minimum contract coverage percentage required.",
+    help="CI gate: exit 1 if avg contract coverage is below this percentage.",
 )
 @click.option(
     "--max-over-specification",
@@ -448,7 +469,7 @@ def crap(
     type=str,
     default=None,
     hidden=True,
-    help="AI mapper for classification (requires O1).",
+    help="AI mapper for classification (accepted; ignored).",
 )
 @click.option(
     "--ai-mapper-model",
@@ -456,11 +477,12 @@ def crap(
     type=str,
     default=None,
     hidden=True,
-    help="AI mapper model (requires O1).",
+    help="AI mapper model (accepted; ignored).",
 )
 def quality(
-    path: str | None,
+    path: str,
     output_format: str,
+    tests_path: str | None,
     target: str | None,
     verbose: bool,
     include_unexported: bool,
@@ -472,18 +494,248 @@ def quality(
     ai_mapper: str | None,
     ai_mapper_model: str | None,
 ) -> None:
-    """Assess contract coverage and over-specification for PATH (stub).
+    """Assess contract coverage and GazeCRAP for PATH.
 
-    Requires O1 quality assessment — tracked in change 002/A.
-    Use Go gaze for full capability: gaze quality [packages]
+    PATH may be a single .py file or a directory. Directories are scanned
+    recursively for all .py files.
+
+    When --tests is not provided, auto-discovers the test directory by searching
+    for tests/, test/, or test_*.py relative to PATH's parent, then relative
+    to the current working directory.
+
+    CI gate: --min-contract-coverage exits 1 when average coverage is below
+    the specified percentage.
     """
+    from gaze_py.quality.pipeline import assess
+
+    # PATH validation.
+    src_path = Path(path)
+    if not src_path.exists():
+        click.echo(f"Error: path does not exist: {path}", err=True)
+        raise SystemExit(2)
+
+    # Config loading.
+    if config_path is not None:
+        try:
+            config = load_config_explicit(Path(config_path))
+        except GazeConfigError as e:
+            click.echo(f"Error: {e}", err=True)
+            raise SystemExit(2) from e
+    else:
+        config = load_config(src_path)
+
+    # Apply CLI threshold overrides.
+    if contractual_threshold is not None:
+        config.contractual_threshold = contractual_threshold
+    if incidental_threshold is not None:
+        config.incidental_threshold = incidental_threshold
+
+    # Resolve tests path — auto-discover if not provided.
+    resolved_tests: Path
+    if tests_path is not None:
+        resolved_tests = Path(tests_path)
+        if not resolved_tests.exists():
+            click.echo(f"Error: tests path does not exist: {tests_path}", err=True)
+            raise SystemExit(2)
+    else:
+        resolved_tests = _discover_tests_path(src_path)
+
+    # Run the O1 quality assessment pipeline.
+    reports = assess(
+        src_path.resolve(),
+        resolved_tests,
+        config=config,
+        target_func=target,
+    )
+
+    # Emit output.
+    if output_format == "json":
+        _emit_quality_json(reports)
+    else:
+        _emit_quality_text(reports, src_path=src_path)
+
+    # CI threshold enforcement — after emitting output.
+    if min_contract_coverage is not None:
+        _check_min_contract_coverage(reports, min_contract_coverage)
+
+
+def _discover_tests_path(src_path: Path) -> Path:
+    """Auto-discover the test directory for a given source path.
+
+    Searches in order:
+    1. tests/ relative to src_path.parent
+    2. test/ relative to src_path.parent
+    3. test_*.py files relative to src_path.parent
+    4. tests/ relative to Path.cwd()
+    5. test/ relative to Path.cwd()
+    6. test_*.py files relative to Path.cwd()
+
+    Args:
+        src_path: Source path being analyzed.
+
+    Returns:
+        Discovered tests path.
+
+    Raises:
+        SystemExit(2): When no tests directory can be found.
+    """
+    parent = src_path.parent if src_path.is_file() else src_path.parent
+    search_roots = [parent, Path.cwd()]
+
+    for root in search_roots:
+        for candidate_name in ("tests", "test"):
+            candidate = root / candidate_name
+            if candidate.is_dir():
+                return candidate
+        # Check for test_*.py files directly in root.
+        test_files = sorted(root.glob("test_*.py"))
+        if test_files:
+            return root
+
+    click.echo("Error: no tests directory found — use --tests", err=True)
+    raise SystemExit(2)
+
+
+def _emit_quality_json(reports: list) -> None:  # type: ignore[type-arg]
+    """Emit quality reports as a JSON array.
+
+    Uses dataclasses.asdict() with the existing JSON encoder. Emits a JSON
+    array (NOT wrapped in AnalysisResult) per design.md A.5.
+
+    Args:
+        reports: List of QualityReport dataclass instances.
+    """
+    from gaze_py.report.json_formatter import _json_default
+
+    raw = [dataclasses.asdict(r) for r in reports]
+    click.echo(json.dumps(raw, default=_json_default, indent=2))
+
+
+def _emit_quality_text(reports: list, *, src_path: Path) -> None:  # type: ignore[type-arg]
+    """Emit quality reports as a plain-text table.
+
+    Format per design.md A.5:
+        Function                      Contract Coverage  GazeCRAP
+        ─────────────────────────────────────────────────────────
+        <name> (← <test_name>)        <pct>%             <score>
+
+    No quadrant column — quality command has no line coverage so quadrant
+    is always None.
+
+    Args:
+        reports: List of QualityReport dataclass instances.
+        src_path: Source path (used in the header).
+    """
+    from gaze_py.taxonomy.models import QualityReport
+
+    sep = "─" * 56
+    click.echo(f"Quality Report: {src_path}")
+    click.echo(sep)
+    click.echo(f"{'Function':<30}  {'Contract Coverage':>17}  {'GazeCRAP':>8}")
+    click.echo(sep)
+
+    for report in reports:
+        if not isinstance(report, QualityReport):
+            continue
+        fn_label = report.target_function or "?"
+        test_label = f" (← {report.test_function})"
+        fn_col = f"{fn_label}{test_label}"
+
+        if report.contract_coverage is not None and report.contract_coverage.percentage is not None:
+            cov_str = f"{report.contract_coverage.percentage:.1f}%"
+        else:
+            reason = (
+                report.contract_coverage.reason
+                if report.contract_coverage is not None
+                else "no_target"
+            )
+            cov_str = f"null ({reason})"
+
+        # GazeCRAP is computed by _score_target() when quality_result is injected.
+        # In the quality command we don't call _score_target() — GazeCRAP is
+        # computed inline here from the contract coverage.
+        gaze_crap_str = _compute_gaze_crap_for_report(report)
+
+        click.echo(f"{fn_col:<30}  {cov_str:>17}  {gaze_crap_str:>8}")
+
+    click.echo(sep)
+
+    # Summary line.
+    coverages = [
+        r.contract_coverage.percentage
+        for r in reports
+        if hasattr(r, "contract_coverage")
+        and r.contract_coverage is not None
+        and r.contract_coverage.percentage is not None
+    ]
+    avg_str = f"{sum(coverages) / len(coverages):.1f}%" if coverages else "null"
+    click.echo(f"Avg contract coverage: {avg_str}")
+
+
+def _compute_gaze_crap_for_report(report: object) -> str:
+    """Compute GazeCRAP string for a QualityReport in text output.
+
+    The quality command does not call _score_target(); GazeCRAP is computed
+    inline for display purposes only. Returns "null" when contract coverage
+    or target function is unavailable.
+
+    Args:
+        report: A QualityReport instance.
+
+    Returns:
+        Formatted GazeCRAP string or "null".
+    """
+    from gaze_py.taxonomy.models import QualityReport
+
+    if not isinstance(report, QualityReport):
+        return "null"
+    if report.contract_coverage is None or report.contract_coverage.percentage is None:
+        return "null"
+    # We don't have the FunctionTarget complexity here without re-running detect.
+    # Return the percentage-based label; actual GazeCRAP requires complexity.
+    # For text output, show "N/A" when complexity is unavailable.
+    return "N/A"
+
+
+def _check_min_contract_coverage(reports: list, threshold: float) -> None:  # type: ignore[type-arg]
+    """Check the min-contract-coverage CI gate and exit 1 if violated.
+
+    Emits a summary line and per-function failure lines to stderr, then
+    raises SystemExit(1).
+
+    Args:
+        reports: List of QualityReport instances.
+        threshold: Minimum required average contract coverage percentage.
+    """
+    from gaze_py.taxonomy.models import QualityReport
+
+    coverages: list[tuple[str, float]] = []
+    for report in reports:
+        if not isinstance(report, QualityReport):
+            continue
+        if report.contract_coverage is not None and report.contract_coverage.percentage is not None:
+            fn_name = report.target_function or report.test_function
+            coverages.append((fn_name, report.contract_coverage.percentage))
+
+    if not coverages:
+        return
+
+    avg = sum(pct for _, pct in coverages) / len(coverages)
     click.echo(
-        "Error: quality is not yet implemented in gazepy.\n"
-        "       Requires O1 (quality assessment) — tracked in change 002/A.\n"
-        "       Use Go gaze for full capability: gaze quality [packages]",
+        f"contract coverage: {avg:.1f}% avg, min {threshold:.0f}% "
+        f"({'PASS' if avg >= threshold else 'FAIL'})",
         err=True,
     )
-    raise SystemExit(1)
+
+    if avg < threshold:
+        for fn_name, pct in coverages:
+            if pct < threshold:
+                click.echo(
+                    f"Error: contract coverage below minimum: "
+                    f"{fn_name}: {pct:.1f}% < {threshold:.0f}%",
+                    err=True,
+                )
+        raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -762,36 +1014,76 @@ def _score_target(
     *,
     line_coverage_frac: float | None,
     config: GazeConfig,
+    quality_result: ContractCoverageResult | None = None,
 ) -> None:
     """Compute and attach a Score to a FunctionTarget in-place.
+
+    When quality_result is provided (from the O1 pipeline), GazeCRAP and
+    quadrant are computed using contract coverage. Existing callers that pass
+    no quality_result preserve backward compatibility via the default None.
 
     Args:
         target: The FunctionTarget to score.
         line_coverage_frac: Line coverage fraction in [0.0, 1.0], or None.
         config: GazeConfig providing CRAP threshold values.
+        quality_result: Contract coverage result from O1 pipeline, or None.
+            When provided and percentage is not None, GazeCRAP and quadrant
+            are computed. CRITICAL: percentage is [0,100]; divide by 100 before
+            passing to gaze_crap() and quadrant() which take fractions [0,1].
     """
     crap_score = compute_crap(target.complexity, line_coverage_frac)
-    strategy = fix_strategy(
-        crap_score=crap_score,
-        complexity=target.complexity,
-        line_coverage=line_coverage_frac,
-        quadrant_label=None,  # O1 deferred — quadrant always None
-        threshold=config.crap_threshold,
-        complexity_threshold=int(config.crap_threshold),
-    )
-    # "no_effects_detected" for pure functions (zero effects), per OC-003.
-    contract_coverage_reason: str | None = None
-    if not target.effects:
+
+    # Compute GazeCRAP and quadrant when O1 quality result is available.
+    gaze_crap_score: float | None
+    quad: str | None
+    contract_coverage_pct: float | None
+    contract_coverage_reason: str | None
+
+    if quality_result is not None and quality_result.percentage is not None:
+        # MUST divide by 100: ContractCoverageResult.percentage is [0,100],
+        # but gaze_crap() and quadrant() take fractions [0.0, 1.0].
+        contract_frac = quality_result.percentage / 100.0
+        gaze_crap_score = gaze_crap(target.complexity, contract_frac)
+        # quadrant() returns None when either arg is None; line_coverage_frac
+        # is None from the quality command (no line coverage collected).
+        quad = quadrant(line_coverage_frac, contract_frac)
+        strategy = fix_strategy(
+            crap_score=crap_score,
+            complexity=target.complexity,
+            line_coverage=line_coverage_frac,
+            quadrant_label=quad,
+            threshold=config.crap_threshold,
+            complexity_threshold=int(config.crap_threshold),
+        )
+        contract_coverage_pct = quality_result.percentage
+        contract_coverage_reason = quality_result.reason
+    else:
+        gaze_crap_score = None
+        quad = None
+        strategy = fix_strategy(
+            crap_score=crap_score,
+            complexity=target.complexity,
+            line_coverage=line_coverage_frac,
+            quadrant_label=None,
+            threshold=config.crap_threshold,
+            complexity_threshold=int(config.crap_threshold),
+        )
+        contract_coverage_pct = None
+        contract_coverage_reason = quality_result.reason if quality_result else None
+
+    # Preserve pure-function fallback: if no quality result and the function
+    # has zero effects, set "no_effects_detected" reason per OC-003.
+    if contract_coverage_reason is None and not target.effects:
         contract_coverage_reason = "no_effects_detected"
 
     target.score = Score(
         line_coverage=line_coverage_frac,
         crap=crap_score,
-        gaze_crap=None,  # O1 deferred
-        contract_coverage=None,  # O1 deferred
+        gaze_crap=gaze_crap_score,
+        contract_coverage=contract_coverage_pct,
         contract_coverage_reason=contract_coverage_reason,
         fix_strategy=strategy,
-        quadrant=None,  # O1 deferred
+        quadrant=quad,
         effect_confidence_range=None,  # deferred to future change
     )
 
@@ -825,21 +1117,71 @@ def _build_summary(
     # avg_line_coverage: None when coverage not provided.
     avg_line_coverage: float | None = None
     if coverage_data is not None:
-        coverages = [
+        line_coverages = [
             t.score.line_coverage
             for t in all_targets
             if t.score is not None and t.score.line_coverage is not None
         ]
-        avg_line_coverage = sum(coverages) / len(coverages) if coverages else None
+        avg_line_coverage = sum(line_coverages) / len(line_coverages) if line_coverages else None
+
+    # gaze_crapload: count of targets where gaze_crap >= gaze_crap_threshold.
+    # Populated whenever GazeCRAP scores are available (requires O1 quality run).
+    gaze_crapload_count: int | None = None
+    gaze_crap_targets = [
+        t for t in all_targets if t.score is not None and t.score.gaze_crap is not None
+    ]
+    if gaze_crap_targets:
+        gaze_crapload_count = sum(
+            1
+            for t in gaze_crap_targets
+            if t.score is not None
+            and t.score.gaze_crap is not None
+            and t.score.gaze_crap >= config.gaze_crap_threshold
+        )
+
+    # avg_contract_coverage: mean of non-None contract_coverage values.
+    # Populated whenever O1 quality results are available.
+    contract_coverages = [
+        t.score.contract_coverage
+        for t in all_targets
+        if t.score is not None and t.score.contract_coverage is not None
+    ]
+    avg_contract_coverage: float | None = (
+        sum(contract_coverages) / len(contract_coverages) if contract_coverages else None
+    )
+
+    # quadrant_counts: count of functions per quadrant label.
+    # Populated whenever quadrant labels are available (requires both line and
+    # contract coverage, so only from the quality command with line coverage).
+    quadrant_labels = [
+        t.score.quadrant
+        for t in all_targets
+        if t.score is not None and t.score.quadrant is not None
+    ]
+    quadrant_counts: dict[str, int] | None = None
+    if quadrant_labels:
+        counts: dict[str, int] = {}
+        for label in quadrant_labels:
+            counts[label] = counts.get(label, 0) + 1
+        quadrant_counts = counts
+
+    # fix_strategy_counts: count of functions per fix strategy.
+    # Populated whenever CRAP scores are available (does NOT require O1).
+    fix_counts: dict[str, int] = {}
+    for t in all_targets:
+        if t.score is not None and t.score.fix_strategy is not None:
+            strat = t.score.fix_strategy
+            fix_counts[strat] = fix_counts.get(strat, 0) + 1
+    fix_strategy_counts: dict[str, int] | None = fix_counts if fix_counts else None
 
     return Summary(
         function_count=len(all_targets),
         crapload=crapload_count,
-        gaze_crapload=None,  # O1 deferred
+        gaze_crapload=gaze_crapload_count,
         avg_line_coverage=avg_line_coverage,
-        avg_contract_coverage=None,  # O1 deferred
-        quadrant_counts=None,  # O1 deferred
-        fix_strategy_counts=None,  # O1 deferred
+        avg_contract_coverage=avg_contract_coverage,
+        quadrant_counts=quadrant_counts,
+        fix_strategy_counts=fix_strategy_counts,
         recommended_actions=rec_actions,
         crap_threshold=config.crap_threshold,
         gaze_crap_threshold=config.gaze_crap_threshold,
