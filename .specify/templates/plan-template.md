@@ -45,6 +45,8 @@
 - [ ] **III. Actionable Output**: Does output identify specific test/function/effect? Are unavailable fields null (not zero)?
 - [ ] **IV. Testability**: Is coverage strategy specified? Do conformance tests reference contract IDs?
 - [ ] **V. Porting Contract Supremacy**: Has the implementer read `../gaze/docs/porting/contracts.md`, `requirements.md`, and `taxonomy-reference.md`? Does this spec contradict any porting contract?
+- [ ] **VI. Composability First**: Does this feature introduce a hard runtime dependency on another hero? Do extension points live at module interfaces? Does `gazepy` remain the sole required entry point?
+- [ ] **VII. Supply Chain Integrity**: Are any new dependencies justified in the spec? Is `uv.lock` up-to-date? Are any new CI actions pinned by commit SHA?
 
 ## Project Structure
 

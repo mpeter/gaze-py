@@ -11,7 +11,7 @@ Auto-generated from active feature plans. Last updated: [DATE]
 - **Language**: Python 3.11+
 - **Package manager**: uv
 - **CLI framework**: Click
-- **Output formatting**: Rich
+- **Output formatting**: click.echo() — no Rich (CR-006)
 - **Analysis**: Python `ast` module (AST-only, no execution)
 - **Testing**: pytest + pytest-cov
 - **Linting**: ruff
@@ -20,7 +20,7 @@ Auto-generated from active feature plans. Last updated: [DATE]
 ## Project Structure
 
 ```text
-src/gaze/
+src/gaze_py/
 ├── taxonomy/     # Domain types — SideEffect, FunctionTarget, etc.
 ├── analysis/     # AST side-effect detection engine
 ├── quality/      # Assertion mapper and contract coverage
@@ -39,8 +39,8 @@ tests/
 
 ```bash
 uv run pytest -m "not slow"                          # Fast test run
-uv run ruff check . && uv run mypy src/              # Lint + typecheck
-uv run pytest --cov=gaze --cov-fail-under=85         # Full CI gate
+uv run ruff check . && uv run mypy --strict src/     # Lint + typecheck
+uv run pytest --cov=gaze_py --cov-fail-under=85      # Full CI gate
 uv run gazepy --help                                 # CLI entry point
 ```
 

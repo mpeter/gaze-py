@@ -123,7 +123,7 @@ List the porting contract IDs this feature implements or touches, and confirm al
 
 | Contract ID | Description | Status |
 |-------------|-------------|--------|
-| EC-001 | Tier membership — 37 types across P0–P4 | [ ] Verified |
+| EC-001 | Tier membership — 38 types across P0–P4 | [ ] Verified |
 | SC-001 | CRAP formula | [ ] Verified |
 
 *Add rows for all contracts this feature implements. See `../gaze/docs/porting/contracts.md`.*

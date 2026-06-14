@@ -1,6 +1,30 @@
 <!--
   SYNC IMPACT REPORT
   ==================
+  Version change: 1.1.1 → 1.1.2
+  Amendment date: 2026-06-14
+
+  Clarification (PATCH):
+    No principle content changed. Template propagation pass applied
+    corrections discovered during /speckit.constitution run:
+
+    plan-template.md:
+      - Constitution Check gate now includes Principles VI and VII.
+        Previous gate only covered I–V; all seven active principles
+        are now represented.
+
+    spec-template.md:
+      - EC-001 row corrected from "37 types" to "38 types" to match
+        the correction already documented in v1.1.1 principle text.
+
+    agent-file-template.md:
+      - Package path corrected: src/gaze/ → src/gaze_py/
+      - --cov target corrected: gaze → gaze_py
+      - mypy invocation corrected: mypy src/ → mypy --strict src/
+      - Output formatting entry corrected: Rich → click.echo() (CR-006)
+
+  Previous SYNC IMPACT REPORT (v1.1.1):
+  ==================
   Version change: 1.1.0 → 1.1.1
   Amendment date: 2026-06-13
 
@@ -298,4 +322,4 @@ MUST be consistent with the principles defined above.
   Constitution Check gate MUST verify alignment with all active principles,
   with explicit sign-off on Principle V (porting contract alignment).
 
-**Version**: 1.1.1 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
+**Version**: 1.1.2 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-14
