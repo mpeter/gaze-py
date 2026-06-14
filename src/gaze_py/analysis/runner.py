@@ -19,6 +19,7 @@ def detect_and_classify(
     config: GazeConfig,
     include_unexported: bool = False,
     function_filter: str | None = None,
+    docs_text: str | None = None,
 ) -> list[FunctionTarget]:
     """Run the detect + classify pipeline on src_path.
 
@@ -31,13 +32,20 @@ def detect_and_classify(
         config: GazeConfig with classification thresholds.
         include_unexported: Include underscore-prefixed functions.
         function_filter: If set, only return functions matching this name.
+        docs_text: Combined text from project documentation files (O3 doc
+            scanning). When provided, augments Signal 5 (docstring_signal)
+            for all classified functions. Default: None (no augmentation).
 
     Returns:
         List of FunctionTarget with effects and classification populated.
     """
     root = src_path if src_path.is_dir() else src_path.parent
     py_files = collect_py_files(src_path)
-    engine = ClassificationEngine(config.contractual_threshold, config.incidental_threshold)
+    engine = ClassificationEngine(
+        config.contractual_threshold,
+        config.incidental_threshold,
+        project_docs_text=docs_text,
+    )
     all_targets: list[FunctionTarget] = []
 
     for py_file in py_files:

@@ -51,6 +51,8 @@ class ClassificationEngine:
         self,
         contractual_threshold: int = 80,
         incidental_threshold: int = 50,
+        *,
+        project_docs_text: str | None = None,
     ) -> None:
         """Initialize the engine with classification thresholds.
 
@@ -59,9 +61,14 @@ class ClassificationEngine:
                 'contractual' label. Must be in [0, 100]. Default: 80.
             incidental_threshold: Maximum confidence score (exclusive) for
                 the 'incidental' label. Must be in [0, 100]. Default: 50.
+            project_docs_text: Combined text from project documentation files
+                (O3 doc scanning). When provided, augments Signal 5
+                (docstring_signal) by appending this text to the per-function
+                docstring. Default: None (no augmentation).
         """
         self._contractual_threshold = contractual_threshold
         self._incidental_threshold = incidental_threshold
+        self._project_docs_text = project_docs_text
 
     def classify(
         self,
@@ -121,8 +128,14 @@ class ClassificationEngine:
         if sig is not None:
             signals.append(sig)
 
-        # Signal 5: Docstring keywords.
-        sig = docstring_signal(docstring, effect.type)
+        # Signal 5: Docstring keywords — augmented with project docs text (O3).
+        # Combine per-function docstring with project-wide documentation so
+        # that behavioral declarations in README/architecture docs contribute
+        # to classification even when individual functions lack docstrings.
+        _combined_doc = (docstring or "") + (
+            "\n" + self._project_docs_text if self._project_docs_text else ""
+        )
+        sig = docstring_signal(_combined_doc if _combined_doc.strip() else None, effect.type)
         if sig is not None:
             signals.append(sig)
 
