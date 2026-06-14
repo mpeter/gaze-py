@@ -71,3 +71,22 @@ sources:
     config:
       path: "../"
       recursive: false
+
+  # GitHub API (issues, PRs, READMEs)
+  - id: github-mpeter
+    type: github
+    name: mpeter org
+    config:
+      org: mpeter
+      repos:
+        - gaze-py
+        - .github
+        - containerfile
+        - dewey
+        - gaze
+        - homebrew-tap
+        - replicator
+        - review-council
+        - unbound-force
+        - website
+    refresh_interval: daily
