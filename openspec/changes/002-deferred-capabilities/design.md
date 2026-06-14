@@ -142,13 +142,18 @@ in the scanned project — not targeted at specific functions.
 
 ## O5 — CI Threshold Enforcement
 
-Add threshold flags to the CLI `analyze` command:
+> **Cross-spec note (cli-parity change)**: The cli-parity change removes CRAP
+> scoring from `analyze` entirely. O5 threshold enforcement MUST target the
+> `crap` command, NOT `analyze`. The design below is superseded — update any
+> future O5 implementation to use `gazepy crap --max-crapload N` instead of
+> `gazepy analyze --max-crapload N`.
+
+Add threshold flags to the CLI `crap` command (NOT `analyze`):
 
 ```
-gazepy analyze <path> \
+gazepy crap <path> \
   --max-crapload 10 \
-  --max-gaze-crapload 5 \
-  --min-contract-coverage 70
+  --max-gaze-crapload 5
 ```
 
 Exit codes:

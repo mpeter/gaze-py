@@ -167,7 +167,7 @@ class Summary:
     """
 
     function_count: int
-    crapload: int
+    crapload: int | None
     gaze_crapload: int | None = None
     avg_line_coverage: float | None = None
     avg_contract_coverage: float | None = None

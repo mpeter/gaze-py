@@ -1,35 +1,43 @@
 # Changelog
 
 All notable changes to gaze-py are documented here.
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
-## [0.1.0] — 2026-06-13
+## [0.2.0] — 2026-06-14
 
-### Added
+### Breaking Changes
 
-- **R1 — Side Effect Detection**: AST-only detection of 38 effect types
-  (P0=5, P1=8, P2=10, P3=9, P4=6) across Python source files. P0 effects
-  detected with zero false negatives; P1-P2 best-effort; P3-P4 in taxonomy
-  with no-op detection.
-- **R2 — Classification**: Five-signal confidence engine (interface
-  satisfaction, API visibility, caller dependency, naming convention,
-  docstring analysis) labels each effect contractual/ambiguous/incidental.
-- **R3 — CRAP Scoring**: CRAP formula using cyclomatic complexity and
-  external line coverage (via `--coverage-json`). Null-not-zero: `crap` is
-  null when coverage is not provided.
-- **R4 — Quadrants and Fix Strategies**: Q1-Q4 quadrant classification and
-  fix strategy assignment (add_tests, decompose_and_test, decompose).
-  Recommended actions sorted by priority, capped at 20.
-- **R5 — Output Formatting**: JSON output (schema-compatible with Go gaze)
-  and human-readable text output via `gazepy analyze` and `gazepy report`.
-- **CLI**: `gazepy analyze <path>` and `gazepy report <src> <tests>`
-  commands via Click, installed as the `gazepy` binary.
-- **Package infrastructure**: `pyproject.toml` (name=gaze-py, import=gaze_py),
-  ruff/mypy/pytest config, local wheel installation via `uv tool install`.
+- **`analyze` JSON schema change**: `analyze` no longer emits CRAP scoring
+  fields. All CRAP-derived fields in `FunctionTarget` (`line_coverage`, `crap`,
+  `gaze_crap`, `fix_strategy`, `quadrant`, `contract_coverage`) are now `null`
+  in `analyze` output. `Summary.crapload` is also `null`. Callers that relied
+  on non-null CRAP fields from `gazepy analyze` must migrate to `gazepy crap`.
 
-### Deferred (planned for future changes)
+- **`report` CLI signature change**: The `report` command signature changes from
+  `gazepy report <src> <tests>` (two positional arguments) to `gazepy report
+  [path]` (one optional positional argument). The old two-argument invocation
+  produces a Click `UsageError` (exit 2). Use `gazepy crap [path]` for CRAP
+  scoring previously available via `gazepy report`.
 
-- GazeCRAP scoring and quadrant classification (requires O1 — quality/
-  assertion mapping)
-- PyPI publication (requires release workflow)
-- Effect confidence range
+- **`--coverage-json` flag removed from `analyze`**: The `--coverage-json` flag
+  has been removed from `gazepy analyze`. It has moved to `gazepy crap` as
+  `--coverprofile`. Update any scripts or agent configs that pass `--coverage-json`
+  to `analyze`.
+
+### New Features
+
+- **`gazepy crap` command**: Full CRAP scoring pipeline. Accepts `PATH`
+  (directory or file), auto-runs pytest for coverage when no `--coverprofile`
+  is provided, enforces `--max-crapload` CI gate (exit 1 on violation).
+  Flag surface matches Go gaze `newCrapCmd` exactly.
+
+- **New flags on `gazepy analyze`**: `--classify` / `-c`, `--verbose` / `-v`,
+  `--config`, `--contractual-threshold`, `--incidental-threshold`,
+  `--function` / `-f`, `--include-unexported`. Achieves flag-level parity
+  with Go gaze `newAnalyzeCmd`.
+
+### Migration Guide
+
+| Old invocation | New invocation |
+|---|---|
+| `gazepy analyze <path> --coverage-json=cov.json` | `gazepy crap <path> --coverprofile=cov.json` |
+| `gazepy report <src> <tests>` | `gazepy crap <src>` |

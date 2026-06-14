@@ -17,6 +17,61 @@ from typing import Any
 
 from gaze_py.taxonomy.models import AnalysisResult
 
+# JSON schema for the AnalysisResult output format.
+# Extracted as a module-level constant so the `schema` CLI command can emit it
+# directly without re-serializing a live object (task 6.1).
+SCHEMA: str = json.dumps(
+    {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "AnalysisResult",
+        "description": "gaze-py analysis result envelope (analyze and crap commands).",
+        "type": "object",
+        "required": ["functions", "summary"],
+        "properties": {
+            "functions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["name", "file_path", "line_start", "complexity", "side_effects"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "file_path": {"type": "string"},
+                        "line_start": {"type": "integer"},
+                        "complexity": {"type": "integer"},
+                        "side_effects": {"type": "array"},
+                        "classification": {"type": ["object", "null"]},
+                        "line_coverage": {"type": ["number", "null"]},
+                        "crap": {"type": ["number", "null"]},
+                        "gaze_crap": {"type": ["number", "null"]},
+                        "contract_coverage": {"type": ["number", "null"]},
+                        "contract_coverage_reason": {"type": ["string", "null"]},
+                        "fix_strategy": {"type": ["string", "null"]},
+                        "quadrant": {"type": ["string", "null"]},
+                        "effect_confidence_range": {"type": ["array", "null"]},
+                    },
+                },
+            },
+            "summary": {
+                "type": "object",
+                "required": ["function_count", "crap_threshold", "gaze_crap_threshold"],
+                "properties": {
+                    "function_count": {"type": "integer"},
+                    "crapload": {"type": ["integer", "null"]},
+                    "gaze_crapload": {"type": ["integer", "null"]},
+                    "avg_line_coverage": {"type": ["number", "null"]},
+                    "avg_contract_coverage": {"type": ["number", "null"]},
+                    "quadrant_counts": {"type": ["object", "null"]},
+                    "fix_strategy_counts": {"type": ["object", "null"]},
+                    "recommended_actions": {"type": ["array", "null"]},
+                    "crap_threshold": {"type": "number"},
+                    "gaze_crap_threshold": {"type": "number"},
+                },
+            },
+        },
+    },
+    indent=2,
+)
+
 
 def _json_default(obj: Any) -> Any:  # noqa: ANN401  # Any is required — json.JSONEncoder.default() protocol uses Any.
     """Custom JSON encoder for types not handled by the default encoder.

@@ -47,6 +47,24 @@ class GazeConfig:
     gaze_crap_threshold: float = 15.0
 
 
+def load_config_explicit(config_path: Path) -> GazeConfig:
+    """Load configuration from an explicit .gaze.yaml file path.
+
+    Use when the caller provides a specific config file path via a CLI flag
+    rather than relying on walk-up auto-discovery.
+
+    Args:
+        config_path: Path to the .gaze.yaml file to load.
+
+    Returns:
+        GazeConfig populated from the file.
+
+    Raises:
+        GazeConfigError: When the file cannot be read, parsed, or validated.
+    """
+    return _parse_config(config_path, config_path.parent)
+
+
 def load_config(start_path: Path) -> GazeConfig:
     """Walk up from start_path to find and load .gaze.yaml.
 
