@@ -26,3 +26,5 @@
 - [x] 3.1 `uv run ruff check . && uv run ruff format --check .`
 - [x] 3.2 `uv run mypy --strict src/`
 - [x] 3.3 `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+
+<!-- code-review: passed -->
