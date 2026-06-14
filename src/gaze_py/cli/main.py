@@ -709,15 +709,15 @@ def _resolve_line_coverage(
 
     Tries three lookup keys in order (most specific → least specific):
 
-    1. Root-relative path (``analysis/complexity.py``) — matches when the
+    1. Root-relative path (`analysis/complexity.py`) — matches when the
        analysis root equals the working directory from which pytest was run.
-    2. Cwd-relative path (``src/gaze_py/analysis/complexity.py``) — matches
-       the common case where users run ``gazepy crap src/mypackage/`` from
+    2. Cwd-relative path (`src/gaze_py/analysis/complexity.py`) — matches
+       the common case where users run `gazepy crap src/mypackage/` from
        the project root and coverage.py stores keys relative to that root.
        This attempt is silently skipped (falls through to filename-only) when
-       ``py_file`` is not under ``Path.cwd()``, e.g. for absolute paths that
+       `py_file` is not under `Path.cwd()`, e.g. for absolute paths that
        lie outside the project or unusual filesystem layouts.
-    3. Filename-only (``complexity.py``) — last-resort fallback for any
+    3. Filename-only (`complexity.py`) — last-resort fallback for any
        remaining edge cases.
 
     Converts ``percent_covered`` (0–100) from *coverage_data* to a fraction
@@ -734,6 +734,7 @@ def _resolve_line_coverage(
     """
     if coverage_data is None:
         return None
+    # Attempt 1: root-relative key (e.g. "analysis/complexity.py").
     if py_file.is_relative_to(root):
         rel = str(py_file.relative_to(root))
     else:
@@ -745,11 +746,11 @@ def _resolve_line_coverage(
     if py_file.is_relative_to(Path.cwd()):
         cwd_rel = str(py_file.relative_to(Path.cwd()))
 
-    pct = (
-        coverage_data.get(rel)
-        or (coverage_data.get(cwd_rel) if cwd_rel else None)
-        or coverage_data.get(py_file.name)
-    )
+    pct = coverage_data.get(rel)
+    if pct is None and cwd_rel is not None:
+        pct = coverage_data.get(cwd_rel)
+    if pct is None:
+        pct = coverage_data.get(py_file.name)
     if pct is None:
         return None
     # Convert percentage (0-100) to fraction (0.0-1.0) for the scorer.
