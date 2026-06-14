@@ -707,13 +707,27 @@ def _resolve_line_coverage(
 ) -> float | None:
     """Resolve line coverage fraction for a single file.
 
-    Tries the project-relative path first, then falls back to the filename.
-    Converts percent_covered (0-100) from coverage_data to a fraction (0.0-1.0).
+    Tries three lookup keys in order (most specific → least specific):
+
+    1. Root-relative path (``analysis/complexity.py``) — matches when the
+       analysis root equals the working directory from which pytest was run.
+    2. Cwd-relative path (``src/gaze_py/analysis/complexity.py``) — matches
+       the common case where users run ``gazepy crap src/mypackage/`` from
+       the project root and coverage.py stores keys relative to that root.
+       This attempt is silently skipped (falls through to filename-only) when
+       ``py_file`` is not under ``Path.cwd()``, e.g. for absolute paths that
+       lie outside the project or unusual filesystem layouts.
+    3. Filename-only (``complexity.py``) — last-resort fallback for any
+       remaining edge cases.
+
+    Converts ``percent_covered`` (0–100) from *coverage_data* to a fraction
+    (0.0–1.0) for the CRAP scorer.
 
     Args:
         py_file: Absolute path to the Python source file.
-        root: Project root directory.
-        coverage_data: Dict mapping relative path → percent_covered (0-100), or None.
+        root: Project root directory used to compute the root-relative key.
+        coverage_data: Dict mapping relative path → percent_covered (0-100),
+            or None when no coverage data is available.
 
     Returns:
         Line coverage fraction in [0.0, 1.0], or None when not available.
@@ -724,7 +738,18 @@ def _resolve_line_coverage(
         rel = str(py_file.relative_to(root))
     else:
         rel = py_file.name
-    pct = coverage_data.get(rel) or coverage_data.get(py_file.name)
+
+    # Attempt 2: cwd-relative key (e.g. "src/gaze_py/analysis/complexity.py").
+    # Silently skipped when py_file is not under Path.cwd().
+    cwd_rel: str | None = None
+    if py_file.is_relative_to(Path.cwd()):
+        cwd_rel = str(py_file.relative_to(Path.cwd()))
+
+    pct = (
+        coverage_data.get(rel)
+        or (coverage_data.get(cwd_rel) if cwd_rel else None)
+        or coverage_data.get(py_file.name)
+    )
     if pct is None:
         return None
     # Convert percentage (0-100) to fraction (0.0-1.0) for the scorer.
