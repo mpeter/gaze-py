@@ -104,7 +104,7 @@ gaze-py/
 └── AGENTS.md             # This file
 ```
 
-## Key Commands
+## Build & Test Commands
 
 ```bash
 # Install dependencies
@@ -127,6 +127,19 @@ uv build
 # Install globally
 uv tool install --force dist/gaze_py-*.whl
 ```
+
+## Technology Stack
+
+- **Language**: Python 3.11+
+- **Package manager**: `uv` (lockfile committed; `uv sync` to install)
+- **Build tool**: `hatchling` (via `pyproject.toml`)
+- **Key runtime dependencies**:
+  - `click` — CLI framework (`gazepy` entrypoint)
+  - `pyyaml` — `.gaze.yaml` configuration loading
+- **Linter / formatter**: `ruff` (check + format), `mypy --strict`
+- **Test runner**: `pytest` with `pytest-cov` (`--cov-fail-under=85`)
+- **CI**: `.github/workflows/test.yml` (matrix: 3.11, 3.12, 3.13 on ubuntu-24.04),
+  `.github/workflows/release.yml` (trusted PyPI publish via OIDC)
 
 ## Specification Workflow
 
