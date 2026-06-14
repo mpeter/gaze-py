@@ -2,6 +2,38 @@
 
 All notable changes to gaze-py are documented here.
 
+## [0.4.0] — 2026-06-14
+
+### New Features
+
+- **O3 Document Scanning** — `gazepy docscan` is now a real command. Walks
+  the repository for `.md` files, applies glob filtering, assigns proximity
+  priority (1=same-dir, 2=repo-root, 3=other), and emits a JSON array of
+  `{path, content, priority}` objects or a text summary.
+- **Signal 5 augmentation** — `gazepy analyze` and `gazepy crap` now
+  automatically scan project docs before analysis. The documentation signal
+  (CC-005, Signal 5) incorporates project-level behavioral declarations from
+  `.md` files alongside per-function docstrings. Scan failures degrade
+  gracefully (warning to stderr, analysis continues).
+- **`.gaze.yaml` `doc_scan` config** — new `classification.doc_scan` block
+  supports `exclude`, `include`, and `timeout` settings.
+
+### Usage
+
+```bash
+# Scan project docs and list discovered files
+gazepy docscan
+
+# JSON output (default)
+gazepy docscan . --format=json
+
+# Override exclude patterns
+gazepy docscan . --exclude "docs/internal/**" --exclude "vendor/**"
+
+# Analyze with doc augmentation (happens automatically)
+gazepy analyze src/mypackage/
+```
+
 ## [0.3.1] — 2026-06-14
 
 ### Bug Fixes / Improvements
