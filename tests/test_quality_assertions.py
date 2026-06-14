@@ -5,6 +5,10 @@ from __future__ import annotations
 import ast
 import textwrap
 
+# CR-004: testing _extract_referenced_names directly because detect_assertions()
+# requires a full TestFunc with a parsed AST node; verifying the name-extraction
+# logic for Attribute, Subscript, and Call node types requires direct access to
+# the helper without constructing elaborate TestFunc fixtures for each case.
 from gaze_py.quality.assertions import _extract_referenced_names, detect_assertions
 from gaze_py.quality.models import TestFunc
 from gaze_py.taxonomy.models import AssertionKind

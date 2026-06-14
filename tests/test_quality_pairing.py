@@ -7,6 +7,10 @@ import textwrap
 from pathlib import Path
 
 from gaze_py.quality.models import TestFunc
+
+# CR-004: testing _extract_call_name directly because pair_to_targets() requires a
+# full source_functions list and a TestFunc; the method/qualified-name distinction
+# is cleaner to assert at the unit level without constructing elaborate fixtures.
 from gaze_py.quality.pairing import _extract_call_name, find_test_functions, pair_to_targets
 from gaze_py.taxonomy.models import FunctionTarget
 
@@ -182,20 +186,23 @@ def test_find_test_functions_nonexistent(tmp_path: Path) -> None:
 
 def test_extract_call_name_simple() -> None:
     """Simple name call → returns the name."""
-    call = ast.parse("foo()").body[0].value  # type: ignore[attr-defined]
-    assert isinstance(call, ast.Call)
-    assert _extract_call_name(call) == "foo"
+    stmt = ast.parse("foo()").body[0]
+    assert isinstance(stmt, ast.Expr)
+    assert isinstance(stmt.value, ast.Call)
+    assert _extract_call_name(stmt.value) == "foo"
 
 
 def test_extract_call_name_method() -> None:
     """Method call → returns None."""
-    call = ast.parse("obj.method()").body[0].value  # type: ignore[attr-defined]
-    assert isinstance(call, ast.Call)
-    assert _extract_call_name(call) is None
+    stmt = ast.parse("obj.method()").body[0]
+    assert isinstance(stmt, ast.Expr)
+    assert isinstance(stmt.value, ast.Call)
+    assert _extract_call_name(stmt.value) is None
 
 
 def test_extract_call_name_qualified() -> None:
     """Qualified name call → returns None."""
-    call = ast.parse("mod.fn()").body[0].value  # type: ignore[attr-defined]
-    assert isinstance(call, ast.Call)
-    assert _extract_call_name(call) is None
+    stmt = ast.parse("mod.fn()").body[0]
+    assert isinstance(stmt, ast.Expr)
+    assert isinstance(stmt.value, ast.Call)
+    assert _extract_call_name(stmt.value) is None
