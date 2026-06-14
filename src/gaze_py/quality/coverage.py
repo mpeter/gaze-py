@@ -54,6 +54,7 @@ def compute_contract_coverage(
 
     contractual: list[SideEffect] = []
     incidental_types: set[SideEffectType] = set()
+    ambiguous_scores: list[int] = []
 
     for effect in target.effects:
         classification = engine.classify(effect, target)
@@ -61,10 +62,19 @@ def compute_contract_coverage(
             contractual.append(effect)
         elif classification.label == "incidental":
             incidental_types.add(effect.type)  # .type, not .effect_type
+        else:
+            # ambiguous — collect confidence score for effect_confidence_range
+            ambiguous_scores.append(classification.score)
 
     # Null-not-zero: no contractual effects → percentage is None.
     if not contractual:
-        reason = "no_effects_detected" if not target.effects else "no_contractual_effects"
+        if not target.effects:
+            reason = "no_effects_detected"
+        elif ambiguous_scores and not incidental_types:
+            # All effects are ambiguous — surface confidence range for diagnostics.
+            reason = "all_effects_ambiguous"
+        else:
+            reason = "no_contractual_effects"
         return ContractCoverageResult(
             percentage=None,
             covered_effects=0,
@@ -72,6 +82,8 @@ def compute_contract_coverage(
             over_specification_count=0,
             unmapped_assertions=0,
             reason=reason,
+            min_confidence=min(ambiguous_scores) if reason == "all_effects_ambiguous" else None,
+            max_confidence=max(ambiguous_scores) if reason == "all_effects_ambiguous" else None,
         )
 
     # Use distinct effect types (not raw count) — one ReturnValue counts once.
