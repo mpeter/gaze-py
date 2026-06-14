@@ -36,3 +36,5 @@
 - [x] 5.2 `uv run ruff format --check .`
 - [x] 5.3 `uv run mypy --strict src/`
 - [x] 5.4 `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+
+<!-- code-review: passed -->
