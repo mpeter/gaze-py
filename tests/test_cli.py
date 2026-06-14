@@ -347,6 +347,76 @@ def test_crap_coverprofile_path(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# _resolve_line_coverage — unit tests for all three lookup branches (task 2.1)
+# ---------------------------------------------------------------------------
+
+# Testing _resolve_line_coverage directly because the three lookup branches
+# (root-relative, cwd-relative, filename-only) cannot be exercised in
+# isolation through the CLI without constructing a full coverage.json fixture
+# that happens to match each specific key format — which would obscure what
+# is actually being tested and make the branch-2 (cwd-relative) case
+# impossible to trigger deterministically.
+from gaze_py.cli.main import _resolve_line_coverage  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("coverage_data", "expected_frac"),
+    [
+        # Branch 1: root-relative key matches (analysis root == cwd in this fixture).
+        ({"analysis/complexity.py": 80.0}, 0.80),
+        # Branch 2: cwd-relative key matches (common case: run from project root).
+        # The cwd-relative key is set up by monkeypatch.chdir in the test body.
+        ({"src/gaze_py/analysis/complexity.py": 75.0}, 0.75),
+        # Branch 3: filename-only key matches (last-resort fallback).
+        ({"complexity.py": 60.0}, 0.60),
+        # Non-match: absent key → None.
+        ({"other/file.py": 50.0}, None),
+    ],
+    ids=["root-relative", "cwd-relative", "filename-only", "non-match"],
+)
+def test_resolve_line_coverage_branches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    coverage_data: dict[str, float],
+    expected_frac: float | None,
+) -> None:
+    """_resolve_line_coverage resolves each lookup branch independently.
+
+    Layout (all paths under tmp_path so is_relative_to checks are predictable):
+
+        tmp_path/                   ← project root (root arg)
+          src/
+            gaze_py/
+              analysis/
+                complexity.py       ← py_file (the file being looked up)
+
+    For branch 2 (cwd-relative), monkeypatch.chdir(tmp_path) makes
+    Path.cwd() == tmp_path, so the cwd-relative key is
+    ``src/gaze_py/analysis/complexity.py``.
+    For branch 1 (root-relative), root == tmp_path, so the root-relative key
+    is ``src/gaze_py/analysis/complexity.py`` as well — but the parametrize
+    fixture for branch 1 uses ``analysis/complexity.py`` which only matches
+    when root is set to ``tmp_path / "src" / "gaze_py"`` (see below).
+    """
+    # Build a realistic nested path so all three key formats are distinct.
+    analysis_dir = tmp_path / "src" / "gaze_py" / "analysis"
+    analysis_dir.mkdir(parents=True)
+    py_file = analysis_dir / "complexity.py"
+    py_file.touch()
+
+    # For branch 1 the root-relative key is "analysis/complexity.py", so root
+    # must be tmp_path/src/gaze_py (not tmp_path).
+    root = tmp_path / "src" / "gaze_py"
+
+    # For branch 2 the cwd-relative key is "src/gaze_py/analysis/complexity.py",
+    # so cwd must be tmp_path.
+    monkeypatch.chdir(tmp_path)
+
+    result = _resolve_line_coverage(py_file, root, coverage_data)
+    assert result == expected_frac
+
+
+# ---------------------------------------------------------------------------
 # gazepy crap — auto-coverage subprocess (task 2.2)
 # ---------------------------------------------------------------------------
 
