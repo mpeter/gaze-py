@@ -226,3 +226,5 @@
       (e.g., `gazepy --version`, JSON output `version` field if present)
 
 <!-- spec-review: passed -->
+
+<!-- code-review: passed -->
