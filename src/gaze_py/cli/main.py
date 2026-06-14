@@ -25,12 +25,14 @@ import json
 import subprocess
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 import click
 
 from gaze_py import __version__ as _version
 from gaze_py.analysis.detector import FileDetector
+from gaze_py.analysis.docscan import scan_docs
 from gaze_py.analysis.files import collect_py_files
 from gaze_py.analysis.runner import detect_and_classify
 from gaze_py.cli.scaffold import run as _scaffold_run
@@ -725,32 +727,101 @@ def _check_min_contract_coverage(reports: list[QualityReport], threshold: float)
 
 
 # ---------------------------------------------------------------------------
-# docscan command (not yet implemented — requires O3)
+# docscan command (O3 implementation)
 # ---------------------------------------------------------------------------
 
 
 @cli.command()
-@click.argument("path", type=click.Path(exists=False), required=False)
+@click.argument("path", default=".", type=click.Path(exists=True))
+@click.option(
+    "--format",
+    "fmt",
+    default="json",
+    type=click.Choice(["json", "text"]),
+    help="Output format: json (default) or text.",
+)
 @click.option(
     "--config",
     "config_path",
-    type=click.Path(exists=False),
     default=None,
+    type=click.Path(exists=True),
     help="Path to .gaze.yaml configuration file.",
 )
-def docscan(path: str | None, config_path: str | None) -> None:
-    """Scan documentation coverage for PATH (stub).
+@click.option(
+    "--exclude",
+    "extra_excludes",
+    multiple=True,
+    help="Glob pattern to exclude (repeatable). Replaces config excludes when provided.",
+)
+@click.option(
+    "--include",
+    "extra_includes",
+    multiple=True,
+    help="Glob pattern to include (repeatable). Replaces config includes when provided.",
+)
+@click.option(
+    "--timeout",
+    "timeout",
+    default=None,
+    type=float,
+    help="Maximum seconds to spend scanning (overrides config).",
+)
+def docscan(
+    path: str,
+    fmt: str,
+    config_path: str | None,
+    extra_excludes: tuple[str, ...],
+    extra_includes: tuple[str, ...],
+    timeout: float | None,
+) -> None:
+    """Scan project documentation files under PATH.
 
-    Requires O3 — tracked in a future change.
-    Use Go gaze for full capability: gaze docscan [packages]
+    Discovers .md files under the repository root, applies exclude/include
+    filters, and emits a list of documents with their priority.
+
+    Priority: 1 = same directory as PATH, 2 = repository root, 3 = other.
     """
-    click.echo(
-        "Error: docscan is not yet implemented in gazepy.\n"
-        "       Requires O3 — tracked in a future change.\n"
-        "       Use Go gaze for full capability: gaze docscan [packages]",
-        err=True,
-    )
-    raise SystemExit(1)
+    try:
+        root = Path(path).resolve()
+        if config_path is not None:
+            config = load_config_explicit(Path(config_path))
+        else:
+            config = load_config(root)
+
+        # CLI flags replace (not extend) config lists when provided.
+        if extra_excludes:
+            config.doc_scan_exclude = list(extra_excludes)
+        if extra_includes:
+            config.doc_scan_include = list(extra_includes)
+        if timeout is not None:
+            config.doc_scan_timeout = timeout
+
+        entries = scan_docs(root, config)
+        cwd = Path.cwd()
+
+        if fmt == "json":
+            payload = [
+                {
+                    "path": (
+                        str(e.path.relative_to(cwd)) if e.path.is_relative_to(cwd) else str(e.path)
+                    ),
+                    "content": e.content,
+                    "priority": e.priority,
+                }
+                for e in entries
+            ]
+            click.echo(json.dumps(payload, indent=2))
+        else:
+            for e in entries:
+                rel = str(e.path.relative_to(cwd)) if e.path.is_relative_to(cwd) else str(e.path)
+                click.echo(f"[P{e.priority}] {rel}")
+                click.echo(f"  ({len(e.content.split())} words)")
+    except GazeConfigError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -1166,6 +1237,10 @@ def _run_detect_classify(
     pipeline. Delegates to detect_and_classify() from analysis.runner.
     CLI-specific behavior (verbose output, classify flag) is handled here.
 
+    When classify=True, doc scanning (O3) is performed before classification
+    to augment Signal 5 with project-wide documentation text. Scan failures
+    are logged as warnings and do not abort the analysis run.
+
     Args:
         src_path: Resolved source path (file or directory) to analyze.
         config: GazeConfig with threshold values.
@@ -1179,12 +1254,27 @@ def _run_detect_classify(
         No Score objects are attached.
     """
     if classify:
+        # O3: scan project docs to augment Signal 5 (docstring_signal).
+        # BLE001 suppression is justified: scan failure must never abort
+        # analysis (Principle VI graceful degradation).
+        _docs_text: str | None = None
+        try:
+            _doc_entries = scan_docs(src_path, config)
+            _joined = "\n".join(e.content for e in _doc_entries)
+            _docs_text = _joined if _joined.strip() else None
+        except Exception as _exc:  # noqa: BLE001
+            warnings.warn(
+                f"docscan failed, continuing without doc augmentation: {_exc}",
+                stacklevel=2,
+            )
+
         # Use shared runner which always classifies.
         return detect_and_classify(
             src_path,
             config=config,
             include_unexported=include_unexported,
             function_filter=function_filter,
+            docs_text=_docs_text,
         )
 
     # No classification requested — run detect-only path.

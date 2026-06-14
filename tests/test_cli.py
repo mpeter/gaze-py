@@ -984,31 +984,48 @@ def test_quality_json_serializable() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task 4: gazepy docscan — stub
+# Task 4: gazepy docscan — O3 real implementation
 # ---------------------------------------------------------------------------
 
 
-def test_docscan_stub_bare_invocation() -> None:
-    """docscan exits 1 with 'not yet implemented' in stderr."""
+def test_docscan_bare_invocation_exits_zero(tmp_path: Path) -> None:
+    """docscan with default path (cwd) exits 0 and produces JSON (O3)."""
+    import os
+
+    # Run from a temp dir that has a pyproject.toml so repo root is found.
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "README.md").write_text("hello")
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(cli, ["docscan"])
+        assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.output!r}"
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_docscan_json_output_is_list(tmp_path: Path) -> None:
+    """docscan --format=json produces a JSON list (O3)."""
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "README.md").write_text("readme")
     runner = CliRunner()
-    result = runner.invoke(cli, ["docscan"])
-    assert result.exit_code == 1, f"Expected 1, got {result.exit_code}"
-    assert "not yet implemented" in result.stderr
+    result = runner.invoke(cli, ["docscan", str(tmp_path), "--format=json"])
+    assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.output!r}"
+    import json as _json
+
+    payload = _json.loads(result.output)
+    assert isinstance(payload, list)
 
 
-def test_docscan_stub_mentions_o3() -> None:
-    """docscan mentions O3 in stderr and does NOT mention O1."""
+def test_docscan_accepts_config_flag(tmp_path: Path) -> None:
+    """docscan --config <existing file> exits 0 (not 2 = Click parse error)."""
+    config_file = tmp_path / ".gaze.yaml"
+    config_file.write_text("")
+    (tmp_path / "pyproject.toml").write_text("")
     runner = CliRunner()
-    result = runner.invoke(cli, ["docscan"])
-    assert "O3" in result.stderr
-    assert "O1" not in result.stderr
-
-
-def test_docscan_stub_accepts_config_flag(tmp_path: Path) -> None:
-    """docscan --config /tmp/x.yaml exits 1 (not 2 = Click parse error)."""
-    runner = CliRunner()
-    result = runner.invoke(cli, ["docscan", "--config", str(tmp_path / "x.yaml")])
-    assert result.exit_code == 1, f"Expected 1, got {result.exit_code}"
+    result = runner.invoke(cli, ["docscan", str(tmp_path), "--config", str(config_file)])
+    assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.output!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -1459,3 +1476,27 @@ def test_init_rejects_opencode_prefix_sibling(
         f"Expected exit 1, got {result.exit_code}; stderr={result.stderr!r}"
     )
     assert "escapes .opencode/" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# gazepy docscan — O3 implementation (DS-007)
+# ---------------------------------------------------------------------------
+
+
+def test_docscan_exits_zero_and_valid_json(tmp_path: Path) -> None:
+    """gazepy docscan exits 0 and produces a valid JSON array (DS-007)."""
+    import json as _json
+
+    (tmp_path / "README.md").write_text("readme content for docscan test")
+    (tmp_path / "pyproject.toml").write_text("")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["docscan", str(tmp_path), "--format=json"])
+
+    assert result.exit_code == 0, f"exit={result.exit_code} output={result.output!r}"
+    payload = _json.loads(result.output)
+    assert isinstance(payload, list), "docscan JSON output must be a list"
+    for item in payload:
+        assert "path" in item, f"Missing 'path' key in {item}"
+        assert "content" in item, f"Missing 'content' key in {item}"
+        assert "priority" in item, f"Missing 'priority' key in {item}"

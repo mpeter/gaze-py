@@ -7,7 +7,7 @@ root sentinel) to prevent reading config files above the project boundary.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -39,12 +39,32 @@ class GazeConfig:
             Default: 15.0.
         gaze_crap_threshold: GazeCRAP score threshold for GazeCRAPload.
             Must be > 0. Default: 15.0.
+        doc_scan_exclude: Glob patterns for .md files to exclude during
+            document scanning. Matched against paths relative to the repo
+            root using fnmatch. Default matches Go reference excludes.
+        doc_scan_include: Glob patterns for .md files to include during
+            document scanning. When non-empty, only matching files are
+            returned. Default: [] (no filter — all files included).
+        doc_scan_timeout: Maximum seconds to spend scanning documents.
+            Must be > 0. Default: 30.0.
     """
 
     contractual_threshold: int = 80
     incidental_threshold: int = 50
     crap_threshold: float = 15.0
     gaze_crap_threshold: float = 15.0
+    doc_scan_exclude: list[str] = field(
+        default_factory=lambda: [
+            "vendor/**",
+            "node_modules/**",
+            ".git/**",
+            "testdata/**",
+            "CHANGELOG.md",
+            "CONTRIBUTING.md",
+        ]
+    )
+    doc_scan_include: list[str] = field(default_factory=list)
+    doc_scan_timeout: float = 30.0
 
 
 def load_config_explicit(config_path: Path) -> GazeConfig:
@@ -208,6 +228,19 @@ def _build_config(raw: dict[str, object], path: Path) -> GazeConfig:
             scoring["gaze_crap_threshold"], "gaze_crap_threshold", path
         )
 
+    doc_scan_raw = classification.get("doc_scan", {}) if isinstance(classification, dict) else {}
+    doc_scan: dict[str, object] = doc_scan_raw if isinstance(doc_scan_raw, dict) else {}
+    if "exclude" in doc_scan:
+        exclude_val = doc_scan["exclude"]
+        if isinstance(exclude_val, list):
+            cfg.doc_scan_exclude = [str(v) for v in exclude_val]
+    if "include" in doc_scan:
+        include_val = doc_scan["include"]
+        if isinstance(include_val, list):
+            cfg.doc_scan_include = [str(v) for v in include_val]
+    if "timeout" in doc_scan:
+        cfg.doc_scan_timeout = _to_float(doc_scan["timeout"], "doc_scan.timeout", path)
+
     _validate(cfg, path)
     return cfg
 
@@ -236,3 +269,5 @@ def _validate(cfg: GazeConfig, path: Path) -> None:
         raise GazeConfigError(
             f"gaze_crap_threshold must be > 0, got {cfg.gaze_crap_threshold} in {path}"
         )
+    if cfg.doc_scan_timeout <= 0:
+        raise GazeConfigError(f"doc_scan_timeout must be > 0, got {cfg.doc_scan_timeout} in {path}")
