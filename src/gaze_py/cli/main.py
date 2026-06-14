@@ -986,7 +986,7 @@ def _score_target(
         config: GazeConfig providing CRAP threshold values.
         quality_result: Contract coverage result from O1 pipeline, or None.
             When provided and percentage is not None, GazeCRAP and quadrant
-            are computed. CRITICAL: percentage is [0,100]; divide by 100 before
+            are computed. NOTE: percentage is [0,100]; divide by 100 before
             passing to gaze_crap() and quadrant() which take fractions [0,1].
     """
     crap_score = compute_crap(target.complexity, line_coverage_frac)

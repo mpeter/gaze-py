@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gaze_py.analysis.files import _SKIP_DIRS
+from gaze_py.analysis.files import collect_py_files
 from gaze_py.analysis.runner import detect_and_classify
 from gaze_py.config.loader import GazeConfig
 from gaze_py.quality.assertions import detect_assertions
@@ -148,8 +148,8 @@ def _process_test_func(
 def _collect_test_functions(tests_path: Path) -> list[TestFunc]:
     """Collect all test functions from a file or directory.
 
-    Applies _SKIP_DIRS filter to avoid collecting from cache/venv directories
-    (H3 fix).
+    Delegates to `collect_py_files()` which applies the standard skip-dir
+    filter (cache, venv, node_modules, etc.).
 
     Args:
         tests_path: A single .py file or a directory to scan recursively.
@@ -158,11 +158,6 @@ def _collect_test_functions(tests_path: Path) -> list[TestFunc]:
         List of TestFunc objects from all discovered test files.
     """
     results: list[TestFunc] = []
-    if tests_path.is_file():
-        results.extend(find_test_functions(tests_path))
-    elif tests_path.is_dir():
-        for py_file in sorted(
-            p for p in tests_path.rglob("*.py") if not any(part in _SKIP_DIRS for part in p.parts)
-        ):
-            results.extend(find_test_functions(py_file))
+    for py_file in collect_py_files(tests_path):
+        results.extend(find_test_functions(py_file))
     return results
