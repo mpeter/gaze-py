@@ -16,7 +16,6 @@ recursed into (up to max_depth) when the helper is defined in pkg_ast.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 from gaze_py.quality.models import TestFunc
 from gaze_py.taxonomy.models import AssertionKind, AssertionSite
@@ -380,29 +379,3 @@ class _AssertionCollector:
                 if isinstance(node, ast.FunctionDef) and node.name == name:
                     return node
         return None
-
-
-def _collect_py_files_for_pkg(path: Path) -> dict[str, ast.Module]:
-    """Parse all .py files under path into a module AST map.
-
-    Used internally to build the pkg_ast argument for detect_assertions()
-    when the caller wants helper recursion across a package.
-
-    Args:
-        path: Directory to scan for .py files.
-
-    Returns:
-        Mapping of file path string → parsed ast.Module. Files that fail
-        to parse are silently skipped.
-    """
-    result: dict[str, ast.Module] = {}
-    if not path.is_dir():
-        return result
-    for py_file in path.rglob("*.py"):
-        try:
-            source = py_file.read_text(encoding="utf-8", errors="replace")
-            module = ast.parse(source, filename=str(py_file))
-            result[str(py_file)] = module
-        except (OSError, SyntaxError, ValueError):
-            continue
-    return result

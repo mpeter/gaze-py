@@ -21,7 +21,6 @@ Per CS-016: functions with 4+ parameters use keyword-only args after *.
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import subprocess
 import sys
@@ -32,7 +31,8 @@ import click
 
 from gaze_py import __version__ as _version
 from gaze_py.analysis.detector import FileDetector
-from gaze_py.classify.engine import ClassificationEngine
+from gaze_py.analysis.files import collect_py_files
+from gaze_py.analysis.runner import detect_and_classify
 from gaze_py.cli.scaffold import run as _scaffold_run
 from gaze_py.config.loader import GazeConfig, load_config, load_config_explicit
 from gaze_py.crap.scorer import (
@@ -45,13 +45,14 @@ from gaze_py.crap.scorer import (
     quadrant,
     recommended_actions,
 )
-from gaze_py.report.json_formatter import SCHEMA, to_json
+from gaze_py.report.json_formatter import SCHEMA, quality_to_json, to_json
 from gaze_py.report.text_formatter import to_text
 from gaze_py.taxonomy.exceptions import GazeConfigError, GazeParseError
 from gaze_py.taxonomy.models import (
     AnalysisResult,
     ContractCoverageResult,
     FunctionTarget,
+    QualityReport,
     Score,
     Summary,
 )
@@ -579,7 +580,8 @@ def _discover_tests_path(src_path: Path) -> Path:
     Raises:
         SystemExit(2): When no tests directory can be found.
     """
-    parent = src_path.parent if src_path.is_file() else src_path.parent
+    # H4 fix: is_file() branch returns src_path.parent; is_dir() branch returns src_path itself.
+    parent = src_path.parent if src_path.is_file() else src_path
     search_roots = [parent, Path.cwd()]
 
     for root in search_roots:
@@ -587,31 +589,31 @@ def _discover_tests_path(src_path: Path) -> Path:
             candidate = root / candidate_name
             if candidate.is_dir():
                 return candidate
-        # Check for test_*.py files directly in root.
+        # H4 fix: return the first matching file (not the directory) to avoid
+        # returning a project root. Also skip if root looks like a project root.
+        if (root / "pyproject.toml").exists() or (root / "go.mod").exists():
+            continue
         test_files = sorted(root.glob("test_*.py"))
         if test_files:
-            return root
+            return test_files[0]
 
     click.echo("Error: no tests directory found — use --tests", err=True)
     raise SystemExit(2)
 
 
-def _emit_quality_json(reports: list) -> None:  # type: ignore[type-arg]
+def _emit_quality_json(reports: list[QualityReport]) -> None:
     """Emit quality reports as a JSON array.
 
-    Uses dataclasses.asdict() with the existing JSON encoder. Emits a JSON
+    Uses quality_to_json() from the public formatter API. Emits a JSON
     array (NOT wrapped in AnalysisResult) per design.md A.5.
 
     Args:
         reports: List of QualityReport dataclass instances.
     """
-    from gaze_py.report.json_formatter import _json_default
-
-    raw = [dataclasses.asdict(r) for r in reports]
-    click.echo(json.dumps(raw, default=_json_default, indent=2))
+    click.echo(quality_to_json(reports))
 
 
-def _emit_quality_text(reports: list, *, src_path: Path) -> None:  # type: ignore[type-arg]
+def _emit_quality_text(reports: list[QualityReport], *, src_path: Path) -> None:
     """Emit quality reports as a plain-text table.
 
     Format per design.md A.5:
@@ -626,8 +628,6 @@ def _emit_quality_text(reports: list, *, src_path: Path) -> None:  # type: ignor
         reports: List of QualityReport dataclass instances.
         src_path: Source path (used in the header).
     """
-    from gaze_py.taxonomy.models import QualityReport
-
     sep = "─" * 56
     click.echo(f"Quality Report: {src_path}")
     click.echo(sep)
@@ -635,8 +635,6 @@ def _emit_quality_text(reports: list, *, src_path: Path) -> None:  # type: ignor
     click.echo(sep)
 
     for report in reports:
-        if not isinstance(report, QualityReport):
-            continue
         fn_label = report.target_function or "?"
         test_label = f" (← {report.test_function})"
         fn_col = f"{fn_label}{test_label}"
@@ -651,53 +649,48 @@ def _emit_quality_text(reports: list, *, src_path: Path) -> None:  # type: ignor
             )
             cov_str = f"null ({reason})"
 
-        # GazeCRAP is computed by _score_target() when quality_result is injected.
-        # In the quality command we don't call _score_target() — GazeCRAP is
-        # computed inline here from the contract coverage.
+        # GazeCRAP is computed inline from contract coverage and complexity (H6 fix).
         gaze_crap_str = _compute_gaze_crap_for_report(report)
 
         click.echo(f"{fn_col:<30}  {cov_str:>17}  {gaze_crap_str:>8}")
 
     click.echo(sep)
 
-    # Summary line.
+    # Summary line — M6: use typed access instead of hasattr().
     coverages = [
         r.contract_coverage.percentage
         for r in reports
-        if hasattr(r, "contract_coverage")
-        and r.contract_coverage is not None
-        and r.contract_coverage.percentage is not None
+        if r.contract_coverage is not None and r.contract_coverage.percentage is not None
     ]
     avg_str = f"{sum(coverages) / len(coverages):.1f}%" if coverages else "null"
     click.echo(f"Avg contract coverage: {avg_str}")
 
 
-def _compute_gaze_crap_for_report(report: object) -> str:
+def _compute_gaze_crap_for_report(report: QualityReport) -> str:
     """Compute GazeCRAP string for a QualityReport in text output.
 
     The quality command does not call _score_target(); GazeCRAP is computed
-    inline for display purposes only. Returns "null" when contract coverage
-    or target function is unavailable.
+    inline from the report's complexity and contract coverage fields (H6 fix).
+    Returns "null" when contract coverage or complexity is unavailable.
 
     Args:
         report: A QualityReport instance.
 
     Returns:
-        Formatted GazeCRAP string or "null".
+        Formatted GazeCRAP string (e.g. "1.0") or "null".
     """
-    from gaze_py.taxonomy.models import QualityReport
-
-    if not isinstance(report, QualityReport):
-        return "null"
     if report.contract_coverage is None or report.contract_coverage.percentage is None:
         return "null"
-    # We don't have the FunctionTarget complexity here without re-running detect.
-    # Return the percentage-based label; actual GazeCRAP requires complexity.
-    # For text output, show "N/A" when complexity is unavailable.
-    return "N/A"
+    if report.complexity is None:
+        return "null"
+    frac = report.contract_coverage.percentage / 100.0
+    score = gaze_crap(report.complexity, frac)
+    if score is None:
+        return "null"
+    return f"{score:.1f}"
 
 
-def _check_min_contract_coverage(reports: list, threshold: float) -> None:  # type: ignore[type-arg]
+def _check_min_contract_coverage(reports: list[QualityReport], threshold: float) -> None:
     """Check the min-contract-coverage CI gate and exit 1 if violated.
 
     Emits a summary line and per-function failure lines to stderr, then
@@ -707,12 +700,8 @@ def _check_min_contract_coverage(reports: list, threshold: float) -> None:  # ty
         reports: List of QualityReport instances.
         threshold: Minimum required average contract coverage percentage.
     """
-    from gaze_py.taxonomy.models import QualityReport
-
     coverages: list[tuple[str, float]] = []
     for report in reports:
-        if not isinstance(report, QualityReport):
-            continue
         if report.contract_coverage is not None and report.contract_coverage.percentage is not None:
             fn_name = report.target_function or report.test_function
             coverages.append((fn_name, report.contract_coverage.percentage))
@@ -919,37 +908,6 @@ def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
                     coverage_map[str(file_path)] = float(pct)
 
     return coverage_map
-
-
-_SKIP_DIRS: frozenset[str] = frozenset(
-    {
-        ".git",
-        "__pycache__",
-        ".venv",
-        "venv",
-        "node_modules",
-        ".mypy_cache",
-        ".ruff_cache",
-        "dist",
-    }
-)
-
-
-def _collect_py_files(path: Path) -> list[Path]:
-    """Collect all .py files under path (recursively for directories).
-
-    Skips common non-source directories (.git, __pycache__, .venv, etc.)
-    to avoid analyzing virtual-environment or cache files.
-
-    Args:
-        path: A .py file or a directory to scan recursively.
-
-    Returns:
-        Sorted list of .py file paths.
-    """
-    if path.is_file():
-        return [path] if path.suffix == ".py" else []
-    return sorted(p for p in path.rglob("*.py") if not any(part in _SKIP_DIRS for part in p.parts))
 
 
 def _resolve_line_coverage(
@@ -1199,7 +1157,8 @@ def _run_detect_classify(
     """Run the detect pipeline and optionally classify side effects.
 
     Does NOT compute CRAP scores — use _run_crap() for the full scoring
-    pipeline.
+    pipeline. Delegates to detect_and_classify() from analysis.runner (H2 fix).
+    CLI-specific behavior (verbose output, classify flag) is handled here.
 
     Args:
         src_path: Resolved source path (file or directory) to analyze.
@@ -1213,14 +1172,18 @@ def _run_detect_classify(
         List of FunctionTarget with effects and optional classification results.
         No Score objects are attached.
     """
-    root = src_path if src_path.is_dir() else src_path.parent
-    py_files = _collect_py_files(src_path)
+    if classify:
+        # Use shared runner which always classifies.
+        return detect_and_classify(
+            src_path,
+            config=config,
+            include_unexported=include_unexported,
+            function_filter=function_filter,
+        )
 
-    engine = (
-        ClassificationEngine(config.contractual_threshold, config.incidental_threshold)
-        if classify
-        else None
-    )
+    # No classification requested — run detect-only path.
+    root = src_path if src_path.is_dir() else src_path.parent
+    py_files = collect_py_files(src_path)
     all_targets: list[FunctionTarget] = []
 
     for py_file in py_files:
@@ -1237,10 +1200,6 @@ def _run_detect_classify(
             # Apply --function name filter.
             if function_filter is not None and target.name != function_filter:
                 continue
-            # Classify each effect if classification engine is active.
-            if engine is not None:
-                for effect in target.effects:
-                    target.classification = engine.classify(effect, target)
             all_targets.append(target)
 
     return all_targets

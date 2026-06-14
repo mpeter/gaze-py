@@ -126,9 +126,9 @@ def map_assertions_to_effects(
     result: list[tuple[AssertionSite, SideEffectType | None]] = []
     matched: set[int] = set()  # indices of already-matched assertions
 
-    _pass1_binding(assertions, call_bindings, result, matched)
+    _pass1_binding(assertions, call_bindings, result=result, matched=matched)
     _pass2_exception(assertions, result, matched)
-    _pass3_semantic(assertions, target, result, matched)
+    _pass3_semantic(assertions, target, result=result, matched=matched)
 
     return result
 
@@ -136,6 +136,7 @@ def map_assertions_to_effects(
 def _pass1_binding(
     assertions: list[AssertionSite],
     call_bindings: dict[str, str],
+    *,
     result: list[tuple[AssertionSite, SideEffectType | None]],
     matched: set[int],
 ) -> None:
@@ -189,6 +190,7 @@ def _pass2_exception(
 def _pass3_semantic(
     assertions: list[AssertionSite],
     target: FunctionTarget,
+    *,
     result: list[tuple[AssertionSite, SideEffectType | None]],
     matched: set[int],
 ) -> None:

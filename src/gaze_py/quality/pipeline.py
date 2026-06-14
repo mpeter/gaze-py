@@ -11,21 +11,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gaze_py.analysis.detector import FileDetector
-from gaze_py.classify.engine import ClassificationEngine
+from gaze_py.analysis.files import _SKIP_DIRS
+from gaze_py.analysis.runner import detect_and_classify
 from gaze_py.config.loader import GazeConfig
 from gaze_py.quality.assertions import detect_assertions
 from gaze_py.quality.coverage import compute_contract_coverage
 from gaze_py.quality.mapper import build_call_bindings, map_assertions_to_effects
 from gaze_py.quality.models import TestFunc
 from gaze_py.quality.pairing import find_test_functions, pair_to_targets
-from gaze_py.taxonomy.exceptions import GazeParseError
 from gaze_py.taxonomy.models import FunctionTarget, QualityReport
-
-# Directories to skip when collecting Python source files.
-_SKIP_DIRS: frozenset[str] = frozenset(
-    {".git", "__pycache__", ".venv", "venv", "node_modules", ".mypy_cache", ".ruff_cache", "dist"}
-)
 
 
 def assess(
@@ -53,8 +47,8 @@ def assess(
         empty list if no test functions are discovered in tests_path — this
         is not an error.
     """
-    # Step 1: detect and classify source functions.
-    source_targets = _detect_and_classify(src_path.resolve(), config=config)
+    # Step 1: detect and classify source functions (uses shared runner, M1 fixed).
+    source_targets = detect_and_classify(src_path.resolve(), config=config)
 
     # Build a lookup map: function name → FunctionTarget.
     target_map: dict[str, FunctionTarget] = {t.name: t for t in source_targets}
@@ -147,62 +141,15 @@ def _process_test_func(
         assertions=tuple(assertions),
         contract_coverage=coverage,
         warnings=(),
+        complexity=production_target.complexity,
     )
-
-
-def _detect_and_classify(
-    src_path: Path,
-    *,
-    config: GazeConfig,
-) -> list[FunctionTarget]:
-    """Detect side effects and classify them for all functions in src_path.
-
-    Mirrors the logic of cli.main._run_detect_classify() but lives in the
-    quality package to avoid a circular import (cli.main imports from quality).
-
-    Args:
-        src_path: Resolved source path (file or directory) to analyze.
-        config: GazeConfig with classification thresholds.
-
-    Returns:
-        List of FunctionTarget with effects and classification results.
-        No Score objects are attached.
-    """
-    root = src_path if src_path.is_dir() else src_path.parent
-    py_files = _collect_py_files(src_path)
-    engine = ClassificationEngine(config.contractual_threshold, config.incidental_threshold)
-    all_targets: list[FunctionTarget] = []
-
-    for py_file in py_files:
-        try:
-            targets = FileDetector.detect(py_file, root=root, callers=None)
-        except GazeParseError:
-            continue
-
-        for target in targets:
-            for effect in target.effects:
-                target.classification = engine.classify(effect, target)
-            all_targets.append(target)
-
-    return all_targets
-
-
-def _collect_py_files(path: Path) -> list[Path]:
-    """Collect all .py files under path (recursively for directories).
-
-    Args:
-        path: A .py file or a directory to scan recursively.
-
-    Returns:
-        Sorted list of .py file paths.
-    """
-    if path.is_file():
-        return [path] if path.suffix == ".py" else []
-    return sorted(p for p in path.rglob("*.py") if not any(part in _SKIP_DIRS for part in p.parts))
 
 
 def _collect_test_functions(tests_path: Path) -> list[TestFunc]:
     """Collect all test functions from a file or directory.
+
+    Applies _SKIP_DIRS filter to avoid collecting from cache/venv directories
+    (H3 fix).
 
     Args:
         tests_path: A single .py file or a directory to scan recursively.
@@ -214,6 +161,8 @@ def _collect_test_functions(tests_path: Path) -> list[TestFunc]:
     if tests_path.is_file():
         results.extend(find_test_functions(tests_path))
     elif tests_path.is_dir():
-        for py_file in sorted(tests_path.rglob("*.py")):
+        for py_file in sorted(
+            p for p in tests_path.rglob("*.py") if not any(part in _SKIP_DIRS for part in p.parts)
+        ):
             results.extend(find_test_functions(py_file))
     return results

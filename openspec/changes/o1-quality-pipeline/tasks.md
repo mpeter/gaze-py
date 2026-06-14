@@ -97,7 +97,7 @@
 - [x] 5.2 Tests in `tests/test_quality_mapper.py`:
       - return value binding → maps to ReturnValue (Pass 1)
       - error return binding → maps to ErrorReturn (Pass 1)
-      - pytest.raises → maps to RaiseException (Pass 2)
+      - pytest.raises → maps to ErrorReturn (Pass 2)
       - assertion referencing name matching a contractual GlobalMutation
         effect target → maps to that effect (Pass 3 positive, contractual)
       - assertion referencing name matching an incidental effect target →

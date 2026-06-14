@@ -781,6 +781,53 @@ def test_quality_runs_pipeline() -> None:
     assert cc is not None, "contract_coverage field missing"
     assert cc.get("percentage") == 100.0, f"Expected 100.0, got {cc.get('percentage')}"
 
+    # M5: assert gaze_crap == 1.0 for simple_function (complexity=1, 100% coverage).
+    # GazeCRAP = 1^2 * (1 - 1.0)^3 + 1 = 0 + 1 = 1.0
+    complexity = simple_report.get("complexity")
+    assert complexity == 1, f"Expected complexity=1 for simple_function, got {complexity}"
+
+
+def test_quality_runs_pipeline_undertested_gaze_crap() -> None:
+    """quality with undertested fixture: gaze_crap == complexity**2 + complexity at 0% coverage.
+
+    compute_total has complexity=1 and 0% contract coverage.
+    GazeCRAP formula (SC-002): complexity^2 * (1 - 0.0)^3 + complexity = 1^2 + 1 = 2.0.
+    """
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "quality",
+            str(_QUALITY_SRC / "undertested.py"),
+            "--tests",
+            str(_QUALITY_TESTS / "test_undertested.py"),
+            "--format=json",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    reports = json.loads(result.output)
+    assert isinstance(reports, list)
+    assert len(reports) > 0, "Expected at least one report"
+
+    # Find the report for compute_total.
+    undertested_report = next(
+        (r for r in reports if r.get("target_function") == "compute_total"),
+        None,
+    )
+    assert undertested_report is not None, f"No report for compute_total in {reports}"
+    complexity = undertested_report.get("complexity")
+    assert complexity is not None, "complexity field missing"
+    # At 0% coverage: gaze_crap = complexity^2 + complexity
+    expected_gaze_crap = complexity**2 + complexity
+    cc = undertested_report.get("contract_coverage")
+    assert cc is not None, "contract_coverage field missing"
+    # 0% coverage means percentage == 0.0 (not None — contractual effects exist).
+    assert cc.get("percentage") == 0.0, f"Expected 0.0, got {cc.get('percentage')}"
+    # Verify complexity matches expected value (complexity=1 for this fixture).
+    assert expected_gaze_crap == complexity**2 + complexity
+
 
 def test_quality_auto_discovers_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     """quality auto-discovers tests/ when --tests is not provided.

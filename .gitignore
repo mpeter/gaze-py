@@ -19,6 +19,7 @@ htmlcov/
 # Test artifacts
 *.out
 *.prof*
+tests/testdata/**/__pycache__/
 
 # MegaLinter reports
 megalinter-reports/
