@@ -2,6 +2,36 @@
 
 All notable changes to gaze-py are documented here.
 
+## [0.3.0] — 2026-06-14
+
+### New Features
+
+- **O1 quality assessment pipeline** — `gazepy quality` is now a real command.
+  Pairs test functions to their production targets, detects assertion sites,
+  maps assertions to detected side effects, and computes contract coverage.
+- **GazeCRAP scores** — `Score.gaze_crap` is now populated when running
+  `gazepy quality`. Uses contract coverage (not line coverage) as input to
+  the GazeCRAP formula (SC-002).
+- **Quadrant classification** — `Score.quadrant` (Q1–Q4) now populated.
+- **Contract coverage** — `Score.contract_coverage` (0–100%) now populated.
+- **Summary fields** — `gaze_crapload`, `avg_contract_coverage`,
+  `quadrant_counts`, `fix_strategy_counts` all now populated.
+- **Shared analysis utilities** — `analysis/files.py` and `analysis/runner.py`
+  extracted as reusable pipeline primitives.
+
+### Usage
+
+```bash
+# Assess test quality and compute GazeCRAP
+gazepy quality src/mypackage/ --tests tests/ --format=json
+
+# Auto-discover tests directory
+gazepy quality src/mypackage/
+
+# CI gate: fail if average contract coverage below threshold
+gazepy quality src/mypackage/ --min-contract-coverage 80
+```
+
 ## [0.2.0] — 2026-06-14
 
 ### Breaking Changes
