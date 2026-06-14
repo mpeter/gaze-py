@@ -11,19 +11,18 @@ under-tested. The output is schema-compatible with the Go gaze implementation.
 
 - Python 3.11+
 
-## Installation (local wheel)
-
-gaze-py is not yet published to PyPI. Install from a locally built wheel:
+## Installation
 
 ```bash
-uv build
-uv tool install --force dist/gaze_py-*.whl
+# Run without installing (recommended for one-off use)
+uvx gaze-py --help
+
+# Permanent install
+uv tool install gaze-py
+
+# Or with pip
+pip install gaze-py
 ```
-
-This installs the `gazepy` binary into your PATH via `uv tool`.
-
-> **Note**: `uv tool install gaze-py` (from PyPI) will not work — PyPI publication
-> is deferred to a future release.
 
 ## Basic usage
 
@@ -93,7 +92,27 @@ priority (add_tests → decompose_and_test → decompose) that exceed the CRAP t
   result, `gaze_crap`, `contract_coverage`, and `quadrant` are always `null` in this
   release. The `fix_strategy` field uses CRAP-only rules (Q3/add_assertions is
   unreachable without O1).
-- **PyPI publication deferred**: The package is not yet on PyPI. Install from a local
-  wheel as described above.
 - **Effect confidence range deferred**: The `effect_confidence_range` field is present
   in the output schema (as `null`) but not yet computed.
+
+## Releasing
+
+Releases are published to PyPI via GitHub Actions using trusted publishing
+(OIDC — no stored secrets).
+
+### One-time setup (already done)
+
+1. **PyPI trusted publisher**: pypi.org → gaze-py project → Settings →
+   Publishing → publisher configured for `mpeter/gaze-py`, workflow
+   `release.yml`, environment `pypi`.
+2. **GitHub environment**: repo Settings → Environments → `pypi` (optional
+   approval gate).
+
+### Releasing a new version
+
+1. Bump `version` in `pyproject.toml` and `__version__` in
+   `src/gaze_py/__init__.py` in a PR. Merge to `main`.
+2. Go to GitHub Actions → Release → Run workflow.
+3. Enter the tag matching the version (e.g. `v0.3.0`).
+4. Approve the `pypi` environment gate if configured.
+5. The workflow validates, tags, builds, and publishes automatically.
