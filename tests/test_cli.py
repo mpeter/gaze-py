@@ -3,16 +3,20 @@
 Uses click.testing.CliRunner for isolation. No real file system writes
 are performed except reading existing testdata fixtures or using tmp_path.
 
-Note: CliRunner in click 8.x mixes stderr into stdout by default. The
-_parse_json() helper strips warning lines (starting with 'Warning:') before
-parsing JSON so tests are robust to parse warnings from testdata fixtures.
+Note: CliRunner in click 8.x separates stderr from stdout by default
+(mix_stderr=False). Tests that need stderr use result.stderr; tests that
+parse JSON from stdout use result.output. The _parse_json() helper finds
+the first '{' line so it is robust to any stray lines before the JSON.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import click
 import pytest
@@ -124,10 +128,12 @@ def test_analyze_classify_flag() -> None:
 
 
 def test_analyze_verbose_flag() -> None:
-    """--verbose flag exits 0 (implies --classify; no crash)."""
+    """--verbose flag exits 0, implies --classify, and produces valid JSON."""
     runner = CliRunner()
     result = runner.invoke(cli, ["analyze", str(_TESTDATA), "--format=json", "--verbose"])
     assert result.exit_code == 0, result.output
+    data = _parse_json(result.output)
+    assert "functions" in data
 
 
 def test_analyze_function_flag_filters() -> None:
@@ -350,14 +356,16 @@ def test_crap_subprocess_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     source = tmp_path / "example.py"
     source.write_text("def foo():\n    return 1\n")
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_run(
+        cmd: Sequence[str | bytes | os.PathLike[str]], **kwargs: Any
+    ) -> subprocess.CompletedProcess[bytes]:
         for arg in cmd:
             if isinstance(arg, str) and "json:" in arg:
                 json_path = arg.split("json:", 1)[1]
                 cov = {"files": {str(source): {"summary": {"percent_covered": 80.0}}}}
                 Path(json_path).write_text(json.dumps(cov))
                 break
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
+        return subprocess.CompletedProcess(args=list(cmd), returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     runner = CliRunner()
@@ -375,8 +383,10 @@ def test_crap_subprocess_calledprocesserror(
     source = tmp_path / "example.py"
     source.write_text("def foo():\n    return 1\n")
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
-        raise subprocess.CalledProcessError(1, cmd)
+    def fake_run(
+        cmd: Sequence[str | bytes | os.PathLike[str]], **kwargs: Any
+    ) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.CalledProcessError(1, list(cmd))
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     runner = CliRunner()
@@ -394,7 +404,9 @@ def test_crap_subprocess_oserror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     source = tmp_path / "example.py"
     source.write_text("def foo():\n    return 1\n")
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_run(
+        cmd: Sequence[str | bytes | os.PathLike[str]], **kwargs: Any
+    ) -> subprocess.CompletedProcess[bytes]:
         raise OSError("pytest not found")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -411,13 +423,15 @@ def test_crap_subprocess_malformed_json(monkeypatch: pytest.MonkeyPatch, tmp_pat
     source = tmp_path / "example.py"
     source.write_text("def foo():\n    return 1\n")
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_run(
+        cmd: Sequence[str | bytes | os.PathLike[str]], **kwargs: Any
+    ) -> subprocess.CompletedProcess[bytes]:
         for arg in cmd:
             if isinstance(arg, str) and "json:" in arg:
                 json_path = arg.split("json:", 1)[1]
                 Path(json_path).write_text("{bad json}")
                 break
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
+        return subprocess.CompletedProcess(args=list(cmd), returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     runner = CliRunner()
@@ -811,10 +825,11 @@ def test_selfcheck_root_not_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     from gaze_py.cli import main as cli_main
 
-    orig_find = cli_main._find_project_root
-
     def _stubbed_root() -> Path:
         # Simulate: no pyproject.toml anywhere → warn + return cwd.
+        # We must monkeypatch _find_project_root because a real walk-up from
+        # within the test's tmp_path would eventually find the actual repo's
+        # pyproject.toml on disk, defeating the test's intent.
         click.echo(
             "Warning: no pyproject.toml found in current directory or "
             "any parent. gazepy self-check works best in a Python "
@@ -828,8 +843,6 @@ def test_selfcheck_root_not_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     runner = CliRunner()
     result = runner.invoke(cli, ["self-check", "--format=text"])
     assert "Warning" in result.stderr
-
-    monkeypatch.setattr(cli_main, "_find_project_root", orig_find)
 
 
 def test_selfcheck_gaze_py_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -884,6 +897,66 @@ def test_selfcheck_max_crapload_flag(tmp_path: Path, monkeypatch: pytest.MonkeyP
     result = runner.invoke(cli, ["self-check", "--max-crapload=5"])
     assert result.exit_code == 0, f"Expected 0, got {result.exit_code}:\n{result.stderr}"
     assert "path" in captured
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _insert_marker (H2 — direct coverage of all branches)
+# ---------------------------------------------------------------------------
+
+
+def test_insert_marker_no_frontmatter() -> None:
+    """_insert_marker appends marker at end when content has no YAML frontmatter."""
+    from gaze_py.cli.scaffold import _insert_marker
+
+    content = b"# Some content\nline two\n"
+    marker = "<!-- marker -->\n"
+    result = _insert_marker(content, marker)
+    assert result == content + marker.encode("utf-8")
+    assert result.endswith(marker.encode("utf-8"))
+
+
+def test_insert_marker_malformed_frontmatter() -> None:
+    """_insert_marker appends at end when frontmatter has no closing ---."""
+    from gaze_py.cli.scaffold import _insert_marker
+
+    content = b"---\ntitle: test\n# no closing separator\n"
+    marker = "<!-- marker -->\n"
+    result = _insert_marker(content, marker)
+    assert result == content + marker.encode("utf-8")
+    assert result.endswith(marker.encode("utf-8"))
+
+
+def test_insert_marker_idempotent() -> None:
+    """_insert_marker returns content unchanged when marker is already present."""
+    from gaze_py.cli.scaffold import _insert_marker
+
+    marker = "<!-- marker -->\n"
+    content = b"---\ntitle: test\n---\n" + marker.encode("utf-8") + b"body\n"
+    result = _insert_marker(content, marker)
+    assert result == content
+
+
+def test_insert_marker_after_frontmatter_position() -> None:
+    """_insert_marker inserts marker on the line immediately after the closing ---."""
+    from gaze_py.cli.scaffold import _insert_marker
+
+    marker = "<!-- marker -->\n"
+    content = b"---\ntitle: test\nkey: value\n---\nbody text\n"
+    result = _insert_marker(content, marker)
+    lines = result.decode("utf-8").splitlines()
+
+    # Find the index of the closing --- (searching from line 1 onward).
+    close_idx: int | None = None
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            close_idx = i
+            break
+    assert close_idx is not None, "Closing --- not found after frontmatter insertion"
+
+    # Marker must be on the line immediately following the closing ---.
+    assert lines[close_idx + 1] == marker.rstrip("\n"), (
+        f"Expected marker at line {close_idx + 1}, found: {lines[close_idx + 1]!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -990,18 +1063,17 @@ def test_init_version_marker_after_frontmatter(
     )
 
 
-def test_init_version_marker_appended_no_frontmatter(
+def test_init_version_marker_inserts_after_frontmatter_integration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """For files without frontmatter the marker is appended at end of file."""
+    """Integration: marker appears in both asset files (which both have frontmatter)."""
     (tmp_path / "pyproject.toml").write_text("[project]\n")
     monkeypatch.chdir(tmp_path)
 
     runner = CliRunner()
     runner.invoke(cli, ["init"])
 
-    # gazepy.md has frontmatter too — let's verify marker placement for commands/gazepy.md
-    # by checking the marker appears somewhere in the file (after frontmatter).
+    # Both assets have frontmatter; verify the marker is present in commands/gazepy.md.
     commands = tmp_path / ".opencode" / "commands" / "gazepy.md"
     content = commands.read_text()
     assert "scaffolded by gazepy" in content
@@ -1019,59 +1091,64 @@ def test_init_warns_no_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_init_rejects_symlink_escape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init exits 1 when .opencode/ is a symlink pointing outside cwd."""
+    """init exits 1 when a file inside .opencode/ is a symlink escaping the tree.
+
+    The guard fires on file-level symlinks: when .opencode/agents/gazepy-reporter.md
+    is a symlink pointing to a file outside .opencode/, resolve() follows the link and
+    is_relative_to() correctly rejects the resolved path.
+    """
     (tmp_path / "pyproject.toml").write_text("[project]\n")
     monkeypatch.chdir(tmp_path)
 
+    # Create the outside target that the symlink will point to.
     outside = tmp_path / "outside"
     outside.mkdir()
-    opencode = tmp_path / ".opencode"
-    opencode.symlink_to(outside)
+    outside_file = outside / "evil.md"
+    outside_file.write_text("evil content\n")
+
+    # Create .opencode/agents/ as a real directory, then plant a file-level symlink.
+    opencode_agents = tmp_path / ".opencode" / "agents"
+    opencode_agents.mkdir(parents=True)
+    (opencode_agents / "gazepy-reporter.md").symlink_to(outside_file)
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["init"])
-    # Symlink to a sibling dir — the resolved path escapes .opencode/ structure.
-    # May exit 1 (refused) or succeed if resolve() keeps it within the guard;
-    # the guard is is_relative_to(.opencode.resolve()), so a symlink TO outside/
-    # means resolved paths are under outside/, which is NOT under .opencode.resolve().
-    assert result.exit_code in (0, 1)
-    # If it exited 1, verify the message.
-    if result.exit_code == 1:
-        assert "escapes" in result.stderr or "Error" in result.stderr
+    result = runner.invoke(cli, ["init", "--force"])
+    assert result.exit_code == 1, (
+        f"Expected exit 1, got {result.exit_code}; stderr={result.stderr!r}"
+    )
+    assert "escapes .opencode/" in result.stderr
 
 
 def test_init_rejects_opencode_prefix_sibling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """is_relative_to guard rejects writes to .opencode_extra/ (path-prefix sibling)."""
+    """is_relative_to guard rejects writes to .opencode_sibling/ (path-prefix sibling).
 
+    str.startswith(".opencode") would wrongly accept ".opencode_sibling" as a prefix
+    match. is_relative_to() uses path-component semantics and correctly rejects it.
+    This test verifies the guard fires via production code when a file inside
+    .opencode/agents/ is a symlink pointing to a file under .opencode_sibling/.
+    """
     (tmp_path / "pyproject.toml").write_text("[project]\n")
     monkeypatch.chdir(tmp_path)
 
-    # Call scaffold.run() with target_dir pointing to .opencode_extra/ (prefix sibling).
-    # The guard is computed from target_dir.resolve(), so resolved paths ARE inside
-    # target_dir — this test verifies that calling run() with a legitimate target_dir
-    # but where symlinks inside it could escape is handled.
-    # The canonical test for the guard: resolved path is NOT relative to
-    # (cwd/.opencode).resolve() when target_dir is .opencode_extra/.
-    sibling = tmp_path / ".opencode_extra"
+    # Create the prefix-sibling directory and a target file inside it.
+    sibling = tmp_path / ".opencode_sibling"
     sibling.mkdir()
+    sibling_file = sibling / "x.md"
+    sibling_file.write_text("sibling content\n")
 
-    # Override guard to cwd/.opencode to simulate what init command uses.
-    # scaffold.run(target_dir=sibling, ...) will compute guard = sibling.resolve()
-    # and check resolved.is_relative_to(sibling.resolve()) — which is always True
-    # for files inside sibling. The correct test: init command always passes
-    # target_dir = cwd / ".opencode", and we test that a symlink inside can't escape.
-    # For the prefix-sibling case, we need to test the guard used by the init command.
-    # The init command hardcodes target_dir = Path.cwd() / ".opencode".
-    # A path-prefix sibling (.opencode_extra/) is outside that guard.
+    # Create .opencode/agents/ as a real directory, then plant a symlink that
+    # resolves to the prefix-sibling path (.opencode_sibling/x.md).
+    opencode_agents = tmp_path / ".opencode" / "agents"
+    opencode_agents.mkdir(parents=True)
+    (opencode_agents / "gazepy-reporter.md").symlink_to(sibling_file)
 
-    # Direct test: create a resolver that returns a path under .opencode_extra/,
-    # and verify is_relative_to rejects it vs the correct str.startswith behavior.
-    guard = (tmp_path / ".opencode").resolve()
-    candidate = (tmp_path / ".opencode_extra" / "agents" / "x.md").resolve()
-    # str.startswith would incorrectly pass this (depends on implementation);
-    # is_relative_to correctly rejects it.
-    assert not candidate.is_relative_to(guard), (
-        "is_relative_to should reject .opencode_extra/ as not inside .opencode/"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init", "--force"])
+    # The guard must fire: .opencode_sibling/x.md is NOT relative to .opencode/
+    # (is_relative_to correctly rejects it, whereas str.startswith would pass it).
+    assert result.exit_code == 1, (
+        f"Expected exit 1, got {result.exit_code}; stderr={result.stderr!r}"
     )
+    assert "escapes .opencode/" in result.stderr
