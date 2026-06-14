@@ -1,5 +1,9 @@
 # gaze-py
 
+[![CI](https://github.com/mpeter/gaze-py/actions/workflows/test.yml/badge.svg)](https://github.com/mpeter/gaze-py/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/gaze-py)](https://pypi.org/project/gaze-py/)
+[![Python](https://img.shields.io/pypi/pyversions/gaze-py)](https://pypi.org/project/gaze-py/)
+
 gaze-py is a Python-native port of [gaze](https://github.com/unbound-force/gaze), the
 GazeCRAP analysis engine. It detects observable side effects in Python functions using
 AST-only static analysis (no code execution, no imports of analysed modules), classifies
@@ -40,7 +44,10 @@ gazepy analyze src/ --format=text
 gazepy crap src/
 
 # CRAP scoring with a pre-generated coverage report
-gazepy crap src/ --coverprofile coverage.json
+gazepy crap src/ --coverprofile cov.json
+
+# Assess test quality and compute GazeCRAP scores
+gazepy quality src/
 
 # Scaffold OpenCode agent and command files into .opencode/
 gazepy init
@@ -56,16 +63,39 @@ automatically by running pytest, or accept a pre-generated `coverage.py` JSON re
 gazepy crap src/
 
 # Use a pre-generated coverage report (recommended in CI to avoid a double test run)
-pytest --cov=your_package --cov-report=json:coverage.json
-gazepy crap src/ --coverprofile coverage.json
+pytest --cov=your_package --cov-report=json:cov.json
+gazepy crap src/ --coverprofile cov.json
+
+# Fail CI if crapload exceeds a threshold
+gazepy crap src/ --max-crapload 30
 ```
 
 When coverage is provided, the `line_coverage` and `crap` fields are populated in the
 output. When omitted, those fields are `null` (not `0.0`) — null means "not measured",
-not "zero coverage". GazeCRAP and quadrant fields remain `null` until O1 ships.
+not "zero coverage".
 
 The `analyze` command detects side effects only — it does not compute CRAP scores.
 Use `gazepy crap` for CRAP scoring.
+
+## Quality assessment with `gazepy quality`
+
+`gazepy quality` runs the full O1 pipeline: pairs test functions to their production
+targets, detects assertion sites, maps assertions to detected side effects, and computes
+GazeCRAP using contract coverage (the fraction of contractual effects covered by tests).
+
+```bash
+# Assess test quality — auto-discovers tests/ directory
+gazepy quality src/
+
+# Explicit tests directory
+gazepy quality src/ --tests tests/
+
+# JSON output
+gazepy quality src/ --format=json
+
+# Fail CI if average contract coverage drops below a threshold
+gazepy quality src/ --min-contract-coverage 80
+```
 
 ## Understanding the output
 
@@ -77,36 +107,20 @@ Each function in the output includes:
 | `complexity` | McCabe cyclomatic complexity |
 | `line_coverage` | Fraction of lines covered (0.0–1.0), or `null` if not provided |
 | `crap` | CRAP score (complexity² × (1 − coverage)³ + complexity), or `null` |
-| `gaze_crap` | GazeCRAP score using contract coverage, or `null` (O1 deferred) |
-| `quadrant` | Q1–Q4 classification based on CRAP and GazeCRAP, or `null` |
+| `gaze_crap` | GazeCRAP score using contract coverage; populated by `gazepy quality` |
+| `quadrant` | Q1–Q4 classification based on CRAP and GazeCRAP; populated by `gazepy quality` |
 | `fix_strategy` | Recommended action: `add_tests`, `decompose_and_test`, or `decompose` |
-| `contract_coverage` | Fraction of contractual effects covered by tests, or `null` |
+| `contract_coverage` | Fraction of contractual effects covered by tests; populated by `gazepy quality` |
 
 The summary section includes `recommended_actions` — up to 20 functions sorted by
 priority (add_tests → decompose_and_test → decompose) that exceed the CRAP threshold.
 
 ## Current limitations
 
-- **GazeCRAP scoring deferred**: The O1 quality/assertion mapping engine (which
-  computes `contract_coverage` from test assertions) is not yet implemented. As a
-  result, `gaze_crap`, `contract_coverage`, and `quadrant` are always `null` in this
-  release. The `fix_strategy` field uses CRAP-only rules (Q3/add_assertions is
-  unreachable without O1).
 - **Effect confidence range deferred**: The `effect_confidence_range` field is present
   in the output schema (as `null`) but not yet computed.
 
 ## Releasing
-
-Releases are published to PyPI via GitHub Actions using trusted publishing
-(OIDC — no stored secrets).
-
-### One-time setup (already done)
-
-1. **PyPI trusted publisher**: pypi.org → gaze-py project → Settings →
-   Publishing → publisher configured for `mpeter/gaze-py`, workflow
-   `release.yml`, environment `pypi`.
-2. **GitHub environment**: repo Settings → Environments → `pypi` (optional
-   approval gate).
 
 ### Releasing a new version
 

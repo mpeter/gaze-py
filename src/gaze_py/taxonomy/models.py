@@ -291,7 +291,7 @@ class QualityReport:
         warnings: Non-fatal warnings from pairing or mapping.
         complexity: McCabe cyclomatic complexity of the production target,
             or None when no target was found. Used to compute GazeCRAP in
-            text output (H6 fix).
+            text output.
     """
 
     test_function: str
