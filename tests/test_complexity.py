@@ -44,14 +44,26 @@ def test_pure_function_complexity_is_1() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_high_complexity_function_greater_than_1() -> None:
-    """high_complexity.py fixture has complexity > 1."""
+def test_high_complexity_function_exact_value() -> None:
+    """high_complexity.py fixture: exact cyclomatic complexity is 9.
+
+    Breakdown (1 base + 8 decision points):
+      Line 3:  if x > 0        → +1
+      Line 4:  if y > 0        → +1
+      Line 6:  elif z > 0      → +1 (ast.If in orelse)
+      Line 10: elif flag        → +1 (ast.If in orelse)
+      Line 11: for i in range   → +1
+      Line 12: if i % 2 == 0   → +1
+      Line 17: while z > 0     → +1
+      Line 19: if z == 5       → +1
+    Total: 1 + 8 = 9
+    """
     targets_file = FIXTURES / "high_complexity.py"
     module = ast.parse(targets_file.read_text(encoding="utf-8"))
     fn_nodes = [n for n in module.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
     assert fn_nodes, "Expected at least one function in high_complexity.py"
     result = cyclomatic_complexity(fn_nodes[0])
-    assert result > 1, f"Expected complexity > 1 for high_complexity.py, got {result}"
+    assert result == 9, f"Expected complexity 9, got {result}"  # noqa: PLR2004
 
 
 # ---------------------------------------------------------------------------
@@ -147,3 +159,86 @@ def test_complexity_known_values(source: str, expected: int) -> None:
     fn = _parse_first_fn(source)
     result = cyclomatic_complexity(fn)
     assert result == expected, f"Expected complexity {expected}, got {result} for:\n{source}"
+
+
+# ---------------------------------------------------------------------------
+# CX-002: Additional round-trip tests with exact known values
+# ---------------------------------------------------------------------------
+
+
+def test_assert_statement_increments_complexity() -> None:
+    """CX-002: assert statement adds one branch point (base 1 + 1 assert = 2)."""
+    source = "def f(x):\n    assert x > 0\n    return x\n"
+    fn = _parse_first_fn(source)
+    result = cyclomatic_complexity(fn)
+    assert result == 2, f"Expected 2 (1 base + 1 assert), got {result}"  # noqa: PLR2004
+
+
+def test_with_multi_item_increments_per_item() -> None:
+    """CX-002: 'with a, b:' adds 2 (one per item); base + 2 = 3."""
+    source = "def f():\n    with open('a') as x, open('b') as y:\n        pass\n"
+    fn = _parse_first_fn(source)
+    result = cyclomatic_complexity(fn)
+    assert result == 3, f"Expected 3 (1 base + 2 with-items), got {result}"  # noqa: PLR2004
+
+
+def test_multiple_except_handlers() -> None:
+    """CX-002: two except clauses → +2; base + 2 = 3."""
+    source = (
+        "def f():\n"
+        "    try:\n"
+        "        pass\n"
+        "    except ValueError:\n"
+        "        pass\n"
+        "    except TypeError:\n"
+        "        pass\n"
+    )
+    fn = _parse_first_fn(source)
+    result = cyclomatic_complexity(fn)
+    assert result == 3, f"Expected 3 (1 base + 2 except handlers), got {result}"  # noqa: PLR2004
+
+
+def test_chained_bool_op() -> None:
+    """CX-002: 'a and b and c' is ONE BoolOp with 3 values → +2; base + 2 = 3."""
+    source = "def f(a, b, c):\n    return a and b and c\n"
+    fn = _parse_first_fn(source)
+    result = cyclomatic_complexity(fn)
+    # One BoolOp node: values=[a, b, c], len(values)-1 = 2 → +2. Base 1 + 2 = 3.
+    assert result == 3, f"Expected 3 (1 base + BoolOp len-1=2), got {result}"  # noqa: PLR2004
+
+
+def test_comprehension_multiple_if_filters() -> None:
+    """CX-002: two if-filters in a comprehension → +2; base + 2 = 3."""
+    source = "def f(items):\n    return [x for x in items if x > 0 if x < 10]\n"
+    fn = _parse_first_fn(source)
+    result = cyclomatic_complexity(fn)
+    assert result == 3, f"Expected 3 (1 base + 2 comprehension ifs), got {result}"  # noqa: PLR2004
+
+
+def test_nested_inner_function_scored_independently() -> None:
+    """CX-002: inner function's complexity is scored independently of outer."""
+    source = """\
+def outer():
+    x = 1
+    def inner(a, b, c):
+        if a:
+            return a
+        if b:
+            return b
+        return c
+    return inner(x, x, x)
+"""
+    module = ast.parse(source)
+    outer_node = next(n for n in module.body if isinstance(n, ast.FunctionDef))
+    inner_node = next(
+        n for n in ast.walk(outer_node) if isinstance(n, ast.FunctionDef) and n.name == "inner"
+    )
+
+    # Outer: no decision points of its own (nested function not counted)
+    assert cyclomatic_complexity(outer_node) == 1, (
+        f"Expected outer complexity 1, got {cyclomatic_complexity(outer_node)}"
+    )
+    # Inner: 2 if-statements → 1 base + 2 = 3
+    assert cyclomatic_complexity(inner_node) == 3, (  # noqa: PLR2004
+        f"Expected inner complexity 3, got {cyclomatic_complexity(inner_node)}"
+    )

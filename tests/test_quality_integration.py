@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from gaze_py.cli.main import _score_target
 from gaze_py.config.loader import GazeConfig
 from gaze_py.quality.pipeline import assess
+from gaze_py.taxonomy.models import ContractCoverageResult, FunctionTarget
 
 # Paths to testdata fixtures.
 _TESTDATA = Path(__file__).parent / "testdata" / "quality"
@@ -173,3 +175,70 @@ def test_nonexistent_tests_file_returns_empty(tmp_path: Path) -> None:
         config=_default_config(),
     )
     assert reports == []
+
+
+# ---------------------------------------------------------------------------
+# effect_confidence_range — ECR-001 / ECR-002
+# ---------------------------------------------------------------------------
+
+
+def test_effect_confidence_range_populated_when_all_effects_ambiguous() -> None:
+    """ECR-001: effect_confidence_range is (min, max) when reason=='all_effects_ambiguous'."""
+    # Construct a ContractCoverageResult directly with the all_effects_ambiguous reason.
+    # This tests the _score_target() CLI wiring independently of the classification
+    # engine, which avoids needing a fixture whose classification is guaranteed ambiguous.
+    quality_result = ContractCoverageResult(
+        percentage=None,
+        covered_effects=0,
+        total_contractual=0,
+        over_specification_count=0,
+        unmapped_assertions=0,
+        reason="all_effects_ambiguous",
+        min_confidence=60,
+        max_confidence=85,
+    )
+    target = FunctionTarget(name="f", file_path="test.py", line=1, complexity=1)
+    cfg = GazeConfig()
+    _score_target(target, line_coverage_frac=None, config=cfg, quality_result=quality_result)
+
+    assert target.score is not None
+    assert target.score.effect_confidence_range == (60, 85)
+    assert target.score.effect_confidence_range[0] <= target.score.effect_confidence_range[1]
+    assert 0 <= target.score.effect_confidence_range[0] <= 100
+    assert 0 <= target.score.effect_confidence_range[1] <= 100
+
+
+def test_effect_confidence_range_none_for_normal_coverage() -> None:
+    """ECR-002: effect_confidence_range is None when reason is not 'all_effects_ambiguous'."""
+    quality_result = ContractCoverageResult(
+        percentage=100.0,
+        covered_effects=1,
+        total_contractual=1,
+        over_specification_count=0,
+        unmapped_assertions=0,
+        reason=None,
+    )
+    target = FunctionTarget(name="f", file_path="test.py", line=1, complexity=1)
+    cfg = GazeConfig()
+    _score_target(target, line_coverage_frac=None, config=cfg, quality_result=quality_result)
+
+    assert target.score is not None
+    assert target.score.effect_confidence_range is None
+
+
+def test_effect_confidence_range_none_for_no_effects() -> None:
+    """ECR-002: effect_confidence_range is None when reason is 'no_effects_detected'."""
+    quality_result = ContractCoverageResult(
+        percentage=None,
+        covered_effects=0,
+        total_contractual=0,
+        over_specification_count=0,
+        unmapped_assertions=0,
+        reason="no_effects_detected",
+    )
+    target = FunctionTarget(name="f", file_path="test.py", line=1, complexity=1)
+    cfg = GazeConfig()
+    _score_target(target, line_coverage_frac=None, config=cfg, quality_result=quality_result)
+
+    assert target.score is not None
+    assert target.score.effect_confidence_range is None

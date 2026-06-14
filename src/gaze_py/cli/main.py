@@ -1039,7 +1039,16 @@ def _score_target(
         contract_coverage_reason=contract_coverage_reason,
         fix_strategy=strategy,
         quadrant=quad,
-        effect_confidence_range=None,  # deferred to future change
+        effect_confidence_range=(
+            (quality_result.min_confidence, quality_result.max_confidence)
+            if (
+                quality_result is not None
+                and quality_result.reason == "all_effects_ambiguous"
+                and quality_result.min_confidence is not None
+                and quality_result.max_confidence is not None
+            )
+            else None
+        ),
     )
 
 

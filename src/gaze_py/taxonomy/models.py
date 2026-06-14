@@ -95,9 +95,12 @@ class Score:
             None when CRAP is null or CRAP < crap_threshold.
         quadrant: Quadrant classification (e.g., "Q1_Safe"), or None when
             GazeCRAP is not available.
-        effect_confidence_range: Reserved for a future change. Always None
-            in this implementation. The field MUST be present and serialize
-            as null per OC-003.
+        effect_confidence_range: ``(min_confidence, max_confidence)`` as a
+            tuple of two ints in [0, 100] when all detected effects on the
+            function are classified as ambiguous (``reason == "all_effects_ambiguous"``
+            in the O1 quality pipeline). ``None`` in all other cases, including
+            when O1 has not run. Per OC-003, the field MUST be present in JSON
+            output and serializes as a two-element array or null.
     """
 
     line_coverage: float | None = None
@@ -267,8 +270,16 @@ class ContractCoverageResult:
         total_contractual: Total contractual effects on the target function.
         over_specification_count: Assertions that map to incidental effects.
         unmapped_assertions: Assertions that did not map to any effect.
-        reason: "no_contractual_effects" | "no_effects_detected" | None.
-            Set when percentage is None.
+        reason: Reason code when percentage is None:
+            ``"no_effects_detected"`` — function has no detected side effects;
+            ``"no_contractual_effects"`` — effects exist but all are incidental;
+            ``"all_effects_ambiguous"`` — effects exist but all are ambiguous
+            (none contractual, none incidental). ``None`` when coverage is
+            computed normally.
+        min_confidence: Minimum ``ClassificationResult.score`` across all
+            ambiguous effects. Set only when ``reason == "all_effects_ambiguous"``.
+        max_confidence: Maximum ``ClassificationResult.score`` across all
+            ambiguous effects. Set only when ``reason == "all_effects_ambiguous"``.
     """
 
     percentage: float | None
@@ -277,6 +288,8 @@ class ContractCoverageResult:
     over_specification_count: int
     unmapped_assertions: int
     reason: str | None = None
+    min_confidence: int | None = None
+    max_confidence: int | None = None
 
 
 @dataclass(frozen=True)
