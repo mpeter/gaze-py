@@ -37,29 +37,36 @@ gazepy analyze src/ --format=json
 # Human-readable text output (one line per function)
 gazepy analyze src/ --format=text
 
-# Analyse with coverage data (enables CRAP scoring)
-gazepy analyze src/ --coverage-json coverage.json
+# CRAP scoring — auto-runs pytest for coverage
+gazepy crap src/
 
-# Report command (analyses src/, ignores tests/ — O1 quality assessment deferred)
-gazepy report src/ tests/
+# CRAP scoring with a pre-generated coverage report
+gazepy crap src/ --coverprofile coverage.json
+
+# Scaffold OpenCode agent and command files into .opencode/
+gazepy init
 ```
 
-## Enabling CRAP scoring with `--coverage-json`
+## CRAP scoring with `gazepy crap`
 
-CRAP scoring requires line coverage data. Generate a `coverage.py` JSON report and
-pass it to `gazepy`:
+CRAP scoring requires line coverage data. The `crap` command can collect coverage
+automatically by running pytest, or accept a pre-generated `coverage.py` JSON report:
 
 ```bash
-# Generate coverage report with pytest
-pytest --cov=your_package --cov-report=json
+# Auto-run pytest and collect coverage (requires pytest-cov)
+gazepy crap src/
 
-# Pass the report to gazepy
-gazepy analyze src/ --coverage-json coverage.json
+# Use a pre-generated coverage report (recommended in CI to avoid a double test run)
+pytest --cov=your_package --cov-report=json:coverage.json
+gazepy crap src/ --coverprofile coverage.json
 ```
 
-When `--coverage-json` is provided, the `line_coverage`, `crap`, `fix_strategy`, and
-`quadrant` fields are populated in the output. When omitted, those fields are `null`
-(not `0.0`) — this is intentional: null means "not measured", not "zero coverage".
+When coverage is provided, the `line_coverage` and `crap` fields are populated in the
+output. When omitted, those fields are `null` (not `0.0`) — null means "not measured",
+not "zero coverage". GazeCRAP and quadrant fields remain `null` until O1 ships.
+
+The `analyze` command detects side effects only — it does not compute CRAP scores.
+Use `gazepy crap` for CRAP scoring.
 
 ## Understanding the output
 
