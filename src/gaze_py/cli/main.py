@@ -720,7 +720,7 @@ def _resolve_line_coverage(
     3. Filename-only (`complexity.py`) — last-resort fallback for any
        remaining edge cases.
 
-    Converts ``percent_covered`` (0–100) from *coverage_data* to a fraction
+    Converts `percent_covered` (0–100) from `coverage_data` to a fraction
     (0.0–1.0) for the CRAP scorer.
 
     Args:
