@@ -1,4 +1,5 @@
 ---
+name: forge-global
 description: Cross-project forge coordination patterns
 tags: [forge, global, coordination]
 ---
