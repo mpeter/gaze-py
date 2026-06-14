@@ -85,8 +85,10 @@ def test_undertested_fixture_zero_coverage() -> None:
     assert report is not None, f"No report for compute_total. Reports: {reports}"
     assert report.contract_coverage is not None
     # Must be 0.0 (not None) — contractual effects exist but no assertions cover them.
+    assert report.contract_coverage.percentage is not None, (
+        "Expected 0.0 coverage, got None — pipeline incorrectly returned null-not-zero"
+    )
     assert report.contract_coverage.percentage == 0.0
-    assert report.contract_coverage.percentage is not None
 
 
 # ---------------------------------------------------------------------------
