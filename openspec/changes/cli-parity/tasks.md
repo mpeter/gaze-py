@@ -93,14 +93,14 @@
 
 ## 3. Add `quality` stub
 
-- [ ] 3.1 Add `quality` Click command with full Go gaze flag surface:
+- [x] 3.1 Add `quality` Click command with full Go gaze flag surface:
       `PATH`, `--format`, `--target`, `--verbose`, `--include-unexported`,
       `--config`, `--contractual-threshold`, `--incidental-threshold`,
       `--min-contract-coverage`, `--max-over-specification`,
       `--ai-mapper`, `--ai-mapper-model`
-- [ ] 3.2 Body: emit "not yet implemented" error to stderr mentioning "O1"
+- [x] 3.2 Body: emit "not yet implemented" error to stderr mentioning "O1"
       and "change 002/A"; `raise SystemExit(1)`
-- [ ] 3.3 Tests:
+- [x] 3.3 Tests:
       - `test_quality_stub_bare_invocation` — exit 1, `"not yet implemented"` in stderr
       - `test_quality_stub_flag_surface` — invoke with `--format json
         --min-contract-coverage 80 /tmp`; assert exit 1 (not 2 = Click parse error)
@@ -110,11 +110,11 @@
 
 ## 4. Add `docscan` stub
 
-- [ ] 4.1 Add `docscan` Click command with `[PATH]` optional positional and
+- [x] 4.1 Add `docscan` Click command with `[PATH]` optional positional and
       `--config` flag matching Go gaze `newDocscanCmd`
-- [ ] 4.2 Body: emit "not yet implemented" error to stderr mentioning "O3";
+- [x] 4.2 Body: emit "not yet implemented" error to stderr mentioning "O3";
       `raise SystemExit(1)`
-- [ ] 4.3 Tests:
+- [x] 4.3 Tests:
       - `test_docscan_stub_bare_invocation` — exit 1, `"not yet implemented"` in stderr
       - `test_docscan_stub_mentions_o3` — `"O3"` in stderr, `"O1"` NOT in stderr
       - `test_docscan_stub_accepts_config_flag` — invoke with `--config /tmp/x.yaml`;
@@ -122,13 +122,13 @@
 
 ## 5. Refactor `report` to stub with Go gaze signature
 
-- [ ] 5.1 Change positional args from `(src, tests)` to optional `[path]`
-- [ ] 5.2 Add flags matching Go gaze `newReportCmd`: `--ai`, `--model`,
+- [x] 5.1 Change positional args from `(src, tests)` to optional `[path]`
+- [x] 5.2 Add flags matching Go gaze `newReportCmd`: `--ai`, `--model`,
       `--format`, `--coverprofile`, `--max-crapload`, `--max-gaze-crapload`,
       `--min-contract-coverage`, `--ai-timeout`
-- [ ] 5.3 Body: emit migration-guidance error to stderr (mentions O1+O2 and
+- [x] 5.3 Body: emit migration-guidance error to stderr (mentions O1+O2 and
       suggests `gazepy crap` for CRAP scoring); `raise SystemExit(1)`
-- [ ] 5.4 Tests:
+- [x] 5.4 Tests:
       - `test_report_stub_bare_invocation` — exit 1, `"not yet implemented"` in stderr
       - `test_report_stub_mentions_crap_migration` — `"gazepy crap"` in stderr
       - `test_report_stub_accepts_ai_flag` — invoke with `--ai claude /tmp`;
@@ -140,10 +140,10 @@
 
 ## 6. Add `schema` command
 
-- [ ] 6.1 Extract JSON schema string as module-level constant `SCHEMA: str`
+- [x] 6.1 Extract JSON schema string as module-level constant `SCHEMA: str`
       in `src/gaze_py/report/json_formatter.py` if not already a constant
-- [ ] 6.2 Add `schema` Click command (no args, no flags); body: `click.echo(SCHEMA)`
-- [ ] 6.3 Tests:
+- [x] 6.2 Add `schema` Click command (no args, no flags); body: `click.echo(SCHEMA)`
+- [x] 6.3 Tests:
       - `test_schema_exit_0` — exit 0
       - `test_schema_valid_json` — `json.loads(output)` does not raise
       - `test_schema_matches_constant` — `json.loads(output) == json.loads(SCHEMA)`,
@@ -151,15 +151,15 @@
 
 ## 7. Add `self-check` command
 
-- [ ] 7.1 Implement `_find_project_root() -> Path` — walk up from `Path.cwd()`;
+- [x] 7.1 Implement `_find_project_root() -> Path` — walk up from `Path.cwd()`;
       check for `pyproject.toml` at each level; terminate when `p.parent == p`
       (filesystem root); emit warning and return `Path.cwd()` if not found.
       If `<root>/src/gaze_py/` does not exist, emit error and exit 2.
-- [ ] 7.2 Add `self-check` Click command with `--format`, `--max-crapload`,
+- [x] 7.2 Add `self-check` Click command with `--format`, `--max-crapload`,
       `--max-gaze-crapload` flags (matching Go gaze `newSelfCheckCmd`);
       body: call `_find_project_root()`, run `_run_crap()` on
       `<root>/src/gaze_py/`
-- [ ] 7.3 Tests:
+- [x] 7.3 Tests:
       - `test_selfcheck_root_at_cwd` — pyproject.toml in cwd; assert correct path
       - `test_selfcheck_root_at_depth_1` — pyproject.toml one level up
       - `test_selfcheck_root_at_depth_2` — pyproject.toml two levels up
@@ -173,17 +173,17 @@
 
 ## 8. Add `init` command and scaffold engine
 
-- [ ] 8.1 Create `src/gaze_py/cli/assets/` directory with `__init__.py`,
+- [x] 8.1 Create `src/gaze_py/cli/assets/` directory with `__init__.py`,
       `agents/gazepy-reporter.md`, and `commands/gazepy.md`
-- [ ] 8.2 Write `gazepy-reporter.md`: binary resolution (uv run → which →
+- [x] 8.2 Write `gazepy-reporter.md`: binary resolution (uv run → which →
       install), commands (`gazepy analyze --format=json`, `gazepy crap
       --format=json`), null O1 field handling, emoji formatting contract
       (mode: subagent; mandatory 🔍/📊/🟢🟡🔴⚪/⚠️ markers per UF contract;
       cite `../unbound-force/.opencode/agents/gaze-reporter.md` for reference),
       mode support (full / crap / analyze)
-- [ ] 8.3 Write `gazepy.md`: `agent: gazepy-reporter` delegation, usage
+- [x] 8.3 Write `gazepy.md`: `agent: gazepy-reporter` delegation, usage
       `/gazepy [mode] [path]`, examples
-- [ ] 8.4 Implement `src/gaze_py/cli/scaffold.py`:
+- [x] 8.4 Implement `src/gaze_py/cli/scaffold.py`:
       - Asset embedding via `importlib.resources.files("gaze_py.cli.assets")`
       - Two-path version marker insertion (frontmatter present / absent)
         per `_insert_marker()` in design.md
@@ -194,10 +194,10 @@
       - `Result` dataclass: `created: list[str]`, `skipped: list[str]`,
         `overwritten: list[str]`
       - `run(target_dir, force, version, stdout) -> Result`
-- [ ] 8.5 Add `init` Click command with `--force` flag; delegate to `scaffold.run()`
-- [ ] 8.6 Verify no `pyproject.toml` changes needed (hatchling includes
+- [x] 8.5 Add `init` Click command with `--force` flag; delegate to `scaffold.run()`
+- [x] 8.6 Verify no `pyproject.toml` changes needed (hatchling includes
       `cli/assets/` automatically via `packages = ["src/gaze_py"]`)
-- [ ] 8.7 Tests (all in temp directory):
+- [x] 8.7 Tests (all in temp directory):
       - `test_init_creates_files` — first run; assert `created` contains both assets
       - `test_init_idempotent_skip` — second run without `--force`; assert
         `skipped` contains both; file content unchanged
@@ -219,10 +219,10 @@
 
 ## 9. CI gate pass
 
-- [ ] 9.1 `uv run ruff check . && uv run ruff format --check .`
-- [ ] 9.2 `uv run mypy src/`
-- [ ] 9.3 `uv run pytest --cov=gaze_py --cov-fail-under=85`
-- [ ] 9.4 Confirm version bump from 0.1 above is reflected in all output
+- [x] 9.1 `uv run ruff check . && uv run ruff format --check .`
+- [x] 9.2 `uv run mypy src/`
+- [x] 9.3 `uv run pytest --cov=gaze_py --cov-fail-under=85`
+- [x] 9.4 Confirm version bump from 0.1 above is reflected in all output
       (e.g., `gazepy --version`, JSON output `version` field if present)
 
 <!-- spec-review: passed -->

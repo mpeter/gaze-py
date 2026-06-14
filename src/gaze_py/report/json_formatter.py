@@ -32,11 +32,11 @@ SCHEMA: str = json.dumps(
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": ["name", "file_path", "line_start", "complexity", "side_effects"],
+                    "required": ["name", "file_path", "line", "complexity", "side_effects"],
                     "properties": {
                         "name": {"type": "string"},
                         "file_path": {"type": "string"},
-                        "line_start": {"type": "integer"},
+                        "line": {"type": "integer"},
                         "complexity": {"type": "integer"},
                         "side_effects": {"type": "array"},
                         "classification": {"type": ["object", "null"]},

@@ -35,6 +35,22 @@ All notable changes to gaze-py are documented here.
   `--function` / `-f`, `--include-unexported`. Achieves flag-level parity
   with Go gaze `newAnalyzeCmd`.
 
+### New Commands
+
+- **`quality` (stub)**: Accepts full Go gaze flag surface. Exits 1 with
+  guidance to use Go gaze until O1 (change 002/A) is implemented.
+- **`docscan` (stub)**: Accepts `[PATH]` and `--config`. Exits 1 with
+  guidance to use Go gaze until O3 is implemented.
+- **`schema`**: Emits the JSON schema for the `AnalysisResult` envelope used
+  by `analyze` and `crap` output.
+- **`self-check`**: Runs CRAP analysis on gaze-py's own source tree
+  (`src/gaze_py/`). Walks up from cwd to find the project root via
+  `pyproject.toml`. Supports `--format`, `--max-crapload`, and
+  `--max-gaze-crapload`.
+- **`init`**: Scaffolds `.opencode/agents/gazepy-reporter.md` and
+  `.opencode/commands/gazepy.md` into the current project. Idempotent;
+  use `--force` to overwrite existing user-owned files.
+
 ### Migration Guide
 
 | Old invocation | New invocation |

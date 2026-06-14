@@ -143,6 +143,7 @@ def run(
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         out_path.write_bytes(final_bytes)
+        out_path.chmod(0o644)
 
         if already_exists:
             result.overwritten.append(target_rel)

@@ -80,8 +80,8 @@ class Score:
     corresponding capability has not run.
 
     Attributes:
-        line_coverage: Line coverage percentage [0, 100] from coverage.py,
-            or None when --coverage-json was not provided.
+        line_coverage: Line coverage fraction [0.0, 1.0] from coverage.py,
+            or None when --coverprofile was not provided to gazepy crap.
         crap: CRAP score, or None when line_coverage is None.
         gaze_crap: GazeCRAP score, or None when O1 (contract coverage) has
             not run.

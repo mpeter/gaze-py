@@ -343,10 +343,11 @@ def crap(
                 err=True,
             )
             coverage_data = None
-        except Exception:  # noqa: BLE001  # _load_coverage_json parse errors
+        except Exception as exc:  # noqa: BLE001  # _load_coverage_json parse errors
             # GazeConfigError (ValueError) or any other JSON parse failure.
             click.echo(
-                "Warning: coverage JSON could not be parsed — continuing without coverage data.",
+                f"Warning: coverage JSON could not be parsed — continuing without coverage data. "
+                f"({exc})",
                 err=True,
             )
             coverage_data = None
@@ -886,8 +887,7 @@ def _run_crap(
     """Run the full detect → classify → score pipeline for CRAP analysis.
 
     Always runs classification (required for fix_strategy computation) and
-    scoring. Migrated from _run_pipeline which was used by the old analyze
-    and report commands.
+    scoring.
 
     Args:
         path: Resolved source path (file or directory) to analyze.
