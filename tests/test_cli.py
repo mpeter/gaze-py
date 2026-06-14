@@ -22,7 +22,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from gaze_py.cli.main import cli
+from gaze_py.cli.main import _resolve_line_coverage, cli
 
 # Path to the testdata directory (relative to this test file)
 _TESTDATA = Path(__file__).parent / "testdata" / "analysis"
@@ -350,13 +350,12 @@ def test_crap_coverprofile_path(tmp_path: Path) -> None:
 # _resolve_line_coverage — unit tests for all three lookup branches (task 2.1)
 # ---------------------------------------------------------------------------
 
-# Testing _resolve_line_coverage directly because the three lookup branches
-# (root-relative, cwd-relative, filename-only) cannot be exercised in
+# CR-004: _resolve_line_coverage is tested directly because the three lookup
+# branches (root-relative, cwd-relative, filename-only) cannot be exercised in
 # isolation through the CLI without constructing a full coverage.json fixture
 # that happens to match each specific key format — which would obscure what
 # is actually being tested and make the branch-2 (cwd-relative) case
 # impossible to trigger deterministically.
-from gaze_py.cli.main import _resolve_line_coverage  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -371,8 +370,11 @@ from gaze_py.cli.main import _resolve_line_coverage  # noqa: E402
         ({"complexity.py": 60.0}, 0.60),
         # Non-match: absent key → None.
         ({"other/file.py": 50.0}, None),
+        # Branch 3 via cwd-skip: py_file is outside cwd so cwd_rel is None;
+        # the function must skip attempt 2 and fall through to filename-only.
+        ({"complexity.py": 42.0}, 0.42),
     ],
-    ids=["root-relative", "cwd-relative", "filename-only", "non-match"],
+    ids=["root-relative", "cwd-relative", "filename-only", "non-match", "cwd-skip-filename-only"],
 )
 def test_resolve_line_coverage_branches(
     tmp_path: Path,
@@ -392,12 +394,31 @@ def test_resolve_line_coverage_branches(
 
     For branch 2 (cwd-relative), monkeypatch.chdir(tmp_path) makes
     Path.cwd() == tmp_path, so the cwd-relative key is
-    ``src/gaze_py/analysis/complexity.py``.
+    `src/gaze_py/analysis/complexity.py`.
     For branch 1 (root-relative), root == tmp_path, so the root-relative key
-    is ``src/gaze_py/analysis/complexity.py`` as well — but the parametrize
-    fixture for branch 1 uses ``analysis/complexity.py`` which only matches
-    when root is set to ``tmp_path / "src" / "gaze_py"`` (see below).
+    is `src/gaze_py/analysis/complexity.py` as well — but the parametrize
+    fixture for branch 1 uses `analysis/complexity.py` which only matches
+    when root is set to `tmp_path / "src" / "gaze_py"` (see below).
+
+    For the cwd-skip case (id="cwd-skip-filename-only"), py_file lives under
+    a separate tmp directory that is NOT under Path.cwd(), so cwd_rel is None
+    and the function must fall through directly to the filename-only lookup.
     """
+    # The cwd-skip case uses a py_file outside cwd to force cwd_rel=None.
+    if expected_frac == 0.42:
+        outside_dir = tmp_path / "outside" / "analysis"
+        outside_dir.mkdir(parents=True)
+        py_file = outside_dir / "complexity.py"
+        py_file.touch()
+        root = tmp_path / "outside"
+        # chdir somewhere that py_file is NOT under, so is_relative_to(cwd) is False.
+        unrelated = tmp_path / "unrelated"
+        unrelated.mkdir()
+        monkeypatch.chdir(unrelated)
+        result = _resolve_line_coverage(py_file, root, coverage_data)
+        assert result == expected_frac
+        return
+
     # Build a realistic nested path so all three key formats are distinct.
     analysis_dir = tmp_path / "src" / "gaze_py" / "analysis"
     analysis_dir.mkdir(parents=True)
