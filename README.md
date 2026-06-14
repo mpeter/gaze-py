@@ -15,7 +15,7 @@ under-tested. The output is schema-compatible with the Go gaze implementation.
 
 ```bash
 # Run without installing (recommended for one-off use)
-uvx gaze-py --help
+uvx --from gaze-py gazepy --help
 
 # Permanent install
 uv tool install gaze-py

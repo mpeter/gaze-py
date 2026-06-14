@@ -12,7 +12,7 @@ permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: false  # Never cancel a release mid-publish; partial uploads cannot be undone.
 
 jobs:
   preflight:
@@ -45,6 +45,7 @@ jobs:
       - name: Verify version matches tag
         run: |
           TAG_VER="${RELEASE_TAG#v}"
+
           PROJ_VER=$(python3 -c "
           import tomllib
           with open('pyproject.toml', 'rb') as f:
@@ -56,7 +57,23 @@ jobs:
             echo "Bump the version in pyproject.toml and src/gaze_py/__init__.py first."
             exit 1
           fi
-          echo "Version match confirmed: $PROJ_VER"
+          echo "pyproject.toml version match: $PROJ_VER"
+
+          INIT_VER=$(python3 -c "
+          import ast, pathlib
+          tree = ast.parse(pathlib.Path('src/gaze_py/__init__.py').read_text())
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Assign):
+                  for t in node.targets:
+                      if isinstance(t, ast.Name) and t.id == '__version__':
+                          print(ast.literal_eval(node.value))
+          ")
+          if [ "$INIT_VER" != "$TAG_VER" ]; then
+            echo "::error::__init__.py __version__ ($INIT_VER) does not match tag ($TAG_VER)."
+            echo "Bump __version__ in src/gaze_py/__init__.py to match."
+            exit 1
+          fi
+          echo "__init__.py version match: $INIT_VER"
 
   publish:
     needs: preflight
@@ -79,6 +96,9 @@ jobs:
         with:
           version: "0.11.21"
 
+      - name: Build
+        run: uv build
+
       - name: Create and push git tag
         run: |
           git config user.name "github-actions[bot]"
@@ -86,8 +106,21 @@ jobs:
           git tag "$RELEASE_TAG"
           git push origin "$RELEASE_TAG"
 
-      - name: Build
-        run: uv build
-
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@6733eb7d741f0b11ec6a39b58540dab7590f9b7d  # v1.14.0
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        with:
+          packages-dir: dist/
+          skip-existing: false
+
+      - name: Smoke test published package
+        run: |
+          VER="${RELEASE_TAG#v}"
+          for i in 1 2 3 4 5; do
+            sleep 30
+            if uvx --from "gaze-py==${VER}" gazepy --version 2>/dev/null | grep -q "${VER}"; then
+              echo "Smoke test passed: gaze-py ${VER} is available on PyPI."
+              exit 0
+            fi
+            echo "Attempt $i: not yet available, retrying in 30s..."
+          done
+          echo "::warning::Smoke test timed out after 150s — verify manually at https://pypi.org/p/gaze-py"
