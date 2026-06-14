@@ -2,6 +2,21 @@
 
 All notable changes to gaze-py are documented here.
 
+## [0.3.1] — 2026-06-14
+
+### Bug Fixes / Improvements
+
+- **`effect_confidence_range` now populated** — `Score.effect_confidence_range`
+  is no longer always `null`. When all detected effects on a function are
+  classified as ambiguous (`reason == "all_effects_ambiguous"`), the field
+  is set to `[min_confidence, max_confidence]` (two ints in [0,100]).
+  Matches Go gaze reference semantics. In all other cases it remains `null`.
+- **Complexity algorithm formally specified** — `analysis/complexity.py`
+  algorithm is now locked by 7 new round-trip tests with exact expected
+  values. The previous `test_high_complexity_function_greater_than_1`
+  (asserted `> 1`) is replaced by `test_high_complexity_function_exact_value`
+  (asserts `== 9`).
+
 ## [0.3.0] — 2026-06-14
 
 ### New Features
