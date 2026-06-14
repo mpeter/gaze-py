@@ -15,7 +15,7 @@ import enum
 import json
 from typing import Any
 
-from gaze_py.taxonomy.models import AnalysisResult
+from gaze_py.taxonomy.models import AnalysisResult, QualityReport
 
 # JSON schema for the AnalysisResult output format.
 # Extracted as a module-level constant so the `schema` CLI command can emit it
@@ -144,6 +144,23 @@ def _json_default(obj: Any) -> Any:  # noqa: ANN401  # Any is required — json.
     if isinstance(obj, (tuple, frozenset)):
         return sorted(obj) if isinstance(obj, frozenset) else list(obj)
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def quality_to_json(reports: list[QualityReport], *, indent: int = 2) -> str:
+    """Serialize a list of QualityReport objects to JSON.
+
+    Args:
+        reports: Quality assessment reports to serialize.
+        indent: JSON indentation level.
+
+    Returns:
+        JSON string.
+    """
+    return json.dumps(
+        [dataclasses.asdict(r) for r in reports],
+        default=_json_default,
+        indent=indent,
+    )
 
 
 def to_json(result: AnalysisResult, *, indent: int = 2) -> str:

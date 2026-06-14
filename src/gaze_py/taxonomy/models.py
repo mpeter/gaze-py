@@ -289,6 +289,9 @@ class QualityReport:
         assertions: Detected assertion sites in the test function.
         contract_coverage: Coverage result (None if no target found).
         warnings: Non-fatal warnings from pairing or mapping.
+        complexity: McCabe cyclomatic complexity of the production target,
+            or None when no target was found. Used to compute GazeCRAP in
+            text output (H6 fix).
     """
 
     test_function: str
@@ -296,3 +299,4 @@ class QualityReport:
     assertions: tuple[AssertionSite, ...]
     contract_coverage: ContractCoverageResult | None
     warnings: tuple[str, ...]
+    complexity: int | None = None
