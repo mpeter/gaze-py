@@ -10,6 +10,36 @@
   tasks run in parallel.
 -->
 
+<!--
+  IMPLEMENTER NOTES — non-blocking advisories from the
+  victory-lap review council run (all 8 reviewers approved):
+
+  1. BFS must use graph.get(fqn, set()) not graph[fqn] —
+     a callee that was never itself a caller has no key in
+     the adjacency dict; KeyError without the .get() guard.
+
+  2. _process_test_func() needs astroid_graph threaded
+     through as a parameter — task 5.4 says "pass
+     astroid_graph=graph to every pair_to_targets() call"
+     but the only call site is inside _process_test_func(),
+     not directly in assess(). Update _process_test_func()
+     signature accordingly.
+
+  3. build_contract_coverage_map export in __init__.py
+     should be deferred to after task 6.1 — task 2.1
+     specifies both AssessResult and build_contract_coverage_map
+     in the __init__.py update, but build_contract_coverage_map
+     doesn't exist until 6.1. Do the __init__.py export for
+     build_contract_coverage_map as part of task 6.1, not 2.1.
+
+  4. "Zero transitive deps" in proposal.md is slightly
+     imprecise — astroid has lazy_object_proxy, wrapt,
+     typing_extensions, and platformdirs as transitive deps.
+     They are all benign and widely deployed; the supply chain
+     argument is still valid. Do not repeat the zero-deps claim
+     in user-facing docs or --help text.
+-->
+
 ## 1. Dependency and version bump
 
 - [ ] 1.1 Add `astroid>=3.0` to `[project] dependencies` in
