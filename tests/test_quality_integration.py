@@ -94,12 +94,15 @@ def test_undertested_fixture_zero_coverage() -> None:
 
 
 # ---------------------------------------------------------------------------
-# attribute_mutation fixture: coverage > 0%
+# attribute_mutation fixture: attribute mutation classified as incidental
 # ---------------------------------------------------------------------------
 
 
 def test_attribute_mutation_fixture_coverage() -> None:
-    """set_label: assertion on mutated attribute → coverage > 0%."""
+    """set_label: attribute mutation classified as incidental.
+
+    Pipeline returns percentage=None, reason='no_effects_detected'.
+    """
     reports = assess(
         _SRC / "attribute_mutation.py",
         _TESTS / "test_attribute_mutation.py",

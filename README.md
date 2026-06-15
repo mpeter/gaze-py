@@ -115,11 +115,6 @@ Each function in the output includes:
 The summary section includes `recommended_actions` — up to 20 functions sorted by
 priority (add_tests → decompose_and_test → decompose) that exceed the CRAP threshold.
 
-## Current limitations
-
-- **Effect confidence range deferred**: The `effect_confidence_range` field is present
-  in the output schema (as `null`) but not yet computed.
-
 ## Releasing
 
 ### Releasing a new version

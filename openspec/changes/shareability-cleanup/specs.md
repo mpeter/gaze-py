@@ -43,7 +43,9 @@ Specific locations (as of the audit):
 - The "GazeCRAP scoring deferred" bullet is removed (shipped in 0.3.0)
 - The output field table rows for `gaze_crap` and `quadrant` no longer say
   `null (O1 deferred)` — they accurately describe when these fields are populated
-- "Effect confidence range deferred" bullet is retained (still true)
+- The "Effect confidence range deferred" bullet is removed (shipped in 0.3.1 —
+  `effect_confidence_range` is now populated when `reason == "all_effects_ambiguous"`)
+- The `## Current limitations` section is removed entirely (no remaining limitations)
 
 ## SC-005 — README quality command documented
 
@@ -79,23 +81,24 @@ is always true (right arm is proven non-None two lines earlier) and must be repl
 
 ## SC-009 — uv.lock committed
 
-**Given** `uv.lock` has an unstaged change (version 0.2.0 → 0.3.0)  
+**Given** `uv.lock` has an unstaged change (version 0.3.1 → 0.4.0, including mypy 1.x → 2.1.0 major upgrade with transitive deps ast-serialize and librt)  
 **When** `git status` is run  
 **Then** `uv.lock` shows no unstaged modifications
 
 ## SC-010 — Completed OpenSpec changes archived
 
-**Given** five OpenSpec changes are complete (all tasks `[x]`)  
+**Given** six OpenSpec changes are complete (all tasks `[x]`), with a seventh (`constitution-v1-1-0-pr`) archived in a prior session  
 **When** a developer lists `openspec/changes/`  
-**Then** `001-initial-port`, `cli-parity`, `coverprofile-path-fix`,
+**Then** `001-initial-port`, `cli-parity`, `constitution-v1-1-0-pr`, `coverprofile-path-fix`,
 `o1-quality-pipeline`, `pypi-release`, and `upgrade-setup-uv` are located
-under `openspec/changes/archive/` rather than `openspec/changes/`
+under `openspec/changes/archive/` (seven entries total)
 
 **Then** `openspec/changes/` contains only:
 - `002-deferred-capabilities/` (tracking document, intentionally open)
 - `archive/` (completed changes)
+- `effect-confidence-range/` (open change — do not archive)
+- `o3-docscan/` (open change — do not archive)
 - `shareability-cleanup/` (this change, currently active)
-- `constitution-v1-1-0-pr/` (open, pending human merge)
 
 ## SC-011 — Empty docs/ directory removed
 
