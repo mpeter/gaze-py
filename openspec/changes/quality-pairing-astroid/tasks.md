@@ -32,9 +32,12 @@
       Use `tuple` fields to match the project convention (all other frozen
       dataclasses use `tuple[..., ...]` for sequences — see `QualityReport`,
       `ContractCoverageResult`).
-      Add `from gaze_py.quality.pipeline import AssessResult` to
-      `src/gaze_py/quality/__init__.py` so it is importable as
-      `from gaze_py.quality import AssessResult`.
+      Add to `src/gaze_py/quality/__init__.py`:
+      ```python
+      from gaze_py.quality.pipeline import AssessResult, build_contract_coverage_map
+      ```
+      Both public names are importable as
+      `from gaze_py.quality import AssessResult, build_contract_coverage_map`.
 
 - [ ] 2.2 Update `assess()` signature and return type in
       `src/gaze_py/quality/pipeline.py`:
@@ -42,12 +45,17 @@
       def assess(...) -> AssessResult:
       ```
       Update all callers in `cli/main.py`:
-      - `_emit_quality_json(result.reports)` — quality command shows only
-        test-keyed reports (untested functions are not shown in quality
-        output per D6)
-      - `_emit_quality_text(result.reports, ...)` — same
-      - `_check_min_contract_coverage(result.reports, ...)` — same
-      - Any other caller of `assess()` updated accordingly.
+      - Change `reports = assess(...)` to `result = assess(...)`; pass
+        `result.reports` (a `tuple[QualityReport, ...]`) where `reports`
+        was used.
+      - Update `_emit_quality_json()`, `_emit_quality_text()`, and
+        `_check_min_contract_coverage()` signatures to accept
+        `Sequence[QualityReport]` (from `collections.abc`) instead of
+        `list[QualityReport]` — `tuple` is a `Sequence` so no call-site
+        changes are needed beyond the variable rename above.
+      - `build_contract_coverage_map()` (task 6.1) calls `assess()` and
+        uses `result.reports + result.untested` — this is a consuming
+        caller of `AssessResult`; it is written knowing the new type.
 
 - [ ] 2.3 Update `QualityReport` docstring in `src/gaze_py/taxonomy/models.py`
       to document the `test_function=""` sentinel:
@@ -84,6 +92,11 @@
       ```
       When `no_test_coverage=True` but `target.effects` is empty,
       fall through to normal computation (returns `"no_effects_detected"`).
+      Note: `"no_test_coverage"` supersedes `"all_effects_ambiguous"` —
+      when `no_test_coverage=True` and effects exist (even if all
+      ambiguous), the function returns `"no_test_coverage"`. This matches
+      Go behaviour where `effectsSet` membership (any effects) triggers
+      `"no_test_coverage"` regardless of classification state.
 
 - [ ] 3.2 Update `ContractCoverageResult.reason` docstring in
       `src/gaze_py/taxonomy/models.py` to add:
@@ -142,8 +155,10 @@
       If either is missing, create it per the O1 task 2.7/2.8 spec
       before writing the integration tests.
 
-- [ ] 4.4 [P] New integration tests in `tests/test_quality_integration.py`
-      (no modification to existing tests):
+- [ ] 4.4 New integration tests in `tests/test_quality_integration.py`
+      — requires tasks 2.1 and 2.2 to be complete first (AssessResult
+      must exist and assess() must return it); do NOT mark [P] within
+      section 4 for this reason:
       - `test_assess_returns_assess_result` — `assess()` returns an
         `AssessResult` with `.reports` and `.untested` attributes.
       - `test_assess_untested_has_no_test_coverage_reason` — using the
@@ -158,32 +173,38 @@
         `target_function`) and `result.untested`.
       - `test_assess_no_effects_function_not_in_untested` — using the
         `simple` fixture where the source function has `ReturnValue` and
-        is fully tested, `result.untested` is empty (all functions paired)
-        OR contains only functions with `"no_effects_detected"` reason
-        (pure functions).
+        is fully tested (100% coverage), assert `result.untested` is
+        empty (length == 0). No OR-branch: for this fixture, all
+        production functions with effects ARE paired, so `untested`
+        must be empty, not "empty OR only no_effects_detected".
 
 ## 5. Pairing — Strategy 3 (Astroid transitive call graph)
 
 - [ ] 5.1 Add `_build_astroid_graph(test_files: list[Path], src_files: list[Path]) -> dict[str, set[str]]`
       to `src/gaze_py/quality/pairing.py`.
+      - Add `import sys` at **module level** in `pairing.py` (CS-002
+        MUST — all imports at module level; no inline imports).
       - Import `astroid`, `astroid.MANAGER`, `astroid.exceptions`, and
         `astroid.util` at module level (required production dependency —
         no defensive ImportError handler needed; D7).
       - Call `astroid.MANAGER.clear_cache()` before loading any files
         (D2 — prevents stale data across multiple `assess()` calls in
         the same process; this evicts all cached modules from the global
-        MANAGER, which is a known trade-off for correctness).
-      - For each file in `test_files + src_files`:
+        MANAGER, a known trade-off documented in D2 and CHANGELOG).
+      - Deduplicate input paths: build a `unique_files: list[Path]` from
+        `dict.fromkeys(test_files + src_files)` — preserves insertion
+        order, eliminates duplicates so files with multiple test
+        functions are not loaded more than once.
+      - For each file in `unique_files`:
         ```python
         try:
             module = astroid.MANAGER.ast_from_file(str(path))
         except astroid.exceptions.AstroidBuildingError as exc:
-            import sys
             sys.stderr.write(f"warning: astroid could not load {path}: {exc}\n")
             continue
         ```
-        (Use `sys.stderr.write()` not `click.echo()` — library modules
-        must not import Click; D9.)
+        (`sys` is imported at module level; `sys.stderr.write()` not
+        `click.echo()` — library module must not import Click; D9.)
       - For each `FunctionDef` node in the module (walk with
         `module.nodes_of_class(astroid.nodes.FunctionDef)`):
         - caller_qname = `fn.qname()`
@@ -234,8 +255,10 @@
       unaffected.
 
 - [ ] 5.4 Update `assess()` in `src/gaze_py/quality/pipeline.py`:
-      - Collect `test_files: list[Path]` from `_collect_test_functions`
-        before the loop (extract file paths from `TestFunc.filename`).
+      - Collect `test_funcs` from `_collect_test_functions(tests_path)`.
+      - Build `test_files: list[Path]` as deduplicated file paths:
+        `list(dict.fromkeys(Path(tf.filename) for tf in test_funcs))`
+        (one path per file, not one per test function).
       - Collect `src_files: list[Path]` via `collect_py_files(src_path)`.
       - Call `_build_astroid_graph(test_files, src_files)` once before
         the per-test-function loop.
@@ -287,17 +310,25 @@
       Tests (use `_build_astroid_graph()` directly with fixture file paths;
       do NOT use live project source):
       - `test_pair_astroid_resolves_method_call` — graph built from
-        `engine.py` + `test_engine.py`; `pair_to_targets()` for
-        `test_classify` resolves to `"classify"` or `"_make_engine"` via
-        Strategy 3 (first match in BFS order — both are production names
-        in the fixture; assert result is in `{"classify", "_make_engine"}`).
-      - `test_pair_astroid_transitive_reaches_caller_signal` — same graph;
-        BFS from `test_classify` reaches `caller_signal` transitively via
-        `_make_engine → Engine.classify → caller_signal`; assert
-        `"caller_signal"` is in the full reachable set from the test node
-        (test by calling `_pair_astroid()` with
-        `source_names={"caller_signal"}` and asserting result is
-        `"caller_signal"`).
+        `engine.py` only (NOT `test_engine.py` — the test file's cross-
+        file import will cause `AstroidBuildingError` on load; the
+        method-call resolution test is done with a hand-built graph):
+        Manually construct a graph dict:
+        `graph = {"tests.test_engine.test_engine_integration": {"engine._make_engine"},
+                  "engine._make_engine": {"engine.Engine.classify"},
+                  "engine.Engine.classify": {"engine.caller_signal"}}`
+        Create a `TestFunc` with `name="test_engine_integration"` (NOT
+        `"test_classify"` — Strategy 1 would strip prefix to `"classify"`
+        which matches a source function by name convention, bypassing
+        Strategy 3). With `source_names={"classify"}` and this graph,
+        `_pair_astroid()` reaches `Engine.classify` → short name
+        `"classify"` → match. Assert result is `"classify"` AND
+        `inference_method == "call_graph_transitive"` AND
+        `confidence == 0.75` (verifies Strategy 3, not Strategy 1).
+      - `test_pair_astroid_transitive_reaches_caller_signal` — same
+        hand-built graph; call `_pair_astroid()` with
+        `source_names={"caller_signal"}`; assert result is
+        `"caller_signal"` (transitive match through 3 hops).
       - `test_pair_astroid_depth_limit` — manually constructed graph dict
         with 6-hop chain `A→B→C→D→E→F→target`; `depth_limit=5` →
         `"target"` is NOT returned.
@@ -330,40 +361,47 @@
           `target_function` name (or first if both are `None`).
       - Returns the map; returns `{}` if `assess()` raises.
 
-- [ ] 6.2 Update `_run_crap()` in `src/gaze_py/cli/main.py`:
-      - After acquiring `coverage_data`, attempt to auto-discover a tests
-        path (search `tests/`, `test/`, `test_*.py` relative to
-        `path.parent`, then relative to `Path.cwd()`).
-      - If `tests_path` is explicitly provided via `--tests`, use that.
-      - If a tests path is resolved, call
-        `build_contract_coverage_map(path, resolved_tests, config)`.
-      - For each target, look up `ContractCoverageResult` by `name` and
-        pass to `_score_target(quality_result=ccr)`.
-      - Verify that the existing `_score_target()` `if quality_result is
-        not None and quality_result.percentage is not None:` guard already
-        handles `"no_test_coverage"` correctly — since `percentage=None`
-        for `"no_test_coverage"`, the existing else branch fires,
-        producing `gaze_crap_score=None, quad=None`. No new guard is
-        needed. Add a code comment: `# "no_test_coverage" has
-        percentage=None → falls to else branch, gaze_crap stays null
-        per Go contract (D5)`.
-      - **Known Limitation**: `build_contract_coverage_map()` calls
-        `assess()` with default `include_unexported=False`. Private
-        (underscore-prefixed) functions in crap output will always show
-        `contract_coverage_reason: null` even when tests exist for them.
-        This is documented in CHANGELOG and results.md (D10).
-      - If no tests path found, proceed as today (GazeCRAP null,
-        OC-003 compliant).
-
-- [ ] 6.3 Add `--tests` option to the `crap` command:
+- [ ] 6.2 Add `--tests` option to the `crap` command (must be done
+      BEFORE task 6.3 so the option exists when `_run_crap()` is updated):
       ```python
       @click.option("--tests", "tests_path", default=None,
                     help="Test directory or file. Auto-discovered if omitted.")
       ```
-      Thread through to `_run_crap()`.
+      Add `tests_path: str | None = None` to the `crap` function
+      signature. Thread it through as a `Path | None` to the inner
+      quality integration step (task 6.3).
 
-- [ ] 6.4 [P] New tests in `tests/test_cli.py`
-      (no modification to existing tests):
+- [ ] 6.3 Integrate quality pipeline into the `crap` command body
+      (NOT inside `_run_crap()` — `_run_crap()` signature is unchanged):
+      In the `crap` command body, after `result = _run_crap(src, coverage_data, config=config)`:
+      - Resolve `tests_path`: if `tests_path` option is provided, use it;
+        otherwise auto-discover (search `tests/`, `test/`, `test_*.py`
+        relative to `src.parent`, then `Path.cwd()`).
+      - If a tests path is resolved:
+        - Call `build_contract_coverage_map(src, resolved_tests, config)`.
+        - For each `target` in `result.functions`, look up
+          `ContractCoverageResult` by `target.name` in the map.
+        - If found, call `_score_target(target, line_coverage_frac=
+          target.score.line_coverage if target.score else None,
+          config=config, quality_result=ccr)` to re-score in-place
+          with contract coverage. (Note: `_run_crap()` already scored
+          the target once without quality data; this re-scores with it.
+          The re-score overwrites the `target.score` attribute.)
+        - Verify that the existing `_score_target()` guard
+          `if quality_result is not None and quality_result.percentage is not None:`
+          already handles `"no_test_coverage"` correctly (`percentage=None`
+          → else branch → `gaze_crap_score=None`). No new guard needed.
+          Add code comment: `# "no_test_coverage": percentage=None →
+          else branch → gaze_crap stays null per Go contract (D5)`.
+      - **Known Limitation**: `build_contract_coverage_map()` uses
+        `include_unexported=False`. Private functions always show
+        `contract_coverage_reason: null` in crap output (D10).
+      - If no tests path found, proceed as today (GazeCRAP null,
+        OC-003 compliant).
+
+- [ ] 6.4 New tests in `tests/test_cli.py` — requires tasks 6.2 and
+      6.3 to be complete first (--tests option and quality integration
+      must exist); do NOT mark [P] within section 6 for this reason:
       - `test_crap_with_tests_populates_contract_coverage_reason` — run
         `crap` on `tests/testdata/quality/src/` with
         `--tests tests/testdata/quality/tests/`; assert at least one

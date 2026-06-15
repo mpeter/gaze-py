@@ -69,6 +69,15 @@ callee FQNs). `_pair_astroid()` does BFS lookup — cheap per-function.
 `_build_astroid_graph()` invocation to prevent stale data when
 `assess()` is called multiple times in the same process (e.g. in tests).
 
+**Process-global side effect**: `astroid.MANAGER` is a module-level
+singleton. `clear_cache()` evicts all cached AST modules globally —
+including any loaded by other tools (pylint, mypy plugins) sharing the
+same Python process. This is the correct trade-off for a CLI tool where
+gaze-py owns the process. Users who embed gaze-py as a library alongside
+other astroid consumers (e.g. pylint) should be aware that each
+`assess()` call will evict their tool's AST cache. Documented in
+CHANGELOG `### Known Limitations`.
+
 ### D3: Match on name segment only; BFS non-determinism documented
 
 Astroid returns fully-qualified names. The match extracts the short name
