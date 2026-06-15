@@ -277,6 +277,9 @@ class ContractCoverageResult:
             ``"all_effects_ambiguous"`` — effects exist but all are ambiguous
             (none contractual, none incidental). ``None`` when coverage is
             computed normally.
+            ``"no_test_coverage"`` — effects were detected but no test targets
+            this function; percentage is None (null per OC-003 and Go
+            porting contract — "no test = no coverage data, not 0%").
         min_confidence: Minimum ``ClassificationResult.score`` across all
             ambiguous effects. Set only when ``reason == "all_effects_ambiguous"``.
         max_confidence: Maximum ``ClassificationResult.score`` across all
