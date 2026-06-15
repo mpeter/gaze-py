@@ -97,7 +97,19 @@ def assess(
         if report is not None:
             reports.append(report)
 
-    return AssessResult(reports=tuple(reports), untested=())
+    # Step 4: collect untested production functions (D6 in design.md).
+    # seen_names is the set of non-None target_function values from paired reports.
+    seen_names: set[str] = {r.target_function for r in reports if r.target_function is not None}
+
+    if target_func is None:
+        # Unfiltered run: compute untested reports for all unpaired source functions.
+        untested = _untested_reports(tuple(source_targets), seen_names, config)
+    else:
+        # Filtered run: seen_names is filtered, so we cannot reliably determine
+        # which functions are truly untested. Set untested to empty (B-03).
+        untested = ()
+
+    return AssessResult(reports=tuple(reports), untested=untested)
 
 
 def _process_test_func(
@@ -168,6 +180,45 @@ def _process_test_func(
         warnings=(),
         complexity=production_target.complexity,
     )
+
+
+def _untested_reports(
+    source_targets: tuple[FunctionTarget, ...],
+    seen_names: set[str],
+    config: GazeConfig,
+) -> tuple[QualityReport, ...]:
+    """Build QualityReport entries for production functions with no paired test.
+
+    For each FunctionTarget whose name is not in seen_names, calls
+    compute_contract_coverage() with no_test_coverage=True and emits a
+    QualityReport with test_function="" as a sentinel (D6 in design.md).
+
+    Args:
+        source_targets: All production FunctionTargets from source analysis.
+        seen_names: Set of target_function values already covered by paired
+            test-keyed reports. Functions in this set are skipped.
+        config: GazeConfig with classification thresholds.
+
+    Returns:
+        Tuple of QualityReport entries for unpaired production functions.
+        Empty tuple when all production functions are paired.
+    """
+    results: list[QualityReport] = []
+    for target in source_targets:
+        if target.name in seen_names:
+            continue
+        coverage = compute_contract_coverage(target, [], config=config, no_test_coverage=True)
+        results.append(
+            QualityReport(
+                test_function="",
+                target_function=target.name,
+                assertions=(),
+                contract_coverage=coverage,
+                warnings=("No test targets this function.",),
+                complexity=target.complexity,
+            )
+        )
+    return tuple(results)
 
 
 def _collect_test_functions(tests_path: Path) -> list[TestFunc]:
