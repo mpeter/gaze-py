@@ -42,17 +42,17 @@
 
 ## 1. Dependency and version bump
 
-- [ ] 1.1 Add `astroid>=3.0` to `[project] dependencies` in
+- [x] 1.1 Add `astroid>=3.0` to `[project] dependencies` in
       `pyproject.toml`. No upper bound (see D11). Run `uv sync`.
       Verify: `uv run python -c "import astroid; print(astroid.__version__)"`.
 
-- [ ] 1.2 Bump version in `pyproject.toml` from `0.4.1` to `0.5.0`
+- [x] 1.2 Bump version in `pyproject.toml` from `0.4.1` to `0.5.0`
       (MINOR bump per D12 — new dependency, new inference method value,
       new reason code, changed `assess()` return type, new CLI option).
 
 ## 2. AssessResult return type
 
-- [ ] 2.1 Add `AssessResult` dataclass to `src/gaze_py/quality/pipeline.py`:
+- [x] 2.1 Add `AssessResult` dataclass to `src/gaze_py/quality/pipeline.py`:
       ```python
       @dataclass(frozen=True)
       class AssessResult:
@@ -69,7 +69,7 @@
       Both public names are importable as
       `from gaze_py.quality import AssessResult, build_contract_coverage_map`.
 
-- [ ] 2.2 Update `assess()` signature and return type in
+- [x] 2.2 Update `assess()` signature and return type in
       `src/gaze_py/quality/pipeline.py`:
       ```python
       def assess(...) -> AssessResult:
@@ -112,7 +112,7 @@
       these are mechanical migrations, not behavioral changes. The
       existing test assertions remain valid once migrated.
 
-- [ ] 2.3 Update `QualityReport` docstring in `src/gaze_py/taxonomy/models.py`
+- [x] 2.3 Update `QualityReport` docstring in `src/gaze_py/taxonomy/models.py`
       to document the `test_function=""` sentinel:
       ```
       test_function: Name of the test function. Empty string ("") when
@@ -120,7 +120,7 @@
           no paired test (part of AssessResult.untested).
       ```
 
-- [ ] 2.4 Update `TestTargetPair.inference_method` docstring in
+- [x] 2.4 Update `TestTargetPair.inference_method` docstring in
       `src/gaze_py/taxonomy/models.py` to add `"call_graph_transitive"`:
       ```
       inference_method: "name_convention" | "call_graph" |
