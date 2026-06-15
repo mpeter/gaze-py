@@ -91,6 +91,35 @@ def outer():
     assert cyclomatic_complexity(outer) == 1
 
 
+def test_nested_function_scored_independently() -> None:
+    """CX-002: outer and inner functions are each scored independently.
+
+    Outer has no decision points → complexity 1.
+    Inner has if + elif (each a separate ast.If node per visit_If) → complexity 3.
+    1 base + 2 ast.If nodes = 3.
+    """
+    source = """\
+def outer():
+    def inner(a, b, c):
+        if a:
+            return a
+        elif b:
+            return b
+        else:
+            return c
+    return inner
+"""
+    module = ast.parse(source)
+    outer_node = next(
+        n for n in ast.walk(module) if isinstance(n, ast.FunctionDef) and n.name == "outer"
+    )
+    inner_node = next(
+        n for n in ast.walk(module) if isinstance(n, ast.FunctionDef) and n.name == "inner"
+    )
+    assert cyclomatic_complexity(outer_node) == 1  # no branches in outer body
+    assert cyclomatic_complexity(inner_node) == 3  # 1 base + if + elif  # noqa: PLR2004
+
+
 # ---------------------------------------------------------------------------
 # Boolean operator: `if a and b:` → complexity 2 (1 base + 1 for BoolOp)
 # ---------------------------------------------------------------------------

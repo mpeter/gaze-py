@@ -224,6 +224,30 @@ def test_oc003_effect_confidence_range_is_null_key_present() -> None:
     assert fn["effect_confidence_range"] is None
 
 
+def test_oc003_effect_confidence_range_serializes_as_list() -> None:
+    """OC-003 / AC3: non-None effect_confidence_range serializes as [min, max] list in JSON.
+
+    dataclasses.asdict() converts tuples to lists. This test regression-locks
+    that conversion so a future change to the field type does not silently break
+    JSON consumers expecting a two-element array.
+    """
+    target = _make_target()
+    # Override score with a non-None effect_confidence_range tuple
+    target.score = Score(
+        effect_confidence_range=(60, 85),
+    )
+    result = _make_result(targets=[target])
+    output = to_json(result)
+    data = json.loads(output)
+
+    fn = data["functions"][0]
+    assert "effect_confidence_range" in fn
+    assert fn["effect_confidence_range"] == [60, 85]  # list, not tuple  # noqa: PLR2004
+    assert isinstance(fn["effect_confidence_range"], list)
+    assert fn["effect_confidence_range"][0] == 60  # noqa: PLR2004
+    assert fn["effect_confidence_range"][1] == 85  # noqa: PLR2004
+
+
 def test_oc003_contract_coverage_reason_for_pure_function() -> None:
     """OC-003: contract_coverage_reason = 'no_effects_detected' for pure functions."""
     # A pure function has no effects
