@@ -6,7 +6,7 @@ Provides subcommands:
 - crap <path>: Detect, classify, and compute CRAP/GazeCRAP scores. Optionally
   runs pytest as a subprocess to collect coverage data automatically.
 - quality <path>: Assess contract coverage and GazeCRAP via the O1 pipeline.
-- docscan [path]: Stub — requires O3.
+- docscan [path]: Scan project .md files and emit doc entries (O3 implemented).
 - report [path]: Stub — migration guidance to 'gazepy crap'.
 - schema: Emit the JSON schema for AnalysisResult output.
 - self-check: Run CRAP analysis on gaze-py's own source.

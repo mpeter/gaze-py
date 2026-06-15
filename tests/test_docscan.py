@@ -7,6 +7,8 @@ include filtering, timeout behaviour, and GazeConfig doc_scan field parsing.
 from __future__ import annotations
 
 import json
+import threading
+import warnings
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -177,18 +179,47 @@ def test_include_filter(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_timeout_returns_partial(tmp_path: Path) -> None:
-    """scan_docs() returns partial results on timeout without raising (DS-002)."""
+def test_timeout_returns_partial(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """scan_docs() returns partial results on timeout without raising (DS-002).
+
+    Uses monkeypatch to make the stop_event fire immediately after the first
+    file is processed, ensuring timeout fires deterministically without
+    relying on wall-clock timing.
+    """
+    from gaze_py.analysis import docscan as docscan_module
+
     (tmp_path / "pyproject.toml").write_text("")
-    # Create enough files that a very short timeout may not process all.
-    for i in range(20):
+    for i in range(5):
         (tmp_path / f"doc_{i:02d}.md").write_text(f"content {i}")
 
-    # Use a very short timeout — scan should return whatever it found.
+    # Monkeypatch threading.Timer to set the event immediately on start()
+    class ImmediateTimer:
+        def __init__(self, _interval: float, func: object, *args: object) -> None:
+            self._func = func
+
+        def start(self) -> None:
+            # Fire immediately to simulate timeout
+            t = threading.Thread(target=self._func, daemon=True)
+            t.start()
+            t.join(timeout=0.1)
+
+        def cancel(self) -> None:
+            pass
+
+    monkeypatch.setattr(docscan_module.threading, "Timer", ImmediateTimer)
+
     config = GazeConfig(doc_scan_exclude=[], doc_scan_timeout=0.001)
-    # Must not raise; result is a list (possibly partial).
     entries = scan_docs(tmp_path, config)
+
+    # Must return a list (possibly empty due to immediate timeout) without raising
     assert isinstance(entries, list)
+    # Must return fewer than all 5 files (timeout fired immediately)
+    assert len(entries) < 5, (
+        f"Timeout should have fired immediately, but got {len(entries)}/5 entries"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +262,7 @@ def test_doc_scan_timeout_validation(tmp_path: Path) -> None:
     config_file = tmp_path / ".gaze.yaml"
     config_file.write_text("classification:\n  doc_scan:\n    timeout: 0\n")
 
-    with pytest.raises(GazeConfigError, match="doc_scan_timeout"):
+    with pytest.raises(GazeConfigError, match="doc_scan.timeout must be positive"):
         load_config_explicit(config_file)
 
 
@@ -317,3 +348,143 @@ def test_docscan_empty_directory(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload == []
+
+
+# ---------------------------------------------------------------------------
+# Task 5.5 — DS-006: runner.py docs_text kwarg passes to ClassificationEngine
+# ---------------------------------------------------------------------------
+
+
+def test_detect_and_classify_passes_docs_text(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """DS-006: detect_and_classify() passes docs_text to ClassificationEngine."""
+    from gaze_py.analysis.runner import detect_and_classify
+    from gaze_py.classify import engine as engine_module
+
+    # Create a minimal Python source file
+    src = tmp_path / "example.py"
+    src.write_text("def my_func(x: int) -> int:\n    return x + 1\n")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='test'")
+
+    captured_docs: list[str | None] = []
+    original_init = engine_module.ClassificationEngine.__init__
+
+    def capturing_init(
+        self: object,
+        contractual_threshold: int = 80,
+        incidental_threshold: int = 50,
+        project_docs_text: str | None = None,
+    ) -> None:
+        captured_docs.append(project_docs_text)
+        original_init(  # type: ignore[misc]
+            self,
+            contractual_threshold=contractual_threshold,
+            incidental_threshold=incidental_threshold,
+            project_docs_text=project_docs_text,
+        )
+
+    monkeypatch.setattr(engine_module.ClassificationEngine, "__init__", capturing_init)
+
+    config = GazeConfig()
+    detect_and_classify(src, config=config, docs_text="test doc content")
+
+    assert len(captured_docs) > 0, "ClassificationEngine was not instantiated"
+    assert "test doc content" in captured_docs, (
+        f"docs_text not passed to ClassificationEngine; captured: {captured_docs}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 5.7 — DS-002: OSError handling in scan_docs()
+# ---------------------------------------------------------------------------
+
+
+def test_scan_handles_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """DS-002: scan_docs() skips files that raise OSError and warns; does not abort."""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='test'")
+    good_file = tmp_path / "good.md"
+    bad_file = tmp_path / "bad.md"
+    good_file.write_text("good content")
+    bad_file.write_text("bad content")
+
+    original_read_text = Path.read_text
+
+    def patched_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == "bad.md":
+            raise OSError("simulated read failure")
+        return original_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", patched_read_text)
+
+    config = GazeConfig(doc_scan_exclude=[])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        entries = scan_docs(tmp_path, config)
+
+    # Should return 1 entry (the good file), not 0 and not raise
+    assert isinstance(entries, list)
+    assert len(entries) == 1
+    assert entries[0].path.name == "good.md"
+
+    # Should have emitted a warning about the bad file
+    assert len(caught) >= 1
+    assert any("bad.md" in str(w.message) or "simulated" in str(w.message) for w in caught), (
+        f"Expected warning about bad.md, got: {[str(w.message) for w in caught]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 5.6 — DS-005: engine.py Signal 5 combination logic
+# ---------------------------------------------------------------------------
+
+
+def test_engine_combines_docstring_and_project_docs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DS-005: ClassificationEngine combines docstring + project_docs_text for Signal 5."""
+    from gaze_py.classify import engine as engine_module
+    from gaze_py.classify.signals import docstring as docstring_module
+    from gaze_py.taxonomy.effects import SideEffectType, Tier
+    from gaze_py.taxonomy.models import FunctionTarget, SideEffect
+
+    combined_calls: list[str | None] = []
+    original_signal = docstring_module.docstring_signal
+
+    def capturing_signal(text: str | None, effect_type: object) -> object:
+        combined_calls.append(text)
+        return original_signal(text, effect_type)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine_module, "docstring_signal", capturing_signal)
+
+    effect = SideEffect(
+        id="se-00000001",
+        type=SideEffectType.ReturnValue,
+        tier=Tier.P0,
+        location="src/example.py:1:0",
+        description="test",
+        target="my_func",
+    )
+    target = FunctionTarget(
+        name="my_func",
+        file_path="src/example.py",
+        line=1,
+        complexity=1,
+        effects=[effect],
+    )
+
+    from gaze_py.classify.engine import ClassificationEngine
+
+    engine = ClassificationEngine(project_docs_text="writes to the database")
+    # Pass docstring via classify() keyword arg (docstring is not on FunctionTarget)
+    engine.classify(effect, target, docstring="Returns a value.")
+
+    assert len(combined_calls) > 0, "docstring_signal was not called"
+    combined_text = combined_calls[0]
+    assert combined_text is not None
+    assert "Returns a value." in combined_text
+    assert "writes to the database" in combined_text

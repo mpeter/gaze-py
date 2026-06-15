@@ -34,15 +34,35 @@ but are described in README or architecture docs.
 - Signal weights or taxonomy changes
 - Timeout enforcement with SIGALRM (Linux-only; use threading instead)
 
+## Porting Contract Compliance
+
+Read before implementation per Constitution Principle V.
+
+**O3 (requirements.md)**: Optional capability. Scans project documentation
+files for behavioral declarations contributing to Signal 5 (CC-005). The
+scanning mechanism is not specified — "a port MAY use any approach to extract
+behavioral keywords from documentation files."
+
+**CC-005 Signal 5 (contracts.md)**: Documentation signal, max weight ±15.
+Parses documentation for keywords: `returns`, `writes`, `modifies`, `updates`,
+`sets`, `persists`, `stores`, `deletes`, `removes`. O3 extends this from
+per-function docstrings to project-wide `.md` files — fully within the
+"any approach" latitude granted by the porting contract.
+
+**Explicit sign-off**: O3 implementation is conformant. Signal 5 weights and
+keyword list are unchanged; only the text input is extended.
+
 ## Acceptance Criteria
 
 1. `gazepy docscan [PATH]` exits 0 and emits a JSON array of
    `{path, content, priority}` objects (or text summary with `--format=text`)
-2. Priority assignment: same directory as source = 1, repo root = 2, other = 3
+2. Priority assignment: same directory as PATH argument = 1, repo root = 2, other = 3
 3. Default exclude globs match Go reference: vendor/**, node_modules/**, .git/**,
-   testdata/**, CHANGELOG.md, CONTRIBUTING.md
+   testdata/**, CHANGELOG.md, CONTRIBUTING.md (Python fnmatch handles ** correctly)
 4. `GazeConfig` supports `classification.doc_scan.exclude/include/timeout`
 5. When `gazepy analyze` or `gazepy crap` runs, doc content is passed to
    `docstring_signal()` augmenting per-function classification
-6. All existing tests continue to pass; `pytest --cov-fail-under=85` passes
-7. `ruff check`, `ruff format --check`, `mypy --strict` all pass
+6. When `--exclude`/`--include` CLI flags are provided, they **replace** (not extend)
+   the corresponding config lists
+7. All existing tests continue to pass; `pytest --cov-fail-under=85` passes
+8. `ruff check`, `ruff format --check`, `mypy --strict` all pass

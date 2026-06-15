@@ -16,7 +16,7 @@ from gaze_py.taxonomy.exceptions import GazeConfigError
 
 # Sentinel files/directories that mark the project root.
 # Walk stops at the first ancestor that contains any of these.
-_SENTINELS: frozenset[str] = frozenset({"pyproject.toml", ".git"})
+SENTINELS: frozenset[str] = frozenset({"pyproject.toml", ".git"})
 
 # Valid range for percentage thresholds: [0, 100].
 _THRESHOLD_MAX: int = 100
@@ -110,7 +110,7 @@ def load_config(start_path: Path) -> GazeConfig:
 
     while True:
         # Check project boundary FIRST — do not read config above the root.
-        if any((current / s).exists() for s in _SENTINELS):
+        if any((current / s).exists() for s in SENTINELS):
             candidate = current / ".gaze.yaml"
             if candidate.exists():
                 return _parse_config(candidate, current)
@@ -270,4 +270,6 @@ def _validate(cfg: GazeConfig, path: Path) -> None:
             f"gaze_crap_threshold must be > 0, got {cfg.gaze_crap_threshold} in {path}"
         )
     if cfg.doc_scan_timeout <= 0:
-        raise GazeConfigError(f"doc_scan_timeout must be > 0, got {cfg.doc_scan_timeout} in {path}")
+        raise GazeConfigError(
+            f"doc_scan.timeout must be positive, got {cfg.doc_scan_timeout} in {path}"
+        )

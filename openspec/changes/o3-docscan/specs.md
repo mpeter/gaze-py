@@ -17,7 +17,9 @@ A `DocEntry` is a frozen dataclass with three fields:
 - Walks the repository root (nearest ancestor containing `pyproject.toml` or
   `.git`) for all `*.md` files
 - Applies `config.doc_scan_exclude` glob patterns to filter out matching paths
-  (uses `fnmatch` on path relative to repo root)
+  (uses `fnmatch` on path relative to repo root; Python's `fnmatch` treats
+  `*` as matching any characters including `/`, so `vendor/**` correctly
+  excludes nested paths)
 - When `config.doc_scan_include` is non-empty, only paths matching at least one
   include pattern are returned
 - Returns entries sorted by `(priority, path)` ascending
@@ -42,7 +44,8 @@ A `DocEntry` is a frozen dataclass with three fields:
 - `doc_scan_timeout: float` — default: `30.0` (seconds)
 
 YAML parsing: `classification.doc_scan.exclude`, `.include`, `.timeout`.
-Validation: `doc_scan_timeout > 0`.
+Validation: `doc_scan_timeout > 0`; if `<= 0`, raises `GazeConfigError` with
+message `"doc_scan.timeout must be positive"` and exits 1.
 
 ## DS-005 — Classification engine augmentation
 
@@ -67,12 +70,18 @@ Existing callers without `docs_text` are unaffected (defaults to `None`).
 - Discovers the repo root from `PATH` (or cwd if omitted)
 - Calls `scan_docs(root, config)`
 - With `--format=json` (default): emits a JSON array of objects with keys
-  `path` (string), `content` (string), `priority` (int)
-- With `--format=text`: emits one line per document:
-  `[P{priority}] {relative_path}` followed by a blank line separator
+  `path` (string, relative to cwd), `content` (string), `priority` (int).
+  The CLI layer is responsible for converting `DocEntry.path` (absolute `Path`)
+  to a cwd-relative string via `str(path.relative_to(cwd))`.
+- With `--format=text`: emits two lines per document:
+  `[P{priority}] {relative_path}` followed by `  ({word_count} words)`.
+  This matches the actual implementation; "blank line separator" described
+  in earlier drafts was superseded by the word-count line.
 - Exits 0 on success, 1 on error
-- Supports `--config`, `--exclude` (repeatable, overrides config excludes),
-  `--include` (repeatable), `--timeout` (float seconds)
+- Supports `--config`, `--exclude` (repeatable), `--include` (repeatable),
+  `--timeout` (float seconds)
+- When `--exclude` or `--include` flags are provided, they **replace** (not extend)
+  the corresponding config lists. Timeout exits 0 with partial results + warning.
 
 ## DS-008 — `gazepy analyze` and `gazepy crap` doc scanning
 
