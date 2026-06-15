@@ -8,44 +8,47 @@ The O1 quality pipeline's `pair_to_targets()` uses three strategies:
 3. Unmatched — 42 functions land here
 
 The 42 unmatched functions are currently scored with `gaze_crap: null`
-and `contract_coverage_reason: "no_effects_detected"`. This is incorrect
-for any function that has detected side effects. Per the Go gaze
-reference (`internal/crap/contract.go`), the correct behaviour when
-effects exist but no test targets the function is:
-- reason: `"no_test_coverage"`
-- percentage: `0.0` (not `null`)
-- GazeCRAP: `complexity² + complexity` (at 0% contract coverage)
+and `contract_coverage_reason: "no_effects_detected"`. This is wrong
+for functions with detected side effects — their correct reason is
+`"no_test_coverage"`. GazeCRAP correctly remains null in both cases per
+the Go gaze reference (`internal/crap/contract.go` line 148).
 
 The realistic pairing ceiling with Astroid transitive inference is
 approximately 31/62 (50%). The remaining 31 functions fall into two
-structurally unreachable categories:
-- 22 `visit_*` visitor methods — dispatched via
-  `getattr(self, 'visit_' + node.__class__.__name__)` in
-  `ast.NodeVisitor.visit()`. No static analysis tool can resolve this.
-- 10 CLI click commands — tested via `CliRunner.invoke()`. Static
-  analysis cannot follow through the invoke/dispatch chain.
+structurally unreachable categories for all static analysis tools:
 
-These 32 functions will correctly receive `"no_test_coverage"` after
-this change — a real GazeCRAP score at 0% contract coverage — rather
-than the incorrect `"no_effects_detected"` they currently show.
+- 22 `visit_*` visitor methods — dispatched via
+  `getattr(self, 'visit_' + node.__class__.__name__)` inside
+  `ast.NodeVisitor.visit()`. Dynamic getattr dispatch cannot be
+  resolved statically.
+- 10 CLI click commands — tested via `CliRunner.invoke()`. The
+  invoke/dispatch chain is opaque to static analysis.
+
+After this change these 32 functions correctly show
+`"no_test_coverage"` (not `"no_effects_detected"`). GazeCRAP remains
+null. The correct reason is all that changes.
 
 ## Goals / Non-Goals
 
 ### Goals
 
+- Emit `"no_test_coverage"` (not `"no_effects_detected"`) for functions
+  with effects but no paired test — fixes the diagnostic inaccuracy
 - Extend pairing to approximately 31/62 public functions via Astroid
-  transitive inference (from current 20/62)
-- Correctly emit `"no_test_coverage"` with `percentage=0.0` and
-  computable GazeCRAP for all functions with effects but no paired test
-- Wire quality pipeline into `gazepy crap` output
+  (from current 20/62) — reduces the set of `"no_test_coverage"`
+  functions
+- Wire quality pipeline into `gazepy crap` output for
+  `contract_coverage_reason` population
 - No existing tests modified
+- GazeCRAP remains null for `"no_test_coverage"` functions (matches Go
+  reference — `ok=false` in `BuildContractCoverageFunc`)
 
 ### Non-Goals
 
-- Reaching `visit_*` visitor methods (dynamic `getattr` dispatch —
-  structural ceiling for all static analysis tools; they correctly
-  receive `"no_test_coverage"` after this change)
-- Reaching CLI commands tested via `CliRunner.invoke()` (same ceiling)
+- Computing GazeCRAP at 0% for untested functions (contradicts Go
+  reference; see D5)
+- Reaching `visit_*` visitor methods or CLI `CliRunner`-tested commands
+  (structural ceiling — they correctly show `"no_test_coverage"`)
 - Implementing GapHints (separate change)
 - AI-assisted assertion mapping (separate change)
 
@@ -53,103 +56,160 @@ than the incorrect `"no_effects_detected"` they currently show.
 
 ### D1: Astroid as Strategy 3 only; Strategies 1 and 2 unchanged
 
-Strategies 1 (name convention) and 2 (ast.Name call walk) are fast and
-have zero dependencies. They fire first. Strategy 3 fires only when both
-fail. This preserves existing pairing behaviour entirely — Strategy 3
-can only add new pairings, not remove or alter existing ones.
+Strategies 1 and 2 are fast and have zero dependencies. They fire first.
+Strategy 3 fires only when both fail. This preserves all existing
+pairing behaviour — Strategy 3 can only add new pairings.
 
-### D2: Build Astroid graph once per assess() call, query per test function
+### D2: Build Astroid graph once per assess() call
 
 `_build_astroid_graph(test_files, src_files)` is called once at the top
-of `assess()` and returns a `dict[str, set[str]]` mapping caller fully-
-qualified name (FQN) to set of callee FQNs. `_pair_astroid()` then does
-a BFS lookup from the test function's FQN — cheap per-function cost.
-This avoids rebuilding the inference graph for every test function.
+of `assess()` and returns a `dict[str, set[str]]` (caller FQN → set of
+callee FQNs). `_pair_astroid()` does BFS lookup — cheap per-function.
+`MANAGER.clear_cache()` is called at the start of each
+`_build_astroid_graph()` invocation to prevent stale data when
+`assess()` is called multiple times in the same process (e.g. in tests).
 
-### D3: Match on name segment only, not full FQN
+### D3: Match on name segment only; BFS non-determinism documented
 
-The pairing system works with simple function names (`classify`, not
-`gaze_py.classify.engine.ClassificationEngine.classify`). Astroid
-returns FQNs; the match extracts the last segment (everything after the
-final `.`) and checks it against `source_names`. When multiple
-production functions share a short name, the first one reached in BFS
-order wins — consistent with Strategy 2's first-match behaviour.
+Astroid returns fully-qualified names. The match extracts the short name
+(last segment after `.`) and checks it against `source_names`. When
+multiple production functions share a short name in different modules,
+the first one reached in BFS insertion order wins. This is a known
+limitation: FQN-based disambiguation is out of scope for this change.
 
-### D4: Depth limit 5; Uninferable silently skipped
+### D4: Depth limit 5; InferenceError and AstroidBuildingError caught
 
-BFS traversal is capped at 5 hops to prevent runaway traversal on
-highly-connected codebases. Astroid inference on opaque callables (e.g.
-`getattr(self, name)()`, function-valued parameters) returns the
-`Uninferable` sentinel. These are silently skipped with `continue` — no
-error, no warning, no partial result recorded.
+BFS traversal is capped at 5 hops. `call.func.infer()` may raise
+`astroid.exceptions.InferenceError` (not only yield `Uninferable`) on
+complex or partially-typed call sites — this must be caught in the
+iteration loop. `MANAGER.ast_from_file()` may raise
+`astroid.exceptions.AstroidBuildingError` (encoding errors, unresolvable
+imports, syntax errors) — this must be caught per file. Both failures
+produce a partial graph, not a crash. Per-file `AstroidBuildingError`
+failures are logged to stderr as warnings so callers can diagnose
+incomplete pairing results.
 
-### D5: no_test_coverage emits percentage=0.0; text renders with asterisk
+### D5: no_test_coverage → percentage=None, gaze_crap=null (Go contract)
 
-When effects exist but no test targets a function, `percentage=0.0`
-is the correct value (not `None`). A function with zero assertions
-covering its contractual effects has 0% contract coverage — a real,
-computable measurement.
+The Go reference is unambiguous (contract.go line 148):
 
-`_score_target()` already handles `quality_result.percentage == 0.0`
-correctly (it acts on any non-None percentage) — no change needed there.
+> *"Return ok=false so the CRAP pipeline excludes these from GazeCRAP
+> calculations (no test = no coverage data, not 0% coverage). The
+> Reason is informational for display."*
 
-**Text rendering**: when `contract_coverage_reason == "no_test_coverage"`,
-GazeCRAP is displayed with a `*` suffix (e.g. `2652.0*`) and a footnote
-is appended below the table:
+`percentage=None` and `gaze_crap=null` are correct for
+`"no_test_coverage"`. Computing GazeCRAP at an assumed 0% would
+conflate "not measured" with "measured as zero" — the exact violation
+OC-003 prohibits. No asterisk rendering or footnote is needed; the
+existing `"null"` text display is correct.
+
+### D6: _untested_reports() is a separate helper, separate list
+
+Task 3.3 emits reports for production functions with effects that were
+never the `target_function` of any test-keyed report. These are returned
+as a separate `list[QualityReport]` from a new
+`_untested_reports(source_targets, seen_names, config)` helper — not
+mixed into the main test-function-keyed report list. `assess()` returns
+a named tuple or structured result that distinguishes the two:
+
+```python
+@dataclass(frozen=True)
+class AssessResult:
+    reports: list[QualityReport]       # one per test function
+    untested: list[QualityReport]      # one per unmatched prod func
 ```
-* GazeCRAP computed at 0% contract coverage — no test targets this function
-```
-This distinguishes "measured at zero because untested" from "measured at
-a specific percentage because tested".
 
-**JSON rendering**: raw float with `contract_coverage_reason:
-"no_test_coverage"`. No decoration — the reason field carries the
-context for programmatic consumers.
+`QualityReport` for untested functions uses `test_function=""` as a
+sentinel. This sentinel is explicitly documented in the `QualityReport`
+docstring. Callers must handle both lists.
 
-### D6: crap command integrates quality pipeline via auto-discovery
+The `quality` CLI command merges both for display. The `crap` command
+uses both to build the coverage map.
 
-`_build_contract_coverage_map(src_path, tests_path, config)` runs
-`assess()` and produces a `dict[str, ContractCoverageResult]` keyed by
-function name. `_run_crap()` calls this when a tests path is available
-(auto-discovered using the same logic as the `quality` command, or via
-the new `--tests` option). If no tests path is found, GazeCRAP remains
-null — OC-003 compliant (capability did not run).
-
-The best coverage result per function name is selected when multiple
-test functions pair to the same production function. Functions with
-effects that appear in zero quality reports receive
-`percentage=0.0, reason="no_test_coverage"`.
-
-### D7: Astroid import is defensive
+### D7: Astroid import is defensive; warnings via stderr
 
 `astroid` is imported inside `_build_astroid_graph()`, not at module
-level. If the import fails at runtime (e.g. installation error),
-`_build_astroid_graph()` logs a warning to stderr and returns `{}`.
-With an empty graph, `_pair_astroid()` immediately returns `None` and
-the test function falls through to "unmatched" — exactly as before.
-The pipeline continues normally.
+level. On `ImportError`, emit a message to stderr via
+`click.echo("warning: astroid not available — Strategy 3 disabled",
+err=True)` (not `warnings.warn` — suppressible by user code) and return
+`{}`. With an empty graph, Strategy 3 never fires; the pipeline
+continues normally as before.
+
+### D8: Project root for FQN computation
+
+"Project root" for FQN derivation in `_pair_astroid()` is defined as
+the **common ancestor directory of `test_func.filename` and the first
+source file passed to `_build_astroid_graph()`**. Concretely: the
+directory that contains both `tests/` and `src/` — found by walking up
+from `test_func.filename` until a directory contains `pyproject.toml`
+or `setup.py`. If no such marker is found, fall back to the parent of
+the test file. This is the same root the Astroid MANAGER uses when
+loading modules from the editable install.
+
+FQN computation: `root.relative_to(project_root)` with path separators
+replaced by `.`, then append `.test_func.name`. If the path starts with
+`tests/` or `src/`, strip the leading component to match Astroid's
+module naming.
+
+### D9: _build_contract_coverage_map() belongs in quality/pipeline.py
+
+This function is domain logic, not CLI logic. Placing it in
+`quality/pipeline.py` makes it importable by library users without
+pulling in Click. The `crap` CLI function imports it from there.
+
+### D10: Double detect_and_classify() acknowledged as tech debt
+
+`_run_crap()` calls `detect_and_classify()` independently, and
+`_build_contract_coverage_map()` calls `assess()` which calls it again.
+With `--tests`, the source is analysed twice. On gaze-py itself this
+adds approximately 0.5s. Deduplication (sharing the `source_targets`
+list) is deferred — the two call sites have different options
+(`include_unexported` differs) and merging them requires careful
+parameter threading. Documented in `results.md` after measurement.
+
+### D11: astroid>=3.0, no upper bound
+
+Tested against 4.1.2. Key APIs used (`BoundMethod.qname()`,
+`FunctionDef.qname()`, `MANAGER.ast_from_file()`, `MANAGER.clear_cache()`,
+`InferenceError`, `AstroidBuildingError`, `Uninferable`) are stable
+across 3.x and 4.x. BoundMethod._proxied exists as an instance
+attribute in both versions but `BoundMethod.qname()` is the cleaner API
+and is used directly. No `<4` cap — users with pylint at 4.x (which
+requires astroid 4.x) receive a compatible install.
+
+### D12: Version bump
+
+This change adds a required dependency, a new inference method value
+(`"call_graph_transitive"`), a new reason code (`"no_test_coverage"`),
+changes the `assess()` return type from `list[QualityReport]` to
+`AssessResult`, and adds a `--tests` option to `crap`. Per the
+Conventional Commits / semantic versioning policy this is a MINOR
+version bump (new capability, no removed fields, existing consumers
+continue to work if they only read `reports` from `AssessResult` which
+has the same shape as the old list).
 
 ## Risks / Trade-offs
 
-**Risk: Astroid inference produces incorrect pairings.** Strategy 3
-only adds pairings when Strategies 1 and 2 find nothing. A wrong
-pairing from Strategy 3 produces an incorrect GazeCRAP for that
-function, but cannot displace a correct pairing from an earlier
-strategy. Existing pairing tests catch any regression in Strategies 1
-and 2.
+**Risk: Astroid inference produces incorrect pairings.** Strategy 3 can
+only add pairings when Strategies 1 and 2 find nothing. A wrong pairing
+produces an incorrect `contract_coverage_reason`, but existing pairing
+tests catch regressions in Strategies 1 and 2.
 
-**Risk: Astroid slows down `gazepy quality` on large codebases.**
-Benchmark target: ≤2× wall time vs. current on gaze-py itself (current
-baseline ~1.5s; target ≤3s). Graph is built once per `assess()` call.
-Recorded in `results.md` (task 6.1).
+**Risk: Astroid slows down `gazepy quality`.** Benchmark target ≤3s on
+gaze-py itself (current baseline ~1.5s). `MANAGER.clear_cache()` trades
+correctness for a modest repeated-load cost. Recorded in `results.md`.
+If wall time exceeds 6s on gaze-py after implementation, Strategy 3
+must become opt-in via a `--transitive-inference` flag (added as a
+follow-up change, not blocked on this one).
 
-**Risk: `visit_*` methods receive a very high GazeCRAP (e.g. 2652 for
-`visit_Call`, complexity 51).** This is correct and expected. `visit_Call`
-has 84% line coverage and no contract coverage — it genuinely is at risk.
-GazeCRAPload will increase substantially on first run after this change.
-This is accurate signal, not noise.
+**Risk: BFS is non-deterministic for same-short-name collisions.** D3
+documents this. Determinism within a single run is guaranteed by dict
+insertion order (Python 3.7+). Across astroid versions, traversal order
+may differ, changing which production function wins for collisions.
+Acceptable for a Strategy 3 (last-resort) match.
+
+**Risk: Double detect_and_classify() cost.** D10 documents this.
+Acceptable for this change; deduplication is deferred.
 
 **Risk: LGPL-2.1 Astroid dependency.** LGPL-2.1 permits library use in
-an Apache 2.0 project without relicensing. gaze-py imports Astroid but
-does not distribute a modified copy. No conflict. Noted for any future
-legal review.
+an Apache 2.0 project without relicensing. Noted for legal review.

@@ -1,31 +1,32 @@
 ## Why
 
 gaze-py's O1 quality pipeline computes contract coverage and GazeCRAP
-correctly, but its test-target pairing reaches only 20 of 62 public
-production functions (32%). The other 42 produce `gaze_crap: null` with
-`contract_coverage_reason: "no_effects_detected"` — which is factually
-wrong for functions that have detected side effects but simply have no
-paired test.
+correctly for paired functions, but its test-target pairing reaches only
+20 of 62 public production functions (32%). The other 42 produce
+`gaze_crap: null` with `contract_coverage_reason: "no_effects_detected"`
+— which is factually wrong for any function that has detected side
+effects but simply has no paired test.
 
-This misidentifies the problem. Per the Go gaze reference implementation
-(`internal/crap/contract.go`), when the quality pipeline has run but
-finds no test targeting a function, the correct behaviour is:
+The Go gaze reference implementation (`internal/crap/contract.go`)
+distinguishes two different null cases explicitly:
 
-- `contract_coverage_reason: "no_test_coverage"` (not `"no_effects_detected"`)
-- `contract_coverage: 0.0` (not `null`)
-- `gaze_crap: complexity² + complexity` — GazeCRAP at 0% contract
-  coverage is a real, computable score, not null
+- `"no_effects_detected"` — function truly has no side effects; null is
+  correct per OC-003.
+- `"no_test_coverage"` — effects were detected but no test targets this
+  function; null is also correct (the comment at line 148 is explicit:
+  *"no test = no coverage data, not 0% coverage"*), but the reason code
+  must be `"no_test_coverage"` — not `"no_effects_detected"`.
 
-OC-003 ("nullable fields") applies when the quality capability has **not
-run at all** — not when it ran but failed to pair a function. Unpaired
-functions with side effects have a known, correct GazeCRAP: the worst
-case (0% contract coverage).
+This misidentification matters: it makes functions with genuine side
+effect risk appear as pure functions in output, suppressing the signal
+that they have untested contractual behaviour.
 
 The pairing gap has two root causes:
 
 1. `_extract_call_name()` only handles `ast.Name` calls, missing all
-   method calls (`obj.method()`). Tests that call `FileDetector.detect()`,
-   `engine.classify()`, etc. never produce a pairing.
+   method calls (`obj.method()`). Tests that call
+   `FileDetector.detect()`, `engine.classify()`, etc. never produce a
+   pairing.
 
 2. Pairing is shallow — it sees only direct calls in the test body, not
    transitive calls into production code. Signal functions
@@ -34,41 +35,41 @@ The pairing gap has two root causes:
    `engine.classify()` via a helper `_engine() -> ClassificationEngine`
    and never reference signal functions directly.
 
-The fix is a new **Strategy 3** using **Astroid** (pylint's analysis
-backbone) for transitive, type-aware call graph inference. Astroid
-resolves method calls through return-type annotations
-(`_engine() -> ClassificationEngine`) and then follows transitively into
-the callee body to find further production function calls.
+The fix has two independent parts:
+
+**Part A — Correct reason codes**: Emit `"no_test_coverage"` (not
+`"no_effects_detected"`) for functions with effects but no paired test.
+GazeCRAP remains null per the Go reference — this is pure diagnostic
+accuracy.
+
+**Part B — Astroid Strategy 3**: Add a new call-graph pairing strategy
+using Astroid (pylint's analysis backbone) to resolve method calls and
+transitive callee chains. This improves pairing from 20/62 to
+approximately 31/62, reducing the set of functions with
+`"no_test_coverage"` that could have been `"no_effects_detected"`.
 
 ## What Changes
 
 ### New Capabilities
 
 - `quality-pairing-transitive`: Strategy 3 in `pair_to_targets()` —
-  uses Astroid to build a transitive call graph from each test function
-  and matches any reachable production function name. Fires only when
-  Strategies 1 and 2 both fail.
+  uses Astroid to build a transitive call graph and match reachable
+  production function names. Fires only when Strategies 1 and 2 fail.
 
 ### Modified Capabilities
 
-- `quality-pairing`: extended with Strategy 3; Strategies 1 (name
-  convention) and 2 (ast.Name call walk) unchanged; Astroid added as a
-  required dependency; new `inference_method="call_graph_transitive"`,
-  `confidence=0.75`.
+- `quality-pairing`: extended with Strategy 3; Strategies 1 and 2
+  unchanged; Astroid added as a required dependency; new
+  `inference_method="call_graph_transitive"`, `confidence=0.75`.
 
-- `quality-coverage`: new reason code `"no_test_coverage"` for
-  production functions with effects that have no paired test;
-  `percentage=0.0` (not `null`) in this case so GazeCRAP is computable.
+- `quality-coverage`: new reason code `"no_test_coverage"` correctly
+  emitted for functions with effects but no paired test.
+  `percentage=None` and `gaze_crap=null` per Go reference (OC-003).
 
-- `quality-rendering`: text output appends `*` to GazeCRAP values
-  derived from `"no_test_coverage"` and adds a footnote explaining the
-  marker. JSON emits the raw float with `contract_coverage_reason:
-  "no_test_coverage"` — no decoration.
-
-- `crap command`: integrates the quality pipeline to populate GazeCRAP
-  in `gazepy crap` output when a tests path is available (auto-discovered
-  or via new `--tests` option). Mirrors Go gaze's
-  `BuildContractCoverageFunc` pattern.
+- `crap command`: integrates the quality pipeline to populate
+  `contract_coverage_reason` in `gazepy crap` output when a tests path
+  is available (auto-discovered or via new `--tests` option). GazeCRAP
+  remains null for `"no_test_coverage"` functions per the Go contract.
 
 ### Removed Capabilities
 
@@ -76,25 +77,29 @@ None.
 
 ## Impact
 
-- `pyproject.toml` — add `astroid>=3.0,<4` to `[project] dependencies`
+- `pyproject.toml` — add `astroid>=3.0` to `[project] dependencies`
+  (tested against 4.1.2; no upper bound — see D8 in design.md)
 - `src/gaze_py/quality/pairing.py` — add `_build_astroid_graph()`,
   `_pair_astroid()`; update `pair_to_targets()` with Strategy 3 kwarg
 - `src/gaze_py/quality/pipeline.py` — build Astroid graph once in
-  `assess()`, pass to all `pair_to_targets()` calls; emit
-  `QualityReport` for unmatched production functions with effects
+  `assess()`; pass to `pair_to_targets()`; populate
+  `"no_test_coverage"` reports via new `_untested_reports()` helper
+  (separate list, not mixed into main report list)
 - `src/gaze_py/quality/coverage.py` — add `no_test_coverage: bool`
-  parameter; emit `percentage=0.0, reason="no_test_coverage"` when set
+  parameter; emit `percentage=None, reason="no_test_coverage"` when set
 - `src/gaze_py/taxonomy/models.py` — add `"no_test_coverage"` to
-  `ContractCoverageResult.reason` docstring
-- `src/gaze_py/report/text_formatter.py` — append `*` to GazeCRAP
-  when `contract_coverage_reason == "no_test_coverage"`
-- `src/gaze_py/cli/main.py` — add `_build_contract_coverage_map()`;
-  extend `_run_crap()` to call quality pipeline; add `--tests` option
-  to `crap` command; update `_emit_quality_text()` footnote
-- `tests/test_quality_pairing.py` — new tests for Strategy 3
-- `tests/test_quality_coverage.py` — new tests for `no_test_coverage`
-- `tests/test_output.py` or `tests/test_cli.py` — new rendering tests
+  `ContractCoverageResult.reason` docstring; update `QualityReport`
+  docstring to document `test_function=""` sentinel
+- `src/gaze_py/cli/main.py` — add `_build_contract_coverage_map()` to
+  `quality/` (not CLI); extend `_run_crap()` to call it; add `--tests`
+  option to `crap` command; add `_score_target()` guard for
+  `"no_test_coverage"` (keep gaze_crap=null)
+- `tests/test_quality_pairing.py` — new Strategy 3 tests using
+  testdata fixtures
+- `tests/test_quality_coverage.py` — new `no_test_coverage` tests
 - `tests/test_cli.py` — new crap+quality integration tests
+- `openspec/changes/quality-pairing-astroid/results.md` — baseline
+  measurements after implementation (created in task 6.1)
 
 ## Constitution Alignment
 
@@ -104,38 +109,62 @@ Assessed against `.specify/memory/constitution.md`.
 
 **Assessment**: PASS
 
-All changes expressed through updated field values and existing JSON
-schema fields. No new communication surfaces. The `"no_test_coverage"`
-reason code and `*` text marker are self-describing.
+All changes expressed through existing JSON schema fields and updated
+reason code values. The `"no_test_coverage"` reason code is
+self-describing. No new communication surfaces.
 
-### II. Composability First
+### II. Minimal Assumptions
 
-**Assessment**: PASS with note
+**Assessment**: PASS
 
-Astroid becomes a required dependency (279 KB wheel, zero transitive
-deps on Python 3.11+, LGPL-2.1). LGPL-2.1 permits use as a library
-dependency in an Apache 2.0 project without relicensing — gaze-py
-imports Astroid but does not distribute a modified copy of it. The
-pairing improvement is isolated to `quality/pairing.py`; Astroid is
-imported defensively inside `_build_astroid_graph()` and the pipeline
-degrades gracefully (Strategy 3 → unmatched) if the import fails.
+The `"no_test_coverage"` fix makes no assumptions about what coverage
+the untested function has — it explicitly signals "unknown, because
+untested." Astroid inference degrades gracefully to unmatched when
+inference fails, preserving existing behaviour.
 
 ### III. Observable Quality
 
 **Assessment**: PASS
 
-`gaze_crap` and `contract_coverage_reason` become populated for
-previously-null functions. The change is immediately verifiable:
-`gazepy crap src/ --tests tests/` produces non-null `gaze_crap` for
-functions that were previously `null`. The `*` marker in text output
-makes the distinction between "measured" and "untested" visible to
-human readers.
+`contract_coverage_reason` becomes accurate for previously-misidentified
+functions. The change is immediately verifiable: `gazepy quality` output
+shows `"no_test_coverage"` instead of `"no_effects_detected"` for
+functions with detected side effects but no paired test.
 
 ### IV. Testability
 
 **Assessment**: PASS
 
-All new logic covered by unit tests using the project's own source as
-an integration fixture. Astroid inference tested against real code, not
-mocks. Strategy 3 degrades gracefully and the degradation path is
-separately tested.
+All new logic covered by unit tests using dedicated `testdata/quality/`
+fixtures. Astroid strategy tested via controlled fixture graphs, not
+live project source. All degradation paths (ImportError, InferenceError,
+AstroidBuildingError) tested in isolation.
+
+### V. Porting Contract Supremacy
+
+**Assessment**: PASS
+
+The revised design explicitly defers to the Go gaze reference. The
+`"no_test_coverage"` reason code matches `contract.go` line 148.
+GazeCRAP remains null for `"no_test_coverage"` functions, matching the
+`ok=false` return from `BuildContractCoverageFunc`. No divergence from
+the porting contracts.
+
+### VI. Composability First
+
+**Assessment**: PASS with note
+
+Astroid becomes a required dependency (tested at 4.1.2, zero transitive
+deps on Python 3.11+, LGPL-2.1). LGPL-2.1 permits library use in an
+Apache 2.0 project without relicensing. Imported defensively inside
+`_build_astroid_graph()`. `_build_contract_coverage_map()` moved to
+`quality/pipeline.py` so it is usable without importing CLI code.
+
+### VII. Supply Chain Integrity
+
+**Assessment**: PASS
+
+Astroid (pylint-dev/astroid) is the pylint project's AST backbone —
+active, well-maintained, widely deployed. No `<N` upper bound in the
+pin (allows compatible upgrades); tested against 4.1.2. LGPL-2.1
+license reviewed and compatible with Apache 2.0.
