@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from gaze_py.classify.engine import ClassificationEngine
 from gaze_py.config.loader import GazeConfig
 from gaze_py.quality.coverage import compute_contract_coverage
 from gaze_py.taxonomy.effects import SideEffectType, Tier
@@ -209,3 +210,44 @@ def test_percentage_is_none_not_zero_for_no_contractual() -> None:
     # Must be None, not 0.0 — this is the OC-003 null-not-zero requirement.
     assert result.percentage is None
     assert result.percentage != 0.0
+
+
+def test_all_effects_ambiguous_populates_confidence_range() -> None:
+    """ECR-001 (coverage.py path): all_effects_ambiguous reason fires when all effects
+    are classified ambiguous and min_confidence/max_confidence are populated.
+
+    Uses real ClassificationEngine with a LogWrite effect on a private function
+    with no callers — reliably produces ambiguous classification (score=50).
+    """
+    effect = _make_effect(SideEffectType.LogWrite)
+    # Private name + 0 callers → ambiguous classification from ClassificationEngine
+    target = FunctionTarget(
+        name="_private_fn",
+        file_path="src/example.py",
+        line=1,
+        complexity=1,
+        caller_count=0,
+        effects=[effect],
+    )
+    # Pre-condition probe: verify this fixture is reliably ambiguous before
+    # relying on it in the coverage assertion. compute_contract_coverage()
+    # creates its own ClassificationEngine internally; this probe confirms the
+    # input would be classified ambiguous by any standard engine instance.
+    engine = ClassificationEngine()
+    classification = engine.classify(effect, target)
+    assert classification.label == "ambiguous", (
+        f"Pre-condition failed: expected ambiguous, got {classification.label} "
+        f"(score={classification.score})"
+    )
+
+    # compute_contract_coverage uses the engine internally to classify effects
+    mapped: list[tuple[AssertionSite, SideEffectType | None]] = []
+    config = _make_config(contractual_threshold=80, incidental_threshold=50)
+    result = compute_contract_coverage(target, mapped, config=config)
+
+    assert result.reason == "all_effects_ambiguous"
+    assert result.min_confidence is not None
+    assert result.max_confidence is not None
+    assert result.min_confidence == result.max_confidence  # single effect → same score
+    assert 0 <= result.min_confidence <= 100  # noqa: PLR2004
+    assert result.percentage is None  # OC-003: null-not-zero

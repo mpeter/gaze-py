@@ -42,4 +42,4 @@ exact high-complexity value) have no coverage.
 5. `ruff check`, `ruff format --check`, `mypy --strict` all pass.
 6. `pytest --cov-fail-under=85` passes with 7 new complexity tests added.
 7. Each new test asserts an exact expected value (not just `> 1`).
-8. `test_high_complexity_function_greater_than_1` is updated to assert `== 8`.
+8. `test_high_complexity_function_exact_value` asserts `== 9` (1 base + 8 decision points — see breakdown in test docstring).

@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# TC-013: _score_target is imported directly because the public CLI surface
+# (gazepy crap / gazepy quality) cannot exercise the effect_confidence_range
+# wiring in isolation — the public path requires a fixture whose classification
+# is guaranteed ambiguous by the real engine, which is non-deterministic.
+# Testing _score_target directly verifies the wiring without coupling to
+# classifier thresholds or fixture classification outcomes.
 from gaze_py.cli.main import _score_target
 from gaze_py.config.loader import GazeConfig
 from gaze_py.quality.pipeline import assess

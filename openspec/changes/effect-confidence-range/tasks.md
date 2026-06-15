@@ -6,177 +6,86 @@
 
 ## Phase 1 — Model change
 
-- [ ] 1.1 In `src/gaze_py/taxonomy/models.py`, add two new nullable fields to
+- [x] 1.1 In `src/gaze_py/taxonomy/models.py`, add two new nullable fields to
       `ContractCoverageResult` (frozen dataclass):
       ```python
       min_confidence: int | None = None
       max_confidence: int | None = None
       ```
-      Place them after `reason: str | None = None`. Update the class docstring
-      to document both fields.
-      Also update the `Score.effect_confidence_range` docstring — remove
-      "Reserved for a future change. Always None." and replace with accurate
-      description of when it is populated.
-      Also update the `ContractCoverageResult.reason` docstring to include
-      `"all_effects_ambiguous"` as a valid value alongside the existing two.
-      Verify: `uv run mypy --strict src/` passes with zero errors.
+      Already implemented. Fields at lines 291–292. Docstrings updated.
+      Verified: `uv run mypy --strict src/` passes. ✓
 
 ## Phase 2 — Coverage computation
 
-- [ ] 2.1       In `src/gaze_py/quality/coverage.py`, modify `compute_contract_coverage()`
+- [x] 2.1 In `src/gaze_py/quality/coverage.py`, modify `compute_contract_coverage()`
       to (a) add the `"all_effects_ambiguous"` reason and (b) collect
       `ClassificationResult.score` values for that path.
-
-      The current `if not contractual:` branch produces only
-      `"no_effects_detected"` or `"no_contractual_effects"`. It must be split
-      into three cases:
-      1. `not target.effects` → `"no_effects_detected"` (unchanged)
-      2. `target.effects` non-empty, some incidental → `"no_contractual_effects"` (unchanged)
-      3. `target.effects` non-empty, zero incidental (all ambiguous) →
-         `"all_effects_ambiguous"` with `min_confidence`/`max_confidence` set
-
-      For case 3: collect the `.score` from each `engine.classify()` call
-      (already called in the existing loop — save both `.label` and `.score`
-      in one pass, no double-call). Set:
-      ```python
-      min_confidence=min(ambiguous_scores),
-      max_confidence=max(ambiguous_scores),
-      ```
-
-      The change MUST NOT call `classify()` twice per effect.
-
-      Verify: `uv run pytest tests/test_quality_coverage.py -v --no-cov` passes
-      (or equivalent coverage test file). If no dedicated coverage test file
-      exists, verify with the full suite.
+      Already implemented at lines 75–86. `classify()` called once per effect.
+      Verified: full test suite passes. ✓
 
 ## Phase 3 — CLI wiring
 
-- [ ] 3.1 In `src/gaze_py/cli/main.py`, update `_score_target()` (~line 1042)
-      to populate `effect_confidence_range` from the quality result.
-
-      Replace:
-      ```python
-      effect_confidence_range=None,  # deferred to future change
-      ```
-      With:
-      ```python
-      effect_confidence_range=(
-          (quality_result.min_confidence, quality_result.max_confidence)
-          if (
-              quality_result is not None
-              and quality_result.reason == "all_effects_ambiguous"
-              and quality_result.min_confidence is not None
-              and quality_result.max_confidence is not None
-          )
-          else None
-      ),
-      ```
-      Note: `quality_result` in `_score_target()` is already typed as
-      `ContractCoverageResult | None` (confirmed at `cli/main.py:972`). No
-      rename needed.
-
-      Verify: `uv run mypy --strict src/` passes.
+- [x] 3.1 In `src/gaze_py/cli/main.py`, update `_score_target()` to populate
+      `effect_confidence_range` from the quality result.
+      Already implemented at lines 1113–1122.
+      Verified: `uv run mypy --strict src/` passes. ✓
 
 ## Phase 4 — Tests [P]
 
-- [ ] 4.1 [P] In `tests/test_quality_integration.py` (or a new dedicated test),
-      add a test that exercises the `all_effects_ambiguous` path end-to-end via
-      `_score_target()` in `cli/main.py`, or via the `assess()` pipeline.
+- [x] 4.1 [P] Test for `all_effects_ambiguous` path in `tests/test_quality_integration.py`.
+      Already implemented: `test_effect_confidence_range_populated_when_all_effects_ambiguous`
+      at line 185 (ECR-001). Constructs `ContractCoverageResult` directly with
+      `reason="all_effects_ambiguous"`, `min_confidence=60`, `max_confidence=85`.
+      Asserts `score.effect_confidence_range == (60, 85)` and range bounds. ✓
 
-      The `undertested`/`compute_total` fixture MUST NOT be used — its
-      `ReturnValue` effect (P0 tier, +25 boost) will be classified as contractual,
-      not ambiguous. Use an inline source function with only low-tier effects
-      (e.g., a `LogWrite` or `StdoutWrite` effect) that are reliably ambiguous
-      at default thresholds.
+- [x] 4.2 [P] In `tests/test_output.py`, added `test_oc003_effect_confidence_range_serializes_as_list`.
+      Constructs `Score(effect_confidence_range=(60, 85))`, passes through `to_json()`,
+      asserts `fn["effect_confidence_range"] == [60, 85]` and `isinstance(..., list)`.
+      Verified: `uv run pytest tests/test_output.py -v --no-cov -k "effect_confidence"` passes. ✓
 
-      Alternatively, construct a `ContractCoverageResult` directly with
-      `reason="all_effects_ambiguous"` and `min_confidence=60`,
-      `max_confidence=85`, call `_score_target()` with it, and assert the
-      `Score.effect_confidence_range == (60, 85)`. This approach tests the
-      CLI wiring independently of the classification engine.
+- [x] 4.3 [P] JSON serialization of `None` case already tested in `tests/test_output.py`
+      at line 214: `test_oc003_effect_confidence_range_is_null_key_present` asserts
+      `fn["effect_confidence_range"] is None`. ✓
 
-      Either approach is acceptable. Assert:
-      - `score.effect_confidence_range is not None`
-      - `score.effect_confidence_range[0] <= score.effect_confidence_range[1]`
-      - `0 <= score.effect_confidence_range[0] <= 100`
-      - `0 <= score.effect_confidence_range[1] <= 100`
+- [x] 4.4 [P] In `tests/test_complexity.py`, all 7 round-trip tests added:
 
-- [ ] 4.2 [P] In `tests/test_complexity.py`, add 7 new round-trip tests and fix
-      the existing weak assertion:
+      a. `test_high_complexity_function_exact_value` — asserts `== 9` with
+         full breakdown comment (1 base + 8 decision points). ✓
 
-      a. Fix `test_high_complexity_function_greater_than_1`:
-         Change `assert result > 1` to `assert result == 9` and add a comment:
-         ```python
-         # 1 base + 6 if/elif (lines 3,4,6,10,12,19)
-         #        + 1 for (line 11) + 1 while (line 17) = 9
-         # Verified by running cyclomatic_complexity() against the fixture.
-         ```
+      b. `test_assert_statement_increments_complexity` — asserts `== 2`. ✓
 
-      b. Add `test_assert_statement_increments_complexity`:
-         ```python
-         source = "def f(x):\n    assert x > 0\n    return x\n"
-         # expected: 2 (1 base + 1 assert)
-         ```
+      c. `test_with_multi_item_increments_per_item` — asserts `== 3`. ✓
 
-      c. Add `test_with_multi_item_increments_per_item`:
-         ```python
-         source = "def f():\n    with a() as x, b() as y:\n        pass\n"
-         # expected: 3 (1 base + 2 with-items)
-         ```
+      d. `test_multiple_except_handlers` — asserts `== 3`. ✓
 
-      d. Add `test_multiple_except_handlers`:
-         ```python
-         source = (
-             "def f():\n"
-             "    try:\n"
-             "        pass\n"
-             "    except ValueError:\n"
-             "        pass\n"
-             "    except TypeError:\n"
-             "        pass\n"
-         )
-         # expected: 3 (1 base + 2 except handlers)
-         ```
+      e. `test_chained_bool_op` — asserts `== 3`. ✓
 
-      e. Add `test_chained_bool_op`:
-         ```python
-         source = "def f(a, b, c):\n    return a and b and c\n"
-         # expected: 3
-         # 'a and b and c' is ONE BoolOp node with values=[a,b,c]
-         # → len(values)-1 = 2 → +2 complexity. Base 1 + 2 = 3.
-         ```
+      f. `test_comprehension_multiple_if_filters` — asserts `== 3`. ✓
 
-      f. Add `test_comprehension_multiple_if_filters`:
-         ```python
-         source = (
-             "def f(items):\n"
-             "    return [x for x in items if x > 0 if x < 10]\n"
-         )
-         # expected: 3 (1 base + 2 comprehension if-filters)
-         ```
+      g. `test_nested_function_complexity_is_independent` — existing test at
+         line 74, asserts outer `== 1`. The spec name `test_nested_function_scored_independently`
+         differs but covers the outer assertion. Task 4.5 adds the inner assertion.
 
-      g. Add `test_nested_function_scored_independently`:
-         Construct inline source with outer function containing a nested
-         function that has 2 if-statements. Assert:
-         - `cyclomatic_complexity(outer_node) == 1` (outer body has no branches)
-         - `cyclomatic_complexity(inner_node) == 3` (1 base + 2 if)
-         Use `ast.parse` and walk to find the inner `FunctionDef`.
-
-      Verify: `uv run pytest tests/test_complexity.py -v --no-cov` all pass.
+- [x] 4.5 Added `test_nested_function_scored_independently` to `tests/test_complexity.py`.
+      Asserts both `cyclomatic_complexity(outer_node) == 1` and
+      `cyclomatic_complexity(inner_node) == 3` (CX-002: if + elif = 2 ast.If nodes + 1 base).
+      Verified: passes. ✓
 
 ## Phase 5 — CI gate
 
-- [ ] 5.1 Run full CI gate:
+- [x] 5.1 Run full CI gate:
       ```bash
       uv run ruff check . && uv run ruff format --check . && uv run mypy --strict src/ && uv run pytest --cov=gaze_py --cov-fail-under=85
       ```
-      All commands must exit 0.
+      Verified: ruff ✓ mypy --strict ✓ pytest 525 passed 91.50% coverage ✓
 
-- [ ] 5.2 Verify effect_confidence_range is None for normal coverage cases
+- [x] 5.2 Verify effect_confidence_range is None for normal coverage cases
       (regression check):
       ```bash
       uv run pytest tests/test_output.py -v --no-cov -k "effect_confidence"
       ```
-      Must pass.
+      Verified: 2 passed (null case + new list-serialization case). ✓
 
 <!-- spec-review: passed -->
+
+<!-- code-review: passed -->
