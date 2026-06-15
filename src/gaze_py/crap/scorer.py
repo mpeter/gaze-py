@@ -17,7 +17,7 @@ from gaze_py.taxonomy.models import FunctionTarget
 
 _STRATEGY_ORDER: dict[str, int] = {
     "add_tests": 0,
-    "add_assertions": 1,  # O1 deferred — unreachable in this change; pre-wired for future use
+    "add_assertions": 1,
     "decompose_and_test": 2,
     "decompose": 3,
 }

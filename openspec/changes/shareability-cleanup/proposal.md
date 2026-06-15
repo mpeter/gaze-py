@@ -62,7 +62,7 @@ development process that are visible to anyone who reads the source on GitHub:
    limitations section
 7. README contains a `gazepy quality` usage example
 8. CHANGELOG contains a 0.1.0 entry
-9. `openspec/changes/archive/` contains the five completed changes
+9. `openspec/changes/archive/` contains seven completed changes: `001-initial-port/`, `cli-parity/`, `constitution-v1-1-0-pr/`, `coverprofile-path-fix/`, `o1-quality-pipeline/`, `pypi-release/`, `upgrade-setup-uv/`
 10. `tests/test_quality_integration.py` has no `or report.target_function is not None`
     tautology
-11. `uv.lock` is committed with version 0.3.0
+11. `uv.lock` is committed with version 0.4.0 (bump from 0.3.1, includes mypy 1.x → 2.1.0 major upgrade)
