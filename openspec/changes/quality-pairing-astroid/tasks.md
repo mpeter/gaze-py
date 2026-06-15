@@ -458,7 +458,7 @@
 
 ## 6. _build_contract_coverage_map() in quality/pipeline.py
 
-- [ ] 6.1 Add `build_contract_coverage_map(src_path: Path, tests_path: Path, config: GazeConfig) -> dict[str, ContractCoverageResult]`
+- [x] 6.1 Add `build_contract_coverage_map(src_path: Path, tests_path: Path, config: GazeConfig) -> dict[str, ContractCoverageResult]`
       to `src/gaze_py/quality/pipeline.py` (public function, exported).
       - Calls `assess(src_path, tests_path, config=config)`.
       - Builds `{function_name: ContractCoverageResult}` from
@@ -479,7 +479,7 @@
         a library module; add `import sys` at module level of
         `pipeline.py` if not already present.)
 
-- [ ] 6.2 Add `--tests` option to the `crap` command (must be done
+- [x] 6.2 Add `--tests` option to the `crap` command (must be done
       BEFORE task 6.3 so the option exists when `_run_crap()` is updated):
       ```python
       @click.option("--tests", "tests_path", default=None,
@@ -489,7 +489,7 @@
       signature. Thread it through as a `Path | None` to the inner
       quality integration step (task 6.3).
 
-- [ ] 6.3 Integrate quality pipeline into the `crap` command body
+- [x] 6.3 Integrate quality pipeline into the `crap` command body
       (NOT inside `_run_crap()` — `_run_crap()` signature is unchanged):
       Use a **lazy inline import** inside the crap command body (same
       pattern as `from gaze_py.quality.pipeline import assess` in the
@@ -527,7 +527,7 @@
       - If no tests path found, proceed as today (GazeCRAP null,
         OC-003 compliant).
 
-- [ ] 6.4 New tests in `tests/test_cli.py` — requires tasks 4.3, 6.2,
+- [x] 6.4 New tests in `tests/test_cli.py` — requires tasks 4.3, 6.2,
       and 6.3 to be complete first; do NOT mark [P] within section 6:
       - `test_crap_with_tests_populates_contract_coverage_reason` — run
         `crap` on `tests/testdata/quality/src/` with
@@ -548,7 +548,7 @@
 
 ## 7. Baseline measurement + CHANGELOG + CI gate
 
-- [ ] 7.1 Run `uv run gazepy quality src/gaze_py/ --tests tests/ --format=json`
+- [x] 7.1 Run `uv run gazepy quality src/gaze_py/ --tests tests/ --format=json`
       and create `openspec/changes/quality-pairing-astroid/results.md`
       recording:
       - Total paired (`target_function != null` in `.reports`)
@@ -567,7 +567,7 @@
       - Double detect_and_classify overhead (wall time with vs without
         `--tests`)
 
-- [ ] 7.2 Add CHANGELOG entry under `## [Unreleased]`:
+- [x] 7.2 Add CHANGELOG entry under `## [Unreleased]`:
       ```
       ### Added
       - Strategy 3 pairing via Astroid transitive call graph inference
