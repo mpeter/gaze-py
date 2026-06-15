@@ -19,7 +19,7 @@ from gaze_py.quality.assertions import detect_assertions
 from gaze_py.quality.coverage import compute_contract_coverage
 from gaze_py.quality.mapper import build_call_bindings, map_assertions_to_effects
 from gaze_py.quality.models import TestFunc
-from gaze_py.quality.pairing import find_test_functions, pair_to_targets
+from gaze_py.quality.pairing import _build_astroid_graph, find_test_functions, pair_to_targets
 from gaze_py.taxonomy.models import FunctionTarget, QualityReport
 
 
@@ -83,7 +83,13 @@ def assess(
     if not test_funcs:
         return AssessResult(reports=(), untested=())
 
-    # Step 3: process each test function through the pipeline.
+    # Step 3: build Astroid call graph once for Strategy 3 pairing (D2).
+    # Deduplicate file paths — one path per file, not one per test function.
+    test_files: list[Path] = list(dict.fromkeys(Path(tf.filename) for tf in test_funcs))
+    src_files: list[Path] = list(collect_py_files(src_path))
+    graph = _build_astroid_graph(test_files, src_files)
+
+    # Step 4: process each test function through the pipeline.
     reports: list[QualityReport] = []
 
     for test_func in test_funcs:
@@ -93,11 +99,12 @@ def assess(
             target_map=target_map,
             config=config,
             target_func=target_func,
+            astroid_graph=graph,
         )
         if report is not None:
             reports.append(report)
 
-    # Step 4: collect untested production functions (D6 in design.md).
+    # Step 5: collect untested production functions (D6 in design.md).
     # seen_names is the set of non-None target_function values from paired reports.
     seen_names: set[str] = {r.target_function for r in reports if r.target_function is not None}
 
@@ -119,6 +126,7 @@ def _process_test_func(
     target_map: dict[str, FunctionTarget],
     config: GazeConfig,
     target_func: str | None,
+    astroid_graph: dict[str, set[str]] | None = None,
 ) -> QualityReport | None:
     """Process a single test function through the full pipeline.
 
@@ -128,12 +136,14 @@ def _process_test_func(
         target_map: Lookup map from function name to FunctionTarget.
         config: GazeConfig with classification thresholds.
         target_func: Optional filter — skip if pair doesn't match this name.
+        astroid_graph: Optional caller→callees adjacency dict for Strategy 3
+            transitive call graph pairing. When None, Strategy 3 is skipped.
 
     Returns:
         A QualityReport, or None when the test function is filtered out.
     """
     # Pair the test function with a production target.
-    pair = pair_to_targets(test_func, source_targets)
+    pair = pair_to_targets(test_func, source_targets, astroid_graph=astroid_graph)
 
     # If target_func filter is set, skip non-matching pairs.
     if target_func is not None and pair.target_name != target_func:

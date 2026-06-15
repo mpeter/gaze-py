@@ -71,6 +71,13 @@ strict = true
 module = "yaml"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# astroid does not ship py.typed or stubs. Suppress import-untyped errors
+# for all astroid submodules. Astroid is a required production dependency
+# (D11 in design.md); the override is necessary, not a workaround.
+module = ["astroid", "astroid.*"]
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # Pytest
 # ---------------------------------------------------------------------------

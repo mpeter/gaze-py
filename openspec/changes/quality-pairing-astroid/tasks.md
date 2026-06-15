@@ -177,7 +177,7 @@
 
 ## 4. _untested_reports() helper and pipeline wiring
 
-- [ ] 4.1 Add `_untested_reports(source_targets: tuple[FunctionTarget, ...], seen_names: set[str], config: GazeConfig) -> tuple[QualityReport, ...]`
+- [x] 4.1 Add `_untested_reports(source_targets: tuple[FunctionTarget, ...], seen_names: set[str], config: GazeConfig) -> tuple[QualityReport, ...]`
       to `src/gaze_py/quality/pipeline.py`.
       - `seen_names` is the set of `target_function` values from all
         test-keyed reports produced in the main loop.
@@ -192,7 +192,7 @@
       - Return `tuple(results)`; empty tuple if all production functions
         are paired.
 
-- [ ] 4.2 Update `assess()` in `src/gaze_py/quality/pipeline.py`:
+- [x] 4.2 Update `assess()` in `src/gaze_py/quality/pipeline.py`:
       - After the main per-test-function loop, collect `seen_names` (set
         of non-None `target_function` values from emitted reports).
       - When `target_func is None` (unfiltered run), call
@@ -203,7 +203,7 @@
         filtered functions as untested (B-03).
       - Return `AssessResult(reports=tuple(reports), untested=untested)`.
 
-- [ ] 4.3 Create new fixture for genuinely-untested functions:
+- [x] 4.3 Create new fixture for genuinely-untested functions:
       `tests/testdata/quality/src/uncovered.py`:
       ```python
       # ruff: noqa
@@ -226,7 +226,7 @@
       `result.reports` with `percentage=0.0` — it is NOT suitable for
       `result.untested` tests.
 
-- [ ] 4.4 New integration tests in `tests/test_quality_integration.py`
+- [x] 4.4 New integration tests in `tests/test_quality_integration.py`
       — requires tasks 2.1, 2.2, and 4.3 to be complete first;
       do NOT mark [P]:
       - `test_assess_returns_assess_result` — `assess()` returns an
@@ -253,7 +253,7 @@
 
 ## 5. Pairing — Strategy 3 (Astroid transitive call graph)
 
-- [ ] 5.1 Add `_build_astroid_graph(test_files: list[Path], src_files: list[Path]) -> dict[str, set[str]]`
+- [x] 5.1 Add `_build_astroid_graph(test_files: list[Path], src_files: list[Path]) -> dict[str, set[str]]`
       to `src/gaze_py/quality/pairing.py`.
       - Add at **module level** in `pairing.py` (CS-002 MUST):
         `import collections`, `import sys`
@@ -298,7 +298,7 @@
         `dict[str, set[str]]` (use `collections.defaultdict(set)`
         during construction, return as plain dict).
 
-- [ ] 5.2 Add `_pair_astroid(test_func: TestFunc, source_names: set[str], graph: dict[str, set[str]], *, depth_limit: int = 5) -> str | None`
+- [x] 5.2 Add `_pair_astroid(test_func: TestFunc, source_names: set[str], graph: dict[str, set[str]], *, depth_limit: int = 5) -> str | None`
       to `src/gaze_py/quality/pairing.py`.
       - Determine the test function FQN using the project root heuristic
         (D8): walk up from `test_func.filename` until a directory
@@ -311,7 +311,7 @@
         the final `.`) and check membership in `source_names`.
       - Return the first matching short name encountered, or `None`.
 
-- [ ] 5.3 Update `pair_to_targets()` signature in
+- [x] 5.3 Update `pair_to_targets()` signature in
       `src/gaze_py/quality/pairing.py`:
       ```python
       def pair_to_targets(
@@ -328,7 +328,7 @@
       confidence=0.75)`. Existing callers that omit `astroid_graph` are
       unaffected.
 
-- [ ] 5.4 Update `assess()` in `src/gaze_py/quality/pipeline.py`:
+- [x] 5.4 Update `assess()` in `src/gaze_py/quality/pipeline.py`:
       - Collect `test_funcs` from `_collect_test_functions(tests_path)`.
       - Build `test_files: list[Path]` as deduplicated file paths:
         `list(dict.fromkeys(Path(tf.filename) for tf in test_funcs))`
@@ -338,7 +338,7 @@
         the per-test-function loop.
       - Pass `astroid_graph=graph` to every `pair_to_targets()` call.
 
-- [ ] 5.5 [P] New tests in `tests/test_quality_pairing.py` using
+- [x] 5.5 [P] New tests in `tests/test_quality_pairing.py` using
       dedicated testdata fixtures in `tests/testdata/quality/astroid/`
       (no modification to existing tests):
 

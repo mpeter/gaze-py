@@ -4,14 +4,23 @@ from __future__ import annotations
 
 import ast
 import textwrap
+import unittest.mock
 from pathlib import Path
+
+import astroid
 
 from gaze_py.quality.models import TestFunc
 
 # CR-004: testing _extract_call_name directly because pair_to_targets() requires a
 # full source_functions list and a TestFunc; the method/qualified-name distinction
 # is cleaner to assert at the unit level without constructing elaborate fixtures.
-from gaze_py.quality.pairing import _extract_call_name, find_test_functions, pair_to_targets
+from gaze_py.quality.pairing import (
+    _build_astroid_graph,
+    _extract_call_name,
+    _pair_astroid,
+    find_test_functions,
+    pair_to_targets,
+)
 from gaze_py.taxonomy.models import FunctionTarget
 
 # ---------------------------------------------------------------------------
@@ -206,3 +215,169 @@ def test_extract_call_name_qualified() -> None:
     assert isinstance(stmt, ast.Expr)
     assert isinstance(stmt.value, ast.Call)
     assert _extract_call_name(stmt.value) is None
+
+
+# ---------------------------------------------------------------------------
+# Strategy 3 — Astroid transitive call graph (_pair_astroid / pair_to_targets)
+# ---------------------------------------------------------------------------
+# TC-013: _pair_astroid and _build_astroid_graph are tested directly because
+# pair_to_targets() cannot exercise FQN alignment, depth-limit behaviour, or
+# cache-clear semantics without prohibitive fixture complexity.
+# ---------------------------------------------------------------------------
+
+
+def _make_tf_with_fqn(name: str, fqn_prefix: str, tmp_path: Path) -> TestFunc:
+    """Create a TestFunc whose D8 FQN resolves to ``fqn_prefix.name``.
+
+    Places a pyproject.toml marker at ``tmp_path`` so ``_find_project_root``
+    stops there. The test file is placed at ``tmp_path/tests/<module>.py``
+    where ``<module>`` is the last segment of ``fqn_prefix``.
+
+    Args:
+        name: Test function name (e.g. "test_engine_integration").
+        fqn_prefix: Dotted module path without the function name
+            (e.g. "test_mod" → FQN becomes "test_mod.test_engine_integration").
+        tmp_path: Pytest tmp_path fixture — used as the project root.
+
+    Returns:
+        A TestFunc whose filename produces the expected FQN via D8.
+    """
+    # Place the project-root marker so _find_project_root stops at tmp_path.
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+
+    # The module name is the last segment of fqn_prefix.
+    module_name = fqn_prefix.rsplit(".", 1)[-1]
+    test_dir = tmp_path / "tests"
+    test_dir.mkdir(exist_ok=True)
+    test_file = test_dir / f"{module_name}.py"
+    src = f"def {name}() -> None: pass\n"
+    test_file.write_text(src, encoding="utf-8")
+
+    node = ast.parse(src).body[0]
+    assert isinstance(node, ast.FunctionDef)
+    return TestFunc(name=name, filename=str(test_file), lineno=1, node=node)
+
+
+def test_pair_astroid_resolves_method_call(tmp_path: Path) -> None:
+    """_pair_astroid resolves a direct method-call edge in a hand-built graph.
+
+    Strategy 2 (ast.Name walk) cannot match method calls; Strategy 3 must.
+    The graph has one hop: test FQN → Engine.classify.
+    """
+    graph: dict[str, set[str]] = {
+        "test_mod.test_engine_integration": {"src_mod.Engine.classify"},
+        "src_mod.Engine.classify": set(),
+    }
+    tf = _make_tf_with_fqn("test_engine_integration", "test_mod", tmp_path)
+
+    # Direct _pair_astroid call: should return the short name "classify".
+    result = _pair_astroid(tf, {"classify"}, graph)
+    assert result == "classify"
+
+    # pair_to_targets integration: inference_method and confidence.
+    source_funcs = [_make_target("classify"), _make_target("Engine")]
+    pair = pair_to_targets(tf, source_funcs, astroid_graph=graph)
+    assert pair.inference_method == "call_graph_transitive"
+    assert pair.confidence == 0.75
+    assert pair.target_name == "classify"
+
+
+def test_pair_astroid_transitive_reaches_caller_signal(tmp_path: Path) -> None:
+    """_pair_astroid follows a 3-hop chain to reach caller_signal.
+
+    test_foo → _make_engine → Engine.classify → caller_signal.
+    """
+    graph: dict[str, set[str]] = {
+        "test_mod.test_foo": {"src_mod._make_engine"},
+        "src_mod._make_engine": {"src_mod.Engine.classify"},
+        "src_mod.Engine.classify": {"src_mod.caller_signal"},
+    }
+    tf = _make_tf_with_fqn("test_foo", "test_mod", tmp_path)
+
+    result = _pair_astroid(tf, {"caller_signal"}, graph)
+    assert result == "caller_signal"
+
+
+def test_pair_astroid_depth_limit(tmp_path: Path) -> None:
+    """_pair_astroid does not return a function beyond the depth limit.
+
+    A 6-hop chain with depth_limit=5 must NOT return the function at hop 6.
+    """
+    # Build a linear chain: start → hop1 → hop2 → hop3 → hop4 → hop5 → hop6_target
+    graph: dict[str, set[str]] = {
+        "test_mod.test_deep": {"mod.hop1"},
+        "mod.hop1": {"mod.hop2"},
+        "mod.hop2": {"mod.hop3"},
+        "mod.hop3": {"mod.hop4"},
+        "mod.hop4": {"mod.hop5"},
+        "mod.hop5": {"mod.hop6_target"},
+    }
+    tf = _make_tf_with_fqn("test_deep", "test_mod", tmp_path)
+
+    # hop6_target is at depth 6 from start; depth_limit=5 must exclude it.
+    result = _pair_astroid(tf, {"hop6_target"}, graph, depth_limit=5)
+    assert result is None
+
+    # Sanity: with depth_limit=6 it IS reachable.
+    result_deep = _pair_astroid(tf, {"hop6_target"}, graph, depth_limit=6)
+    assert result_deep == "hop6_target"
+
+
+def test_pair_astroid_empty_graph_falls_through_to_unmatched(tmp_path: Path) -> None:
+    """Empty astroid_graph with no name/call match → unmatched pair.
+
+    Strategy 3 fires but finds nothing; falls through to unmatched (Strategy 4).
+    """
+    tf = _make_tf_with_fqn("test_nothing", "test_mod", tmp_path)
+    source_funcs = [_make_target("alpha"), _make_target("beta")]
+
+    pair = pair_to_targets(tf, source_funcs, astroid_graph={})
+    assert pair.inference_method == "unmatched"
+    assert pair.confidence == 0.0
+    assert pair.target_name is None
+
+
+def test_pair_astroid_confidence_and_method(tmp_path: Path) -> None:
+    """Strategy 3 match → inference_method=="call_graph_transitive", confidence==0.75."""
+    graph: dict[str, set[str]] = {
+        "test_mod.test_score": {"src_mod.compute_score"},
+    }
+    tf = _make_tf_with_fqn("test_score", "test_mod", tmp_path)
+    source_funcs = [_make_target("compute_score")]
+
+    pair = pair_to_targets(tf, source_funcs, astroid_graph=graph)
+    assert pair.inference_method == "call_graph_transitive"
+    assert pair.confidence == 0.75
+    assert pair.target_name == "compute_score"
+
+
+def test_build_astroid_graph_skips_bad_file() -> None:
+    """Non-existent file is skipped; valid files still produce a non-empty graph.
+
+    _build_astroid_graph must not raise when a path does not exist (D4).
+    """
+    engine_fixture = (
+        Path(__file__).parent / "testdata" / "quality" / "astroid" / "src" / "engine.py"
+    )
+    bad_path = Path("/nonexistent/path/to/missing_file.py")
+
+    result = _build_astroid_graph([bad_path], [engine_fixture])
+    # Valid file was loaded — graph is non-empty.
+    assert len(result) > 0
+
+
+def test_build_astroid_graph_clears_cache_between_calls() -> None:
+    """clear_cache() is called exactly once per _build_astroid_graph() invocation.
+
+    Calling _build_astroid_graph() twice must call clear_cache() twice total.
+    This verifies the D2 contract without relying on observable cache state.
+    """
+    engine_fixture = (
+        Path(__file__).parent / "testdata" / "quality" / "astroid" / "src" / "engine.py"
+    )
+
+    with unittest.mock.patch.object(astroid.MANAGER, "clear_cache") as mock_clear:
+        _build_astroid_graph([], [engine_fixture])
+        _build_astroid_graph([], [engine_fixture])
+
+    assert mock_clear.call_count == 2
