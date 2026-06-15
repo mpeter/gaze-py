@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from gaze_py.taxonomy.models import AnalysisResult, QualityReport
@@ -146,11 +147,12 @@ def _json_default(obj: Any) -> Any:  # noqa: ANN401  # Any is required — json.
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
-def quality_to_json(reports: list[QualityReport], *, indent: int = 2) -> str:
-    """Serialize a list of QualityReport objects to JSON.
+def quality_to_json(reports: Sequence[QualityReport], *, indent: int = 2) -> str:
+    """Serialize a sequence of QualityReport objects to JSON.
 
     Args:
-        reports: Quality assessment reports to serialize.
+        reports: Quality assessment reports to serialize. Accepts any
+            Sequence (list, tuple, etc.) of QualityReport instances.
         indent: JSON indentation level.
 
     Returns:

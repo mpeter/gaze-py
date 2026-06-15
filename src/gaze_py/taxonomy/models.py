@@ -248,7 +248,8 @@ class TestTargetPair:
     Attributes:
         test_name: Name of the test function.
         target_name: Name of the production function (None if unmatched).
-        inference_method: "name_convention" | "call_graph" | "unmatched".
+        inference_method: "name_convention" | "call_graph" |
+            "call_graph_transitive" | "unmatched".
         confidence: 0.0–1.0.
     """
 
@@ -297,7 +298,11 @@ class QualityReport:
     """Quality assessment result for one test-target pair.
 
     Attributes:
-        test_function: Name of the test function.
+        test_function: Name of the test function. Empty string ("") when
+            this report represents an unmatched production function with
+            no paired test (part of AssessResult.untested). Only appears
+            in quality output via AssessResult.untested, never in the
+            quality CLI command output.
         target_function: Name of the target function (None if unmatched).
         assertions: Detected assertion sites in the test function.
         contract_coverage: Coverage result (None if no target found).

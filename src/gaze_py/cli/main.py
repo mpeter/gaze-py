@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
 
 import click
@@ -544,7 +545,7 @@ def quality(
         resolved_tests = _discover_tests_path(src_path)
 
     # Run the O1 quality assessment pipeline.
-    reports = assess(
+    result = assess(
         src_path.resolve(),
         resolved_tests,
         config=config,
@@ -553,13 +554,13 @@ def quality(
 
     # Emit output.
     if output_format == "json":
-        _emit_quality_json(reports)
+        _emit_quality_json(result.reports)
     else:
-        _emit_quality_text(reports, src_path=src_path)
+        _emit_quality_text(result.reports, src_path=src_path)
 
     # CI threshold enforcement — after emitting output.
     if min_contract_coverage is not None:
-        _check_min_contract_coverage(reports, min_contract_coverage)
+        _check_min_contract_coverage(result.reports, min_contract_coverage)
 
 
 def _discover_tests_path(src_path: Path) -> Path:
@@ -601,19 +602,19 @@ def _discover_tests_path(src_path: Path) -> Path:
     raise SystemExit(2)
 
 
-def _emit_quality_json(reports: list[QualityReport]) -> None:
+def _emit_quality_json(reports: Sequence[QualityReport]) -> None:
     """Emit quality reports as a JSON array.
 
     Uses quality_to_json() from the public formatter API. Emits a JSON
     array (NOT wrapped in AnalysisResult) per design.md A.5.
 
     Args:
-        reports: List of QualityReport dataclass instances.
+        reports: Sequence of QualityReport dataclass instances.
     """
     click.echo(quality_to_json(reports))
 
 
-def _emit_quality_text(reports: list[QualityReport], *, src_path: Path) -> None:
+def _emit_quality_text(reports: Sequence[QualityReport], *, src_path: Path) -> None:
     """Emit quality reports as a plain-text table.
 
     Format per design.md A.5:
@@ -625,7 +626,7 @@ def _emit_quality_text(reports: list[QualityReport], *, src_path: Path) -> None:
     is always None.
 
     Args:
-        reports: List of QualityReport dataclass instances.
+        reports: Sequence of QualityReport dataclass instances.
         src_path: Source path (used in the header).
     """
     sep = "─" * 56
@@ -689,14 +690,14 @@ def _compute_gaze_crap_for_report(report: QualityReport) -> str:
     return f"{score:.1f}"
 
 
-def _check_min_contract_coverage(reports: list[QualityReport], threshold: float) -> None:
+def _check_min_contract_coverage(reports: Sequence[QualityReport], threshold: float) -> None:
     """Check the min-contract-coverage CI gate and exit 1 if violated.
 
     Emits a summary line and per-function failure lines to stderr, then
     raises SystemExit(1).
 
     Args:
-        reports: List of QualityReport instances.
+        reports: Sequence of QualityReport instances.
         threshold: Minimum required average contract coverage percentage.
     """
     coverages: list[tuple[str, float]] = []

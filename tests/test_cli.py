@@ -970,11 +970,12 @@ def test_quality_json_serializable() -> None:
     from gaze_py.report.json_formatter import _json_default
 
     config = load_config(_QUALITY_SIMPLE_SRC)
-    reports = assess(
+    result = assess(
         _QUALITY_SIMPLE_SRC.resolve(),
         _QUALITY_TESTS / "test_simple.py",
         config=config,
     )
+    reports = result.reports
     assert len(reports) > 0, "Expected at least one report from simple fixture"
     for report in reports:
         # Must not raise TypeError — guards against TestFunc/ast.FunctionDef leaking.

@@ -9,6 +9,7 @@ Orchestrates the full pipeline:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from gaze_py.analysis.files import collect_py_files
@@ -22,13 +23,34 @@ from gaze_py.quality.pairing import find_test_functions, pair_to_targets
 from gaze_py.taxonomy.models import FunctionTarget, QualityReport
 
 
+@dataclass(frozen=True)
+class AssessResult:
+    """Result of a full O1 quality assessment pipeline run.
+
+    Separates test-function-keyed reports from production functions that have
+    no paired test, so callers can distinguish "tested but low coverage" from
+    "never tested at all" (D6 in design.md).
+
+    Attributes:
+        reports: One QualityReport per discovered test function (paired).
+            Every entry has a non-empty test_function name.
+        untested: One QualityReport per production function with detected
+            effects that was never the target_function of any test-keyed
+            report. Every entry uses test_function="" as a sentinel.
+            Populated only on unfiltered assess() calls (target_func=None).
+    """
+
+    reports: tuple[QualityReport, ...]
+    untested: tuple[QualityReport, ...]
+
+
 def assess(
     src_path: Path,
     tests_path: Path,
     *,
     config: GazeConfig,
     target_func: str | None = None,
-) -> list[QualityReport]:
+) -> AssessResult:
     """Run the full O1 quality assessment pipeline.
 
     Detects and classifies side effects in src_path, discovers test functions
@@ -41,11 +63,14 @@ def assess(
         config: GazeConfig with classification thresholds.
         target_func: If provided, restrict output to test functions that pair
             to this production function name. Filtering is applied after pairing.
+            When set, AssessResult.untested is always empty (filtering would
+            incorrectly mark tested-but-filtered functions as untested).
 
     Returns:
-        List of QualityReport, one per discovered test function. Returns an
-        empty list if no test functions are discovered in tests_path — this
-        is not an error.
+        AssessResult with .reports (one per test function) and .untested
+        (one per unmatched production function with effects). Returns an
+        AssessResult with empty tuples if no test functions are discovered
+        in tests_path — this is not an error.
     """
     # Step 1: detect and classify source functions (uses shared runner, M1 fixed).
     source_targets = detect_and_classify(src_path.resolve(), config=config)
@@ -56,7 +81,7 @@ def assess(
     # Step 2: discover test functions.
     test_funcs = _collect_test_functions(tests_path)
     if not test_funcs:
-        return []
+        return AssessResult(reports=(), untested=())
 
     # Step 3: process each test function through the pipeline.
     reports: list[QualityReport] = []
@@ -72,7 +97,7 @@ def assess(
         if report is not None:
             reports.append(report)
 
-    return reports
+    return AssessResult(reports=tuple(reports), untested=())
 
 
 def _process_test_func(
