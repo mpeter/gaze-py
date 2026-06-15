@@ -23,24 +23,5 @@
       "type": "remote",
       "url": "http://127.0.0.1:8080/v0/groups/fieldkit-search/mcp"
     }
-  },
-  "permission": {
-    "bash": {
-      "gh pr create*": "deny",
-      "gh pr merge*": "deny",
-      "gh pr edit*": "deny",
-      "gh pr close*": "deny",
-      "gh pr reopen*": "deny",
-      "gh pr review *": "deny",
-      "gh issue create*": "deny",
-      "gh issue edit*": "deny",
-      "gh issue close*": "deny",
-      "gh issue reopen*": "deny",
-      "gh release create*": "deny",
-      "gh repo create*": "deny",
-      "gh repo fork*": "deny",
-      "gh repo delete*": "deny",
-      "gh api*": "deny"
-    }
   }
 }
