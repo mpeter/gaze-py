@@ -129,7 +129,7 @@
 
 ## 3. Coverage — no_test_coverage reason
 
-- [ ] 3.1 Update `compute_contract_coverage()` in
+- [x] 3.1 Update `compute_contract_coverage()` in
       `src/gaze_py/quality/coverage.py`:
       Add `*, no_test_coverage: bool = False` keyword parameter.
       When `no_test_coverage=True` and `target.effects` is non-empty,
@@ -153,7 +153,7 @@
       Go behaviour where `effectsSet` membership (any effects) triggers
       `"no_test_coverage"` regardless of classification state.
 
-- [ ] 3.2 Update `ContractCoverageResult.reason` docstring in
+- [x] 3.2 Update `ContractCoverageResult.reason` docstring in
       `src/gaze_py/taxonomy/models.py` to add:
       ```
       "no_test_coverage" — effects were detected but no test targets
@@ -161,7 +161,7 @@
           porting contract — "no test = no coverage data, not 0%").
       ```
 
-- [ ] 3.3 [P] New tests in `tests/test_quality_coverage.py`
+- [x] 3.3 [P] New tests in `tests/test_quality_coverage.py`
       (no modification to existing tests):
       - `test_no_test_coverage_emits_none_percentage` —
         `no_test_coverage=True`, target has `ReturnValue` effect →
