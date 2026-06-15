@@ -1,6 +1,26 @@
 <!--
   SYNC IMPACT REPORT
   ==================
+  Version change: 1.1.2 → 1.1.3
+  Amendment date: 2026-06-15
+
+  Clarification (PATCH):
+    No principle content changed. Follow-up TODO resolved:
+
+    v1.1.0 deferred item:
+      "Once pyproject.toml is added, run `uv sync --frozen` and commit
+       uv.lock to satisfy Principle VII's lock file requirement."
+
+    Resolution: `pyproject.toml` and `uv.lock` are both committed in
+    the repository. Principle VII's lock file requirement is now fully
+    active with no caveats. The deferred TODO text is removed from this
+    report. Remaining `pip` Dependabot follow-up (see below) is
+    superseded — `uv.lock` is the committed lock file; `pip` is not
+    the package manager. Dependabot coverage for the `pip` ecosystem
+    is not applicable.
+
+  Previous SYNC IMPACT REPORT (v1.1.2):
+  ==================
   Version change: 1.1.1 → 1.1.2
   Amendment date: 2026-06-14
 
@@ -66,17 +86,6 @@
                  to reference "all active principles" (was "all five principles")
 
   Templates requiring updates: none
-
-  Follow-up TODOs:
-    - Once pyproject.toml is added, run `uv sync --frozen` and commit uv.lock to
-      satisfy Principle VII's lock file requirement (currently inapplicable
-      as no package manifest exists yet). Track in a dedicated OpenSpec change.
-    - ✅ Dependabot config added: `.github/dependabot.yml` (github-actions, weekly,
-      Conventional Commits prefix, open-pull-requests-limit: 5). Completed in `opsx/constitution-v1.1.0`.
-    - Add `pip` ecosystem entry to `.github/dependabot.yml` when `pyproject.toml` is
-      committed in `001-initial-port`.
-    - Reconcile AGENTS.md review-council list to include SRE for CI-touching changes
-      and document the Tester-vs-SRE selection rule.
 
   Previous SYNC IMPACT REPORT (v1.0.0):
   ==================
@@ -238,8 +247,7 @@ gaze-py MUST maintain a verifiable, reproducible dependency graph.
 
 - All runtime and development dependencies MUST be managed via a committed lock
   file (`uv.lock`). The lock file MUST be kept in version control and updated
-  whenever dependencies change. (Prerequisite: a `pyproject.toml` must exist;
-  this requirement activates once the package manifest is committed.)
+  whenever dependencies change.
 - CI pipeline actions MUST be pinned by commit SHA. Floating tag references
   (e.g., `@v4`) are prohibited in `.github/workflows/`. The human-readable
   version tag MUST be preserved as an inline comment
@@ -322,4 +330,4 @@ MUST be consistent with the principles defined above.
   Constitution Check gate MUST verify alignment with all active principles,
   with explicit sign-off on Principle V (porting contract alignment).
 
-**Version**: 1.1.2 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-14
+**Version**: 1.1.3 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-15

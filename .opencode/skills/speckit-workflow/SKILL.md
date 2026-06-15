@@ -6,7 +6,7 @@ tags:
   - workflow
   - decomposition
 ---
-<!-- scaffolded by uf v0.15.0 -->
+<!-- scaffolded by uf vdev -->
 
 # Speckit Workflow — Swarm Skill
 

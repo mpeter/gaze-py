@@ -7,7 +7,7 @@ description: >
   instructions. Exits to the human only when it genuinely
   needs human judgment.
 ---
-<!-- scaffolded by uf v0.15.0 -->
+<!-- scaffolded by uf vdev -->
 
 # Command: /unleash
 
