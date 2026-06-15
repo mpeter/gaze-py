@@ -14,8 +14,8 @@ Rules that apply to every coding session.
 - Use `org_*` tools for work item management
 - Use `comms_*` tools for agent messaging and file reservations
 - Use `forge_*` tools for multi-agent coordination
-- Use `hivemind_*` tools for learning storage and retrieval
-- Check `hivemind_find` before solving problems from scratch
+- Use `dewey_*` tools for learning storage and retrieval
+- Check `dewey_semantic_search` before solving problems from scratch
 
 ## Code Quality
 

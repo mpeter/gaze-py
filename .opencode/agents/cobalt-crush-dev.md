@@ -88,7 +88,7 @@ Every function you write must be testable. Apply these patterns:
 
 After writing code, check for Gaze quality feedback:
 
-1. **Check for artifacts**: Look in `.uf/artifacts/quality-report/` for recent Gaze reports. Also check for `coverage.out`, Gaze CLI output, or test results in the project root.
+1. **Check for artifacts**: Look in `.uf/artifacts/quality-report/` for recent Gaze reports. Also check for `.coverage`, `coverage.json`, gazepy CLI output, or test results in the project root.
 
 2. **Parse findings**: For each finding, categorize by type:
    - **CRAP score > 30**: Refactor to reduce cyclomatic complexity or increase test coverage. Target CRAP < 30.
@@ -100,7 +100,7 @@ After writing code, check for Gaze quality feedback:
 
 4. **Re-validate**: After addressing all findings, run the project's test suite. Proceed to review only when all tests pass and quality metrics are acceptable.
 
-5. **No Gaze available**: If Gaze is not installed or no artifacts exist, note this: "Quality validation is not available — Gaze is not installed. Recommend running `brew install unbound-force/tap/gaze` for automated quality feedback." Proceed with implementation using best-effort test coverage.
+5. **No Gaze available**: If Gaze is not installed or no artifacts exist, note this: "Quality validation is not available — gazepy is not installed. Recommend running `uv tool install gaze-py` for automated quality feedback." Proceed with implementation using best-effort test coverage.
 
 ## Divisor Review Preparation
 

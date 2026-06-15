@@ -1476,8 +1476,8 @@ def init(force: bool) -> None:
     """Scaffold .opencode agent and command assets into the current project.
 
     Creates (or updates with --force):
-      .opencode/agents/gazepy-reporter.md
-      .opencode/commands/gazepy.md
+      .opencode/agents/gaze-reporter.md
+      .opencode/commands/gaze.md
 
     Skips existing files unless --force is given. Warns when no pyproject.toml
     is found in cwd (assets are still written).

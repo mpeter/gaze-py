@@ -13,14 +13,14 @@ $ARGUMENTS
 ## Workflow
 
 1. Initialize comms: `comms_init(project_path=".", task_description="Forge: <task>")`
-2. Check prior learnings: `hivemind_find(query="<task keywords>")`
+2. Check prior learnings: `dewey_semantic_search(query="<task keywords>")`
 3. Decompose: `forge_decompose(task="<task>", context="<learnings>")`
 4. Create epic: `org_create_epic(epic_title="<task>", subtasks=[...])`
 5. For each subtask: `forge_spawn_subtask(bead_id, epic_id, subtask_title, files)`
 6. Monitor: check `comms_inbox()` every few minutes
 7. Review: `forge_review(task_id, files_touched)` for each completed worker
 8. Complete: `forge_complete(bead_id, summary, files_touched)`
-9. Store learnings: `hivemind_store(information="...", tags="forge,<topic>")`
+9. Store learnings: `dewey_store_learning(information="...", tags="forge,<topic>")`
 
 ## Rules
 
@@ -55,7 +55,7 @@ After all workers finish:
 
 1. `forge_complete(bead_id, summary, files_touched)` — mark epic done
 2. `forge_record_outcome(bead_id, duration_ms, success)` — record for learning
-3. `hivemind_store(information="...", tags="forge,<topic>")` — store learnings
+3. `dewey_store_learning(information="...", tags="forge,<topic>")` — store learnings
 4. `org_sync()` — persist state to git
 
 ## Error Recovery

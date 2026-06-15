@@ -1,18 +1,17 @@
 ---
-agent: gazepy-reporter
-description: Run gazepy analysis and report CRAP scores for the current project.
+agent: gaze-reporter
+description: Run gaze-py analysis and report CRAP scores for the current project.
 ---
-<!-- scaffolded by gazepy 0.3.0 -->
 
-# /gazepy
+# /gaze
 
-Delegate to the `gazepy-reporter` subagent to run gaze-py analysis and emit
+Delegate to the `gaze-reporter` subagent to run gaze-py analysis and emit
 a structured CRAP report.
 
 ## Usage
 
 ```
-/gazepy [mode] [path]
+/gaze [mode] [path]
 ```
 
 **mode** (optional):
@@ -25,9 +24,9 @@ a structured CRAP report.
 ## Examples
 
 ```
-/gazepy
-/gazepy crap
-/gazepy analyze src/mypackage/
-/gazepy full src/
-/gazepy crap src/mypackage/utils.py
+/gaze
+/gaze crap
+/gaze analyze src/mypackage/
+/gaze full src/
+/gaze crap src/mypackage/utils.py
 ```

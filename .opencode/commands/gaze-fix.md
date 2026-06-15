@@ -1,12 +1,13 @@
 ---
 description: >
   Generate tests and documentation fixes for functions identified by
-  gaze quality analysis, or auto-detect and run the active implementation
+  gazepy quality analysis, or auto-detect and run the active implementation
   workflow (Speckit/OpenSpec). With arguments: batch remediation.
   Without arguments: detects active workflow and runs /speckit.implement
   or /opsx-apply.
 ---
-<!-- scaffolded by gaze v1.5.0 -->
+<!-- scaffolded by gazepy 0.4.0 -->
+<!-- code-review: passed -->
 
 # Command: /gaze fix
 
@@ -14,26 +15,26 @@ description: >
 
 Dual-mode command. Without arguments, detects the active implementation
 workflow (Speckit or OpenSpec) and runs it. With arguments, performs
-batch remediation — reads gaze analysis data, identifies functions
-needing tests or documentation, and generates compilable fixes via
-the `gaze-test-generator` agent.
+batch remediation — reads gazepy analysis data, identifies functions
+needing tests or documentation, and generates runnable fixes via the
+`gaze-test-generator` agent.
 
 ## Usage
 
 ```
-/gaze fix                        # auto-detect workflow and implement
-/gaze fix [package-pattern]      # batch test generation
-/gaze fix --strategy=add_tests [pattern]
-/gaze fix --top=5 [pattern]
-/gaze fix --dry-run [pattern]
+/gaze fix                          # auto-detect workflow and implement
+/gaze fix [path]                   # batch test generation
+/gaze fix --strategy=add_tests [path]
+/gaze fix --top=5 [path]
+/gaze fix --dry-run [path]
 ```
 
-### Options
+## Options
 
 | Option | Description |
 |--------|-------------|
-| `[pattern]` | Go package pattern (default: `./...`) |
-| `--strategy=X` | Filter to one strategy: `add_tests`, `add_assertions`, `add_docs`, `decompose_and_test` |
+| `[path]` | Python source path (default: `src/`) |
+| `--strategy=X` | Filter: `add_tests`, `add_assertions`, `add_docs`, `decompose_and_test` |
 | `--top=N` | Process only the top N functions by CRAP score |
 | `--dry-run` | Show what would be generated without writing files |
 
@@ -75,28 +76,32 @@ implementation command:
    >   (requires a feature branch with `specs/NNN-*/tasks.md`)
    > - `/opsx-apply` — Tactical change implementation
    >   (requires an active change in `openspec/changes/`)
-   > - `/gaze fix ./...` — Batch test generation on full module
+   > - `/gaze fix src/` — Batch test generation on full source tree
 
    If the user selects a workflow command, read and execute the
    corresponding command file. If they select batch test generation,
    fall through to the "When arguments are provided" section below
-   with `./...` as the pattern.
+   with `src/` as the path.
 
 ### When arguments are provided
 
-#### Step 1: Run gaze analysis
+#### Step 1: Run gazepy analysis
 
-Resolve the `gaze` binary (check PATH, then try `go run ./cmd/gaze`
-if in the gaze repo). Run both commands:
+Resolve the `gazepy` binary: check `uv.lock` first and use
+`uv run gazepy`; if not available try `which gazepy`. If neither
+resolves, **STOP** with error:
+> "`gazepy` binary not found. Install with: `uv tool install gaze-py`"
+
+Run both commands:
 
 ```bash
-gaze crap --format=json [pattern] > /tmp/gaze-fix-crap.json
-gaze quality --format=json [pattern] > /tmp/gaze-fix-quality.json
+uv run gazepy crap --format=json [path] > /tmp/gazepy-fix-crap.json
+uv run gazepy quality --format=json [path] > /tmp/gazepy-fix-quality.json
 ```
 
 Parse the CRAP JSON for `scores` array — each score has `function`,
-`package`, `file`, `line`, `fix_strategy`, `crap`, `gaze_crap`,
-`quadrant`, `contract_coverage`, `contract_coverage_reason`,
+`file`, `line`, `fix_strategy`, `crap`, `gaze_crap`, `quadrant`,
+`contract_coverage`, `contract_coverage_reason`,
 `effect_confidence_range`.
 
 #### Step 2: Build target list
@@ -105,53 +110,57 @@ Filter scores to actionable fix strategies:
 1. `add_tests` — functions with 0% line coverage
 2. `add_assertions` — functions with line coverage but Q3 quadrant
 3. `decompose_and_test` — complex functions with 0% coverage
-4. Skip `decompose` — not fixable with tests
+4. Skip `decompose` — not fixable with tests alone
 
 Additionally, check for `add_docs` candidates: functions where
 `contract_coverage_reason` is `all_effects_ambiguous` AND
 `effect_confidence_range[0]` >= 58 (close enough to push above 70
-with GoDoc).
+with improved docstrings).
 
 Apply `--strategy` filter if specified.
 Sort by priority: `add_tests` first (by CRAP desc), then
 `add_assertions`, then `add_docs`, then `decompose_and_test`.
 Apply `--top=N` limit if specified.
 
+If the filtered list is empty, report:
+> "No functions need remediation in [path]"
+and stop.
+
 #### Step 3: Process each target
 
 For each function in the target list:
 
 1. **Read the function source**: Use the `file` and `line` from the
-   CRAP score to read the function implementation
-2. **Read existing tests**: Look for `*_test.go` in the same
-   directory. Read it if it exists.
+   CRAP score to read the function implementation.
+2. **Read existing tests**: Look for `tests/test_<module>.py` where
+   `<module>` is the stem of the source file (e.g., `analysis.py`
+   → `tests/test_analysis.py`). Read it if it exists.
 3. **Get quality data**: Find the matching entry in the quality JSON
-   (match by function name + package). Extract `Gaps`, `GapHints`,
+   (match by function name). Extract `Gaps`, `GapHints`,
    `DiscardedReturns`, `DiscardedReturnHints`, `AmbiguousEffects`,
    `UnmappedAssertions`.
 4. **Determine action**: Based on fix strategy + quality data:
    - `add_tests` → generate full test function
-   - `add_assertions` → add assertions to existing test +
-     restructure helper-wrapped assertions
-   - `add_docs` → add/improve GoDoc comments
+   - `add_assertions` → add assertions to existing test
+   - `add_docs` → add/improve docstring comments
    - `decompose_and_test` → generate test skeleton
    - `decompose` → skip with explanation
 5. **Generate code**: Following the quality criteria and convention
-   detection rules in the agent prompt
-6. **Write code**: Append to the `*_test.go` file (or modify the
-   source file for `add_docs`). In `--dry-run` mode, show the
-   code but don't write.
+   detection rules in the `gaze-test-generator` agent prompt.
+6. **Write code**: Append to the `tests/test_<module>.py` file (or
+   modify the source file for `add_docs`). In `--dry-run` mode,
+   show the code but don't write.
 
 #### Step 4: Verify
 
 After all generation:
 
 ```bash
-go build [pattern]
-go test -race -count=1 -run "TestGenerated1|TestGenerated2|..." [pattern]
+uv run pytest --tb=short -k "TestName1 or TestName2..."
 ```
 
-Report any compilation errors or test failures with context.
+Report any test failures with context. Keep failing tests — a failing
+test documents expected behavior and is more valuable than no test.
 
 #### Step 5: Report
 
@@ -165,21 +174,21 @@ Processed: N functions
 - decompose_and_test: W skeletons
 - decompose: V skipped
 
-Compilation: PASS/FAIL
 Tests: K/X pass
 
 Files modified:
-- path/to/foo_test.go (2 tests added)
-- path/to/bar.go (GoDoc improved)
+- tests/test_foo.py (2 tests added)
+- src/gaze_py/bar.py (docstring improved)
 ```
 
 ## Error Handling
 
-- If `gaze` binary is not found: error with install instructions
+- If `gazepy` binary not found: error with install instructions
+  (`uv tool install gaze-py`)
 - If analysis produces no actionable targets: report "No functions
-  need remediation in [pattern]"
-- If a generated test fails to compile: report the error, skip that
-  function, continue with others
-- If a generated test fails: report the failure, suggest the
-  assertion may need adjustment, keep the test (failing tests are
-  still valuable as documentation of expected behavior)
+  need remediation in [path]"
+- If a generated test fails to compile (syntax error): report the
+  error, skip that function, continue with others
+- If a generated test fails: report the failure, keep the test
+  (failing tests are still valuable as documentation of expected
+  behavior)
