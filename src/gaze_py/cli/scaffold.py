@@ -1,7 +1,9 @@
 """Scaffold engine for the `gazepy init` command.
 
-Deploys embedded .opencode agent and command assets into the current project
-idempotently. Files are user-owned (skip-if-present) unless --force is given.
+Deploys embedded .opencode agent, command, and reference assets into the
+current project idempotently. Files are classified as user-owned (skip-if-
+present unless --force) or tool-owned (overwrite-on-diff: replaced when
+content differs from the embedded version, even without --force).
 
 Per CR-006: no rich dependency — click.echo() only.
 Per CS-016: run() uses keyword-only parameters for 4+ args.
@@ -23,7 +25,30 @@ _ASSETS = files("gaze_py.cli.assets")
 # Each tuple is (asset_subpath, target_relative_to_opencode).
 _ASSET_MAP: tuple[tuple[str, str], ...] = (
     ("agents/gaze-reporter.md", "agents/gaze-reporter.md"),
+    ("agents/gaze-test-generator.md", "agents/gaze-test-generator.md"),
+    ("agents/reviewer-testing.md", "agents/reviewer-testing.md"),
     ("commands/gaze.md", "commands/gaze.md"),
+    ("commands/gaze-fix.md", "commands/gaze-fix.md"),
+    ("commands/speckit.testreview.md", "commands/speckit.testreview.md"),
+    ("references/doc-scoring-model.md", "references/doc-scoring-model.md"),
+    ("references/example-report.md", "references/example-report.md"),
+)
+
+# Tool-owned paths (relative to .opencode/) use overwrite-on-diff semantics:
+# they are replaced when their content differs from the embedded version, even
+# without --force. User-owned files use skip-if-present semantics.
+#
+# Ownership mirrors gaze's isToolOwned() in internal/scaffold/scaffold.go:
+# - All references/ files are tool-owned by directory convention.
+# - Specific command/agent files are tool-owned by exact match.
+_TOOL_OWNED: frozenset[str] = frozenset(
+    {
+        "agents/gaze-test-generator.md",
+        "commands/gaze-fix.md",
+        "commands/speckit.testreview.md",
+        "references/doc-scoring-model.md",
+        "references/example-report.md",
+    }
 )
 
 
@@ -35,11 +60,14 @@ class Result:
         created: Relative paths of files written for the first time.
         skipped: Relative paths of files that already existed (no --force).
         overwritten: Relative paths of files overwritten by --force.
+        updated: Relative paths of tool-owned files updated due to content
+            change (overwrite-on-diff, even without --force).
     """
 
     created: list[str] = dataclasses.field(default_factory=list)
     skipped: list[str] = dataclasses.field(default_factory=list)
     overwritten: list[str] = dataclasses.field(default_factory=list)
+    updated: list[str] = dataclasses.field(default_factory=list)
 
 
 def _insert_marker(content: bytes, marker: str) -> bytes:
@@ -54,7 +82,7 @@ def _insert_marker(content: bytes, marker: str) -> bytes:
 
     Args:
         content: Raw asset bytes.
-        marker: Marker string to insert (e.g. '<!-- scaffolded by gazepy 0.2.0 -->\\n').
+        marker: Marker string to insert (e.g. '<!-- scaffolded by gazepy 0.4.1 -->\\n').
 
     Returns:
         Modified content bytes with marker inserted exactly once.
@@ -88,16 +116,24 @@ def run(
     containment, not str.startswith — guards against path-prefix siblings such
     as .opencode_extra/).
 
+    Tool-owned files (gaze-test-generator.md, gaze-fix.md,
+    speckit.testreview.md, references/) use overwrite-on-diff: they are
+    replaced when their content differs from the embedded version even without
+    --force. User-owned files (gaze-reporter.md, reviewer-testing.md,
+    gaze.md) retain skip-if-present behavior.
+
     Args:
         target_dir: Absolute path to the .opencode/ directory (or equivalent)
             where assets will be written.
-        force: When True, overwrite existing files. When False, skip existing.
+        force: When True, overwrite all existing files. When False, skip
+            user-owned files that already exist; still update tool-owned files
+            when content differs.
         version: gazepy version string embedded in the scaffold marker comment.
         stdout: When True, warnings are emitted via click.echo(err=True).
             Set False in tests to suppress output side-effects on coverage.
 
     Returns:
-        Result dataclass listing created, skipped, and overwritten paths.
+        Result dataclass listing created, skipped, overwritten, and updated paths.
     """
     result = Result()
 
@@ -130,14 +166,25 @@ def run(
 
         already_exists = out_path.exists()
 
-        # Skip-if-present (user-owned) unless --force.
-        if already_exists and not force:
-            result.skipped.append(target_rel)
-            continue
-
-        # Load asset content from embedded package data.
+        # Load asset content and insert version marker.
         asset_bytes = _ASSETS.joinpath(asset_rel).read_bytes()
         final_bytes = _insert_marker(asset_bytes, marker)
+
+        if already_exists and not force:
+            tool_owned = target_rel in _TOOL_OWNED
+            if tool_owned:
+                # Overwrite-on-diff: update tool-owned file only if content changed.
+                existing = out_path.read_bytes()
+                if existing == final_bytes:
+                    result.skipped.append(target_rel)
+                else:
+                    out_path.write_bytes(final_bytes)
+                    out_path.chmod(0o644)
+                    result.updated.append(target_rel)
+            else:
+                # User-owned: skip without touching the file.
+                result.skipped.append(target_rel)
+            continue
 
         # Ensure parent directory exists.
         out_path.parent.mkdir(parents=True, exist_ok=True)

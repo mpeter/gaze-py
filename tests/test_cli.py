@@ -1289,16 +1289,28 @@ def test_insert_marker_after_frontmatter_position() -> None:
 
 
 def test_init_creates_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init creates both asset files on first run."""
+    """init creates all 8 asset files on first run."""
     (tmp_path / "pyproject.toml").write_text("[project]\n")
     monkeypatch.chdir(tmp_path)
 
     runner = CliRunner()
     result = runner.invoke(cli, ["init"])
     assert result.exit_code == 0, result.output
-    assert (tmp_path / ".opencode" / "agents" / "gaze-reporter.md").exists()
-    assert (tmp_path / ".opencode" / "commands" / "gaze.md").exists()
+
+    expected = [
+        ".opencode/agents/gaze-reporter.md",
+        ".opencode/agents/gaze-test-generator.md",
+        ".opencode/agents/reviewer-testing.md",
+        ".opencode/commands/gaze.md",
+        ".opencode/commands/gaze-fix.md",
+        ".opencode/commands/speckit.testreview.md",
+        ".opencode/references/doc-scoring-model.md",
+        ".opencode/references/example-report.md",
+    ]
+    for rel in expected:
+        assert (tmp_path / rel).exists(), f"missing: {rel}"
     assert "created" in result.output
+    assert "Run /gaze for quality reports" in result.output
 
 
 def test_init_idempotent_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1333,9 +1345,47 @@ def test_init_force_overwrites(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
     result = runner.invoke(cli, ["init", "--force"])
     assert result.exit_code == 0, result.output
-    assert "overwrote" in result.output
+    assert "overwritten" in result.output
     # Original asset content should be restored (contains "gaze-reporter").
     assert b"gaze-reporter" in reporter.read_bytes()
+
+
+def test_init_tool_owned_updated_on_diff(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tool-owned files are updated when content differs, even without --force."""
+    (tmp_path / "pyproject.toml").write_text("[project]\n")
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    runner.invoke(cli, ["init"])
+
+    # Corrupt a tool-owned file.
+    tool_owned = tmp_path / ".opencode" / "commands" / "gaze-fix.md"
+    original = tool_owned.read_bytes()
+    tool_owned.write_bytes(b"stale content from an old version")
+
+    result = runner.invoke(cli, ["init"])
+    assert result.exit_code == 0, result.output
+    assert "updated" in result.output
+    assert "content changed" in result.output
+    # Content should be restored to embedded version.
+    assert tool_owned.read_bytes() == original
+
+
+def test_init_tool_owned_skipped_when_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tool-owned files are skipped (not reported as updated) when content is identical."""
+    (tmp_path / "pyproject.toml").write_text("[project]\n")
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    runner.invoke(cli, ["init"])
+
+    # Run again without changes — tool-owned files have identical content.
+    result = runner.invoke(cli, ["init"])
+    assert result.exit_code == 0, result.output
+    assert "updated" not in result.output
+    assert "already up to date" in result.output
 
 
 def test_init_force_does_not_duplicate_version_marker(
