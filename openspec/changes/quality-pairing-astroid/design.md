@@ -107,33 +107,45 @@ existing `"null"` text display is correct.
 
 Task 3.3 emits reports for production functions with effects that were
 never the `target_function` of any test-keyed report. These are returned
-as a separate `list[QualityReport]` from a new
+as a separate `tuple[QualityReport, ...]` from a new
 `_untested_reports(source_targets, seen_names, config)` helper — not
 mixed into the main test-function-keyed report list. `assess()` returns
-a named tuple or structured result that distinguishes the two:
+a frozen dataclass that distinguishes the two:
 
 ```python
 @dataclass(frozen=True)
 class AssessResult:
-    reports: list[QualityReport]       # one per test function
-    untested: list[QualityReport]      # one per unmatched prod func
+    reports: tuple[QualityReport, ...]    # one per test function (paired)
+    untested: tuple[QualityReport, ...]   # one per unmatched prod func with effects
 ```
+
+`tuple` fields match the project's convention (all other frozen
+dataclasses in the codebase use `tuple[..., ...]` for sequences).
 
 `QualityReport` for untested functions uses `test_function=""` as a
 sentinel. This sentinel is explicitly documented in the `QualityReport`
-docstring. Callers must handle both lists.
+docstring. Callers must handle both fields.
 
-The `quality` CLI command merges both for display. The `crap` command
-uses both to build the coverage map.
+The `quality` CLI command shows only `.reports` (test-keyed output).
+Untested functions appear only in `gazepy crap --tests` output via the
+coverage map. This keeps the quality command output semantically clean:
+every row corresponds to a test function that ran. The `crap` command
+uses both fields to build the complete coverage map.
 
-### D7: Astroid import is defensive; warnings via stderr
+### D7: Astroid stderr via sys.stderr; ImportError handler is documentation
 
-`astroid` is imported inside `_build_astroid_graph()`, not at module
-level. On `ImportError`, emit a message to stderr via
-`click.echo("warning: astroid not available — Strategy 3 disabled",
-err=True)` (not `warnings.warn` — suppressible by user code) and return
-`{}`. With an empty graph, Strategy 3 never fires; the pipeline
-continues normally as before.
+`astroid` is a required production dependency — `ImportError` cannot
+fire in a correctly installed environment. The import is placed at
+module level in `pairing.py` (standard practice for required deps).
+The `ImportError` path in `_build_astroid_graph()` is retained as
+future-proofing commentary only (in a code comment, not live code) for
+the hypothetical case where astroid becomes optional in a future
+change.
+
+Stderr messages in `_build_astroid_graph()` use `sys.stderr.write()`
+directly (not `click.echo()`) because `quality/pairing.py` is a library
+module and must not import Click. This keeps the library/CLI boundary
+clean per D9.
 
 ### D8: Project root for FQN computation
 
@@ -151,31 +163,44 @@ replaced by `.`, then append `.test_func.name`. If the path starts with
 `tests/` or `src/`, strip the leading component to match Astroid's
 module naming.
 
-### D9: _build_contract_coverage_map() belongs in quality/pipeline.py
+### D9: build_contract_coverage_map() belongs in quality/pipeline.py
 
-This function is domain logic, not CLI logic. Placing it in
-`quality/pipeline.py` makes it importable by library users without
-pulling in Click. The `crap` CLI function imports it from there.
+`build_contract_coverage_map()` (public, no underscore) is domain
+logic, not CLI logic. Placing it in `quality/pipeline.py` makes it
+importable by library users without pulling in Click. The `crap` CLI
+function imports it from there.
 
-### D10: Double detect_and_classify() acknowledged as tech debt
+### D10: Double detect_and_classify() and include_unexported gap
 
-`_run_crap()` calls `detect_and_classify()` independently, and
-`_build_contract_coverage_map()` calls `assess()` which calls it again.
-With `--tests`, the source is analysed twice. On gaze-py itself this
-adds approximately 0.5s. Deduplication (sharing the `source_targets`
-list) is deferred — the two call sites have different options
-(`include_unexported` differs) and merging them requires careful
-parameter threading. Documented in `results.md` after measurement.
+`_run_crap()` calls `detect_and_classify()` with `include_unexported=True`
+(all functions). `build_contract_coverage_map()` calls `assess()` which
+calls `detect_and_classify()` with `include_unexported=False` (public
+functions only, the default). Two consequences:
 
-### D11: astroid>=3.0, no upper bound
+1. **Double analysis cost**: With `--tests`, source is analysed twice.
+   On gaze-py this adds approximately 0.5s. Deduplication is deferred.
 
-Tested against 4.1.2. Key APIs used (`BoundMethod.qname()`,
-`FunctionDef.qname()`, `MANAGER.ast_from_file()`, `MANAGER.clear_cache()`,
-`InferenceError`, `AstroidBuildingError`, `Uninferable`) are stable
-across 3.x and 4.x. BoundMethod._proxied exists as an instance
-attribute in both versions but `BoundMethod.qname()` is the cleaner API
-and is used directly. No `<4` cap — users with pylint at 4.x (which
-requires astroid 4.x) receive a compatible install.
+2. **Known Limitation: private functions never receive contract coverage
+   enrichment in `gazepy crap --tests`.** Every private (underscore-
+   prefixed) function will show `contract_coverage_reason: null` in
+   crap JSON output even if it has tests. This is documented in the
+   CHANGELOG as a known limitation. The fix (passing `include_unexported`
+   through `build_contract_coverage_map()`) is a follow-up change.
+
+Both consequences are documented in `results.md` after measurement.
+
+### D11: astroid>=3.0, no upper bound; CI verified at 4.1.2
+
+Production floor is `>=3.0`. CI always runs against the latest
+available (currently 4.1.2 — uv resolves to the newest compatible
+version). The floor is asserted stable but CI-verified only at 4.x.
+
+Key APIs used (`BoundMethod.qname()`, `FunctionDef.qname()`,
+`MANAGER.ast_from_file()`, `MANAGER.clear_cache()`, `InferenceError`,
+`AstroidBuildingError`, `Uninferable`) are confirmed present in both
+3.3.x and 4.1.2. `BoundMethod.qname()` is used directly (cleaner than
+`._proxied`; works in both versions). No `<4` cap — users with pylint
+at 4.x (which requires astroid 4.x) receive a compatible install.
 
 ### D12: Version bump
 

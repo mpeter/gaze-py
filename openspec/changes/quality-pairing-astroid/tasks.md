@@ -26,20 +26,28 @@
       ```python
       @dataclass(frozen=True)
       class AssessResult:
-          reports: list[QualityReport]   # one per test function (paired)
-          untested: list[QualityReport]  # one per unmatched production func with effects
+          reports: tuple[QualityReport, ...]   # one per test function (paired)
+          untested: tuple[QualityReport, ...]  # one per unmatched prod func with effects
       ```
-      Export from `quality/__init__.py` (module docstring only — no star
-      import; add explicit `AssessResult` to the module's public names
-      per project convention).
+      Use `tuple` fields to match the project convention (all other frozen
+      dataclasses use `tuple[..., ...]` for sequences — see `QualityReport`,
+      `ContractCoverageResult`).
+      Add `from gaze_py.quality.pipeline import AssessResult` to
+      `src/gaze_py/quality/__init__.py` so it is importable as
+      `from gaze_py.quality import AssessResult`.
 
 - [ ] 2.2 Update `assess()` signature and return type in
       `src/gaze_py/quality/pipeline.py`:
       ```python
       def assess(...) -> AssessResult:
       ```
-      All existing callers in `cli/main.py` updated to use
-      `result.reports` where they previously used the returned list.
+      Update all callers in `cli/main.py`:
+      - `_emit_quality_json(result.reports)` — quality command shows only
+        test-keyed reports (untested functions are not shown in quality
+        output per D6)
+      - `_emit_quality_text(result.reports, ...)` — same
+      - `_check_min_contract_coverage(result.reports, ...)` — same
+      - Any other caller of `assess()` updated accordingly.
 
 - [ ] 2.3 Update `QualityReport` docstring in `src/gaze_py/taxonomy/models.py`
       to document the `test_function=""` sentinel:
@@ -47,6 +55,13 @@
       test_function: Name of the test function. Empty string ("") when
           this report represents an unmatched production function with
           no paired test (part of AssessResult.untested).
+      ```
+
+- [ ] 2.4 Update `TestTargetPair.inference_method` docstring in
+      `src/gaze_py/taxonomy/models.py` to add `"call_graph_transitive"`:
+      ```
+      inference_method: "name_convention" | "call_graph" |
+          "call_graph_transitive" | "unmatched".
       ```
 
 ## 3. Coverage — no_test_coverage reason
@@ -94,7 +109,7 @@
 
 ## 4. _untested_reports() helper and pipeline wiring
 
-- [ ] 4.1 Add `_untested_reports(source_targets: list[FunctionTarget], seen_names: set[str], config: GazeConfig) -> list[QualityReport]`
+- [ ] 4.1 Add `_untested_reports(source_targets: tuple[FunctionTarget, ...], seen_names: set[str], config: GazeConfig) -> tuple[QualityReport, ...]`
       to `src/gaze_py/quality/pipeline.py`.
       - `seen_names` is the set of `target_function` values from all
         test-keyed reports produced in the main loop.
@@ -106,52 +121,69 @@
           assertions=(), contract_coverage=coverage,
           warnings=("No test targets this function.",),
           complexity=target.complexity)`.
-      - Return the list; empty list if all production functions are paired.
+      - Return `tuple(results)`; empty tuple if all production functions
+        are paired.
 
 - [ ] 4.2 Update `assess()` in `src/gaze_py/quality/pipeline.py`:
       - After the main per-test-function loop, collect `seen_names` (set
         of non-None `target_function` values from emitted reports).
-      - Call `_untested_reports(source_targets, seen_names, config)`.
-      - Return `AssessResult(reports=reports, untested=untested)`.
+      - Call `_untested_reports(tuple(source_targets), seen_names, config)`.
+      - Return `AssessResult(reports=tuple(reports), untested=untested)`.
 
-- [ ] 4.3 [P] New integration tests in `tests/test_quality_integration.py`
+- [ ] 4.3 Identify the correct existing fixture for `_untested_reports()`
+      integration tests. Use
+      `tests/testdata/quality/src/undertested.py` — this file already
+      exists (created in the O1 quality pipeline change, task 2.7) and
+      contains a function with a `ReturnValue` contractual effect and
+      `tests/testdata/quality/tests/test_undertested.py` which calls the
+      function but makes zero assertions. Verify these files exist before
+      writing the tests:
+      `ls tests/testdata/quality/src/undertested.py tests/testdata/quality/tests/test_undertested.py`
+      If either is missing, create it per the O1 task 2.7/2.8 spec
+      before writing the integration tests.
+
+- [ ] 4.4 [P] New integration tests in `tests/test_quality_integration.py`
       (no modification to existing tests):
       - `test_assess_returns_assess_result` — `assess()` returns an
         `AssessResult` with `.reports` and `.untested` attributes.
       - `test_assess_untested_has_no_test_coverage_reason` — using the
-        `undertested` fixture (function with effects, zero assertions),
-        `untested` list is non-empty; all entries have
-        `contract_coverage.reason == "no_test_coverage"` and
-        `contract_coverage.percentage is None`.
+        `undertested` fixture (`tests/testdata/quality/src/` with
+        `tests/testdata/quality/tests/`), `result.untested` is non-empty;
+        at least one entry has `contract_coverage.reason == "no_test_coverage"`
+        and `contract_coverage.percentage is None`.
       - `test_assess_untested_test_function_is_empty_string` — all
-        entries in `untested` have `test_function == ""`.
+        entries in `result.untested` have `test_function == ""`.
       - `test_assess_paired_functions_not_in_untested` — no function
-        name appears in both `.reports` (with non-None `target_function`)
-        and `.untested`.
-      - `test_assess_no_effects_function_not_in_untested` — pure
-        functions (no side effects) do NOT appear in `untested` (they
-        get `"no_effects_detected"` reason and are excluded).
+        name appears in both `result.reports` (with non-None
+        `target_function`) and `result.untested`.
+      - `test_assess_no_effects_function_not_in_untested` — using the
+        `simple` fixture where the source function has `ReturnValue` and
+        is fully tested, `result.untested` is empty (all functions paired)
+        OR contains only functions with `"no_effects_detected"` reason
+        (pure functions).
 
 ## 5. Pairing — Strategy 3 (Astroid transitive call graph)
 
-- [ ] 5.1 Add `_build_astroid_graph(test_files: list[Path], src_files: list[Path], *, stderr_sink: Any = None) -> dict[str, set[str]]`
+- [ ] 5.1 Add `_build_astroid_graph(test_files: list[Path], src_files: list[Path]) -> dict[str, set[str]]`
       to `src/gaze_py/quality/pairing.py`.
       - Import `astroid`, `astroid.MANAGER`, `astroid.exceptions`, and
-        `astroid.util` defensively inside the function body (D7). On
-        `ImportError`, emit to stderr (via `click.echo(..., err=True)` if
-        click available, otherwise `sys.stderr.write(...)`) and
-        return `{}`.
+        `astroid.util` at module level (required production dependency —
+        no defensive ImportError handler needed; D7).
       - Call `astroid.MANAGER.clear_cache()` before loading any files
         (D2 — prevents stale data across multiple `assess()` calls in
-        the same process).
+        the same process; this evicts all cached modules from the global
+        MANAGER, which is a known trade-off for correctness).
       - For each file in `test_files + src_files`:
         ```python
         try:
             module = astroid.MANAGER.ast_from_file(str(path))
         except astroid.exceptions.AstroidBuildingError as exc:
-            click.echo(f"warning: astroid could not load {path}: {exc}", err=True)
+            import sys
+            sys.stderr.write(f"warning: astroid could not load {path}: {exc}\n")
             continue
         ```
+        (Use `sys.stderr.write()` not `click.echo()` — library modules
+        must not import Click; D9.)
       - For each `FunctionDef` node in the module (walk with
         `module.nodes_of_class(astroid.nodes.FunctionDef)`):
         - caller_qname = `fn.qname()`
@@ -213,21 +245,40 @@
       dedicated testdata fixtures in `tests/testdata/quality/astroid/`
       (no modification to existing tests):
 
-      Create fixture files:
-      - `tests/testdata/quality/astroid/src/engine.py` — minimal class:
+      Create fixture files (NO relative imports — Astroid loads files
+      individually by path and cannot resolve relative imports without a
+      full package structure; use absolute names only):
+      - `tests/testdata/quality/astroid/src/signals.py`:
         ```python
-        from .signals import caller_signal
+        # ruff: noqa
+        def caller_signal(x):  # type: ignore[override]
+            return x * 2
+        ```
+      - `tests/testdata/quality/astroid/src/engine.py`:
+        ```python
+        # ruff: noqa
+        def caller_signal(x):  # local stub — Astroid resolves within same load
+            return x * 2
+
         class Engine:
-            def classify(self, x: int) -> int:
+            def classify(self, x):
                 return caller_signal(x)
-        def _make_engine() -> Engine:
+
+        def _make_engine():
+            # type: () -> Engine
             return Engine()
         ```
-      - `tests/testdata/quality/astroid/src/signals.py` —
-        `def caller_signal(x: int) -> int: return x * 2`
-      - `tests/testdata/quality/astroid/tests/test_engine.py` —
+        Note: both functions are defined in the same file to avoid
+        cross-file import resolution issues. Astroid resolves intra-file
+        calls reliably. Cross-file call graph edges are still covered by
+        the depth-limit and empty-graph tests which use hand-built dicts.
+      - `tests/testdata/quality/astroid/tests/test_engine.py`:
         ```python
-        from engine import _make_engine
+        # ruff: noqa
+        # This is a testdata fixture; it is not collected by pytest.
+        # See pyproject.toml norecursedirs = ["tests/testdata"] (CR-002).
+        from engine import _make_engine  # noqa: F821
+
         def test_classify():
             e = _make_engine()
             assert e.classify(1) == 2
@@ -236,12 +287,17 @@
       Tests (use `_build_astroid_graph()` directly with fixture file paths;
       do NOT use live project source):
       - `test_pair_astroid_resolves_method_call` — graph built from
-        fixtures; `pair_to_targets()` for `test_classify` resolves to
-        `"classify"` via Strategy 3.
-      - `test_pair_astroid_transitive_reaches_signal_func` — same graph;
-        BFS from `test_classify` reaches `caller_signal` transitively;
-        assert result is `"classify"` or `"caller_signal"` (BFS order
-        dependent — both are valid matches).
+        `engine.py` + `test_engine.py`; `pair_to_targets()` for
+        `test_classify` resolves to `"classify"` or `"_make_engine"` via
+        Strategy 3 (first match in BFS order — both are production names
+        in the fixture; assert result is in `{"classify", "_make_engine"}`).
+      - `test_pair_astroid_transitive_reaches_caller_signal` — same graph;
+        BFS from `test_classify` reaches `caller_signal` transitively via
+        `_make_engine → Engine.classify → caller_signal`; assert
+        `"caller_signal"` is in the full reachable set from the test node
+        (test by calling `_pair_astroid()` with
+        `source_names={"caller_signal"}` and asserting result is
+        `"caller_signal"`).
       - `test_pair_astroid_depth_limit` — manually constructed graph dict
         with 6-hop chain `A→B→C→D→E→F→target`; `depth_limit=5` →
         `"target"` is NOT returned.
@@ -254,9 +310,13 @@
       - `test_build_astroid_graph_skips_bad_file` — pass a `Path` to a
         non-existent file alongside valid fixtures; result is a non-empty
         dict (valid files loaded); no exception raised.
-      - `test_build_astroid_graph_clears_cache_between_calls` — call
-        `_build_astroid_graph()` twice with same fixture files; second
-        call returns same result (no stale data); no error.
+      - `test_build_astroid_graph_clears_cache_between_calls` — use
+        `unittest.mock.patch.object(astroid.MANAGER, "clear_cache")` to
+        assert `clear_cache` is called exactly once per invocation of
+        `_build_astroid_graph()`. Call the function twice; assert the mock
+        was called twice total. This verifies the clear_cache contract
+        without relying on observable cache state (which would be
+        unfalsifiable without mock).
 
 ## 6. _build_contract_coverage_map() in quality/pipeline.py
 
@@ -279,11 +339,19 @@
         `build_contract_coverage_map(path, resolved_tests, config)`.
       - For each target, look up `ContractCoverageResult` by `name` and
         pass to `_score_target(quality_result=ccr)`.
-      - In `_score_target()`, add a guard: when
-        `quality_result.reason == "no_test_coverage"`, set
-        `gaze_crap_score = None` and `quad = None` (do not compute —
-        matches Go `ok=false` behaviour). The `contract_coverage_pct`
-        and `contract_coverage_reason` are still recorded.
+      - Verify that the existing `_score_target()` `if quality_result is
+        not None and quality_result.percentage is not None:` guard already
+        handles `"no_test_coverage"` correctly — since `percentage=None`
+        for `"no_test_coverage"`, the existing else branch fires,
+        producing `gaze_crap_score=None, quad=None`. No new guard is
+        needed. Add a code comment: `# "no_test_coverage" has
+        percentage=None → falls to else branch, gaze_crap stays null
+        per Go contract (D5)`.
+      - **Known Limitation**: `build_contract_coverage_map()` calls
+        `assess()` with default `include_unexported=False`. Private
+        (underscore-prefixed) functions in crap output will always show
+        `contract_coverage_reason: null` even when tests exist for them.
+        This is documented in CHANGELOG and results.md (D10).
       - If no tests path found, proceed as today (GazeCRAP null,
         OC-003 compliant).
 
@@ -335,11 +403,23 @@
       ```
       ### Added
       - Strategy 3 pairing via Astroid transitive call graph inference
+        (`inference_method: "call_graph_transitive"`, confidence 0.75)
       - `"no_test_coverage"` contract coverage reason code for functions
-        with effects but no paired test
+        with effects but no paired test (GazeCRAP remains null per Go
+        porting contract — "no test = no coverage data, not 0%")
       - `--tests` option on `gazepy crap` command
-      - `AssessResult` return type from `assess()` with `.reports` and
-        `.untested` lists
+      - `AssessResult` return type from `assess()` with `.reports`
+        (test-keyed) and `.untested` (production-function-keyed) fields
+      - `build_contract_coverage_map()` in `quality/pipeline.py`
+
+      ### Known Limitations
+      - Private (underscore-prefixed) functions do not receive
+        `contract_coverage_reason` enrichment in `gazepy crap --tests`
+        output (assess() uses include_unexported=False by default;
+        deduplication of the double detect_and_classify() call is
+        deferred to a follow-up change)
+      - Astroid 3.x compatibility is asserted but CI-verified at 4.1.2
+        only (astroid>=3.0 with no upper bound)
       ```
 
 - [ ] 7.3 [P] `uv run ruff check .`
