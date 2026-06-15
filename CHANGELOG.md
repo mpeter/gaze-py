@@ -2,6 +2,20 @@
 
 All notable changes to gaze-py are documented here.
 
+## [0.4.1] — 2026-06-15
+
+### Bug Fixes
+
+- **`gazepy init` scaffold asset names corrected** — `init` now deploys
+  `gaze-reporter.md` and `gaze.md` instead of `gazepy-reporter.md` and
+  `gazepy.md`, coordinated with the `replicator init` sentinel change.
+
+### Improvements
+
+- **`docscan` repo-root detection** — Uses the shared `SENTINELS` frozenset
+  from `gaze_py.config.loader` instead of hard-coded filename checks, keeping
+  repo-root detection consistent across the codebase.
+
 ## [0.4.0] — 2026-06-14
 
 ### New Features
