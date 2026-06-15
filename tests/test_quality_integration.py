@@ -12,13 +12,16 @@ from pathlib import Path
 # classifier thresholds or fixture classification outcomes.
 from gaze_py.cli.main import _score_target
 from gaze_py.config.loader import GazeConfig
-from gaze_py.quality.pipeline import assess
+from gaze_py.quality.pipeline import AssessResult, assess
 from gaze_py.taxonomy.models import ContractCoverageResult, FunctionTarget
 
 # Paths to testdata fixtures.
 _TESTDATA = Path(__file__).parent / "testdata" / "quality"
 _SRC = _TESTDATA / "src"
 _TESTS = _TESTDATA / "tests"
+
+# Alias used by task 4.4 tests (matches tasks.md naming convention).
+QUALITY_FIXTURES = Path(__file__).parent / "testdata" / "quality"
 
 
 def _default_config() -> GazeConfig:
@@ -33,11 +36,12 @@ def _default_config() -> GazeConfig:
 
 def test_simple_fixture_full_coverage() -> None:
     """simple_function: assert on return value → 100% contract coverage."""
-    reports = assess(
+    result = assess(
         _SRC / "simple.py",
         _TESTS / "test_simple.py",
         config=_default_config(),
     )
+    reports = result.reports
     assert len(reports) >= 1
     # Find the report for simple_function.
     report = next(
@@ -56,11 +60,12 @@ def test_simple_fixture_full_coverage() -> None:
 
 def test_raises_fixture_coverage() -> None:
     """raises_on_negative: pytest.raises → ErrorReturn covered, percentage > 0."""
-    reports = assess(
+    result = assess(
         _SRC / "raises_fn.py",
         _TESTS / "test_raises.py",
         config=_default_config(),
     )
+    reports = result.reports
     assert len(reports) >= 1
     report = next(
         (r for r in reports if r.target_function == "raises_on_negative"),
@@ -80,11 +85,12 @@ def test_raises_fixture_coverage() -> None:
 
 def test_undertested_fixture_zero_coverage() -> None:
     """compute_total: no assertions → 0% coverage (not None — contractual effects exist)."""
-    reports = assess(
+    result = assess(
         _SRC / "undertested.py",
         _TESTS / "test_undertested.py",
         config=_default_config(),
     )
+    reports = result.reports
     assert len(reports) >= 1
     report = next(
         (r for r in reports if r.target_function == "compute_total"),
@@ -109,11 +115,12 @@ def test_attribute_mutation_fixture_coverage() -> None:
 
     Pipeline returns percentage=None, reason='no_effects_detected'.
     """
-    reports = assess(
+    result = assess(
         _SRC / "attribute_mutation.py",
         _TESTS / "test_attribute_mutation.py",
         config=_default_config(),
     )
+    reports = result.reports
     assert len(reports) >= 1
     report = next(
         (r for r in reports if r.target_function == "set_label"),
@@ -137,25 +144,27 @@ def test_attribute_mutation_fixture_coverage() -> None:
 
 def test_target_func_filtering() -> None:
     """target_func='simple_function' → only reports for that function returned."""
-    reports = assess(
+    result = assess(
         _SRC / "simple.py",
         _TESTS / "test_simple.py",
         config=_default_config(),
         target_func="simple_function",
     )
+    reports = result.reports
     for report in reports:
         assert report.target_function == "simple_function"
 
 
 def test_target_func_no_match() -> None:
     """target_func='nonexistent_fn' → empty result, no error."""
-    reports = assess(
+    result = assess(
         _SRC / "simple.py",
         _TESTS / "test_simple.py",
         config=_default_config(),
         target_func="nonexistent_fn",
     )
-    assert reports == []
+    reports = result.reports
+    assert reports == ()
 
 
 # ---------------------------------------------------------------------------
@@ -164,26 +173,28 @@ def test_target_func_no_match() -> None:
 
 
 def test_empty_tests_path_returns_empty(tmp_path: Path) -> None:
-    """No test functions found → assess() returns [] without error."""
+    """No test functions found → assess() returns AssessResult with empty tuples."""
     # Create an empty directory.
     empty_tests = tmp_path / "tests"
     empty_tests.mkdir()
-    reports = assess(
+    result = assess(
         _SRC / "simple.py",
         empty_tests,
         config=_default_config(),
     )
-    assert reports == []
+    reports = result.reports
+    assert reports == ()
 
 
 def test_nonexistent_tests_file_returns_empty(tmp_path: Path) -> None:
-    """Non-existent tests file → assess() returns [] without error."""
-    reports = assess(
+    """Non-existent tests file → assess() returns AssessResult with empty tuples."""
+    result = assess(
         _SRC / "simple.py",
         tmp_path / "test_missing.py",
         config=_default_config(),
     )
-    assert reports == []
+    reports = result.reports
+    assert reports == ()
 
 
 # ---------------------------------------------------------------------------
@@ -251,3 +262,83 @@ def test_effect_confidence_range_none_for_no_effects() -> None:
 
     assert target.score is not None
     assert target.score.effect_confidence_range is None
+
+
+# ---------------------------------------------------------------------------
+# Task 4.4 — AssessResult.untested population (D6 in design.md)
+# ---------------------------------------------------------------------------
+
+
+def test_assess_returns_assess_result() -> None:
+    """assess() returns an AssessResult with .reports and .untested attributes."""
+    result = assess(
+        QUALITY_FIXTURES / "src" / "simple.py",
+        QUALITY_FIXTURES / "tests" / "test_simple.py",
+        config=_default_config(),
+    )
+    assert isinstance(result, AssessResult)
+    assert hasattr(result, "reports")
+    assert hasattr(result, "untested")
+
+
+def test_assess_untested_has_no_test_coverage_reason() -> None:
+    """uncovered.py: orphan_compute has no test → reason='no_test_coverage', percentage=None."""
+    result = assess(
+        src_path=QUALITY_FIXTURES / "src",
+        tests_path=QUALITY_FIXTURES / "tests",
+        config=_default_config(),
+    )
+    assert len(result.untested) > 0, (
+        f"Expected non-empty untested, got empty. reports={result.reports}"
+    )
+    orphan = next(
+        (r for r in result.untested if r.target_function == "orphan_compute"),
+        None,
+    )
+    assert orphan is not None, f"No untested entry for orphan_compute. untested={result.untested}"
+    assert orphan.contract_coverage is not None
+    assert orphan.contract_coverage.reason == "no_test_coverage", (
+        f"Expected reason='no_test_coverage', got {orphan.contract_coverage.reason!r}"
+    )
+    assert orphan.contract_coverage.percentage is None, (
+        f"Expected percentage=None (OC-003), got {orphan.contract_coverage.percentage!r}"
+    )
+
+
+def test_assess_untested_test_function_is_empty_string() -> None:
+    """All entries in result.untested have test_function='' (sentinel per D6)."""
+    result = assess(
+        src_path=QUALITY_FIXTURES / "src",
+        tests_path=QUALITY_FIXTURES / "tests",
+        config=_default_config(),
+    )
+    for report in result.untested:
+        assert report.test_function == "", (
+            f"Expected test_function='', got {report.test_function!r} "
+            f"for target_function={report.target_function!r}"
+        )
+
+
+def test_assess_paired_functions_not_in_untested() -> None:
+    """No function name appears in both result.reports and result.untested."""
+    result = assess(
+        src_path=QUALITY_FIXTURES / "src",
+        tests_path=QUALITY_FIXTURES / "tests",
+        config=_default_config(),
+    )
+    paired_names = {r.target_function for r in result.reports if r.target_function}
+    untested_names = {r.target_function for r in result.untested}
+    overlap = paired_names & untested_names
+    assert not overlap, f"Functions appear in both reports and untested: {overlap}"
+
+
+def test_assess_no_effects_function_not_in_untested() -> None:
+    """simple.py: simple_function is fully covered → result.untested is empty."""
+    result = assess(
+        src_path=QUALITY_FIXTURES / "src" / "simple.py",
+        tests_path=QUALITY_FIXTURES / "tests" / "test_simple.py",
+        config=_default_config(),
+    )
+    assert len(result.untested) == 0, (
+        f"Expected empty untested for fully-covered simple.py, got {result.untested}"
+    )

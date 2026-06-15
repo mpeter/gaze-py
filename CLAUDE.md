@@ -6,10 +6,8 @@
 ## Convention Packs
 
 @.opencode/uf/packs/default.md
-@.opencode/uf/packs/default-custom.md
 @.opencode/uf/packs/severity.md
 @.opencode/uf/packs/content.md
-@.opencode/uf/packs/content-custom.md
 @.opencode/uf/packs/python.md
 @.opencode/uf/packs/python-custom.md
 

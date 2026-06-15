@@ -2,6 +2,36 @@
 
 All notable changes to gaze-py are documented here.
 
+## [Unreleased]
+
+### Added
+- Strategy 3 pairing via Astroid transitive call graph inference
+  (`inference_method: "call_graph_transitive"`, confidence 0.75)
+- `"no_test_coverage"` contract coverage reason code for functions
+  with effects but no paired test (GazeCRAP remains null per Go
+  porting contract — "no test = no coverage data, not 0%")
+- `--tests` option on `gazepy crap` command
+- `AssessResult` return type from `assess()` with `.reports`
+  (test-keyed) and `.untested` (production-function-keyed) fields
+- `build_contract_coverage_map()` in `quality/pipeline.py`
+
+### Changed
+- `assess()` now returns `AssessResult` instead of
+  `list[QualityReport]`. Direct Python callers must update:
+  `reports = assess(...)` → `result = assess(...); reports = result.reports`
+
+### Known Limitations
+- Private (underscore-prefixed) functions do not receive
+  `contract_coverage_reason` enrichment in `gazepy crap --tests`
+  output (assess() uses include_unexported=False by default;
+  deduplication of the double detect_and_classify() call is
+  deferred to a follow-up change)
+- Astroid 3.x compatibility is asserted but CI-verified at 4.1.2
+  only (astroid>=3.0 with no upper bound)
+- `MANAGER.clear_cache()` evicts astroid's process-global AST
+  cache on each `assess()` call; tools sharing the process that
+  also use astroid (e.g. pylint) will have their cache cleared
+
 ## [0.4.1] — 2026-06-15
 
 ### Bug Fixes

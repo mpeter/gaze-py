@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gaze-py"
-version = "0.4.1"
+version = "0.5.0"
 description = "Python-native GazeCRAP analysis engine"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -23,6 +23,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "astroid>=3.0",
     "click>=8.0,<9",
     "pyyaml>=6.0,<7",
 ]
@@ -70,6 +71,13 @@ strict = true
 module = "yaml"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# astroid does not ship py.typed or stubs. Suppress import-untyped errors
+# for all astroid submodules. Astroid is a required production dependency
+# (D11 in design.md); the override is necessary, not a workaround.
+module = ["astroid", "astroid.*"]
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # Pytest
 # ---------------------------------------------------------------------------
@@ -95,4 +103,5 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.9",
     "mypy>=1.10",
+    "astroid>=4.1.2",
 ]

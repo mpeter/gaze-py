@@ -3,7 +3,7 @@ pack_id: default
 language: Any
 version: 1.0.0
 ---
-<!-- scaffolded by uf v0.15.0 -->
+<!-- scaffolded by uf vdev -->
 
 # Convention Pack: Default (Language-Agnostic)
 

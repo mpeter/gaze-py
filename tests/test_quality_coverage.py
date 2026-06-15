@@ -251,3 +251,66 @@ def test_all_effects_ambiguous_populates_confidence_range() -> None:
     assert result.min_confidence == result.max_confidence  # single effect → same score
     assert 0 <= result.min_confidence <= 100  # noqa: PLR2004
     assert result.percentage is None  # OC-003: null-not-zero
+
+
+# ---------------------------------------------------------------------------
+# Task 3.3 — no_test_coverage reason code (Go porting contract D5 / OC-003)
+# ---------------------------------------------------------------------------
+
+
+def test_no_test_coverage_emits_none_percentage() -> None:
+    """no_test_coverage=True with ReturnValue effect → percentage is None, reason set."""
+    effect = _make_effect(SideEffectType.ReturnValue)
+    target = _make_target([effect])
+    mapped: list[tuple[AssertionSite, SideEffectType | None]] = []
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config, no_test_coverage=True)
+    assert result.percentage is None
+    assert result.reason == "no_test_coverage"
+
+
+def test_no_test_coverage_total_contractual_populated() -> None:
+    """no_test_coverage=True → total_contractual >= 1, covered_effects == 0.
+
+    ReturnValue (P0) with caller_count=10 classifies as contractual, so
+    total_contractual must be at least 1. No assertions are mapped, so
+    covered_effects must be 0.
+    """
+    effect = _make_effect(SideEffectType.ReturnValue)
+    target = _make_target([effect])
+    mapped: list[tuple[AssertionSite, SideEffectType | None]] = []
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config, no_test_coverage=True)
+    assert result.total_contractual >= 1
+    assert result.covered_effects == 0
+
+
+def test_no_test_coverage_oc003_null_not_zero() -> None:
+    """OC-003: no_test_coverage=True → percentage is None, NOT 0.0.
+
+    "no test = no coverage data, not 0% coverage" — Go porting contract
+    (contract.go:148). Conflating "not measured" with "measured as zero"
+    is the exact violation OC-003 prohibits.
+    """
+    effect = _make_effect(SideEffectType.ReturnValue)
+    target = _make_target([effect])
+    mapped: list[tuple[AssertionSite, SideEffectType | None]] = []
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config, no_test_coverage=True)
+    assert result.percentage is None
+    assert result.percentage != 0.0
+
+
+def test_no_test_coverage_empty_effects_falls_through() -> None:
+    """no_test_coverage=True with no effects → falls through to 'no_effects_detected'.
+
+    When the target has no detected side effects, no_test_coverage is irrelevant —
+    the function falls through to normal computation and returns the standard
+    'no_effects_detected' reason (not 'no_test_coverage').
+    """
+    target = _make_target([])
+    mapped: list[tuple[AssertionSite, SideEffectType | None]] = []
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config, no_test_coverage=True)
+    assert result.reason == "no_effects_detected"
+    assert result.percentage is None

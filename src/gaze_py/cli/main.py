@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
 
 import click
@@ -276,6 +277,12 @@ def analyze(
     default=None,
     help="Baseline file for delta reporting (stub: not yet implemented).",
 )
+@click.option(
+    "--tests",
+    "tests_path",
+    default=None,
+    help="Test directory or file. Auto-discovered if omitted.",
+)
 def crap(
     path: str,
     output_format: str,
@@ -287,6 +294,7 @@ def crap(
     ai_mapper: str | None,
     ai_mapper_model: str | None,
     baseline: str | None,
+    tests_path: str | None = None,
 ) -> None:
     """Detect side effects and compute CRAP scores for PATH.
 
@@ -367,6 +375,7 @@ def crap(
             Path(tmp).unlink(missing_ok=True)
 
     result = _run_crap(src, coverage_data, config=config)
+    _enrich_with_quality(result, src, tests_path, coverage_data, config=config)
     _emit(result, output_format)
 
     # CI threshold enforcement — after emitting output.
@@ -544,7 +553,7 @@ def quality(
         resolved_tests = _discover_tests_path(src_path)
 
     # Run the O1 quality assessment pipeline.
-    reports = assess(
+    result = assess(
         src_path.resolve(),
         resolved_tests,
         config=config,
@@ -553,13 +562,13 @@ def quality(
 
     # Emit output.
     if output_format == "json":
-        _emit_quality_json(reports)
+        _emit_quality_json(result.reports)
     else:
-        _emit_quality_text(reports, src_path=src_path)
+        _emit_quality_text(result.reports, src_path=src_path)
 
     # CI threshold enforcement — after emitting output.
     if min_contract_coverage is not None:
-        _check_min_contract_coverage(reports, min_contract_coverage)
+        _check_min_contract_coverage(result.reports, min_contract_coverage)
 
 
 def _discover_tests_path(src_path: Path) -> Path:
@@ -601,19 +610,19 @@ def _discover_tests_path(src_path: Path) -> Path:
     raise SystemExit(2)
 
 
-def _emit_quality_json(reports: list[QualityReport]) -> None:
+def _emit_quality_json(reports: Sequence[QualityReport]) -> None:
     """Emit quality reports as a JSON array.
 
     Uses quality_to_json() from the public formatter API. Emits a JSON
     array (NOT wrapped in AnalysisResult) per design.md A.5.
 
     Args:
-        reports: List of QualityReport dataclass instances.
+        reports: Sequence of QualityReport dataclass instances.
     """
     click.echo(quality_to_json(reports))
 
 
-def _emit_quality_text(reports: list[QualityReport], *, src_path: Path) -> None:
+def _emit_quality_text(reports: Sequence[QualityReport], *, src_path: Path) -> None:
     """Emit quality reports as a plain-text table.
 
     Format per design.md A.5:
@@ -625,7 +634,7 @@ def _emit_quality_text(reports: list[QualityReport], *, src_path: Path) -> None:
     is always None.
 
     Args:
-        reports: List of QualityReport dataclass instances.
+        reports: Sequence of QualityReport dataclass instances.
         src_path: Source path (used in the header).
     """
     sep = "─" * 56
@@ -689,14 +698,14 @@ def _compute_gaze_crap_for_report(report: QualityReport) -> str:
     return f"{score:.1f}"
 
 
-def _check_min_contract_coverage(reports: list[QualityReport], threshold: float) -> None:
+def _check_min_contract_coverage(reports: Sequence[QualityReport], threshold: float) -> None:
     """Check the min-contract-coverage CI gate and exit 1 if violated.
 
     Emits a summary line and per-function failure lines to stderr, then
     raises SystemExit(1).
 
     Args:
-        reports: List of QualityReport instances.
+        reports: Sequence of QualityReport instances.
         threshold: Minimum required average contract coverage percentage.
     """
     coverages: list[tuple[str, float]] = []
@@ -1299,6 +1308,86 @@ def _run_detect_classify(
             all_targets.append(target)
 
     return all_targets
+
+
+def _resolve_crap_tests_path(src: Path, tests_path: str | None) -> Path | None:
+    """Resolve the tests path for the crap command quality integration.
+
+    When ``tests_path`` is provided, returns it as a ``Path``.  Otherwise
+    auto-discovers by searching ``tests/``, ``test/``, and ``test_*.py``
+    relative to ``src.parent`` and then relative to ``Path.cwd()``.
+
+    Args:
+        src: Resolved source path passed to the crap command.
+        tests_path: Raw ``--tests`` option value, or ``None`` when omitted.
+
+    Returns:
+        Resolved ``Path`` when a tests location is found and exists, or
+        ``None`` when no tests directory can be discovered.
+    """
+    if tests_path is not None:
+        candidate = Path(tests_path)
+        return candidate if candidate.exists() else None
+
+    search_roots = [src.parent if src.is_file() else src, Path.cwd()]
+    for root in search_roots:
+        for name in ("tests", "test"):
+            candidate = root / name
+            if candidate.is_dir():
+                return candidate
+        test_files = sorted(root.glob("test_*.py"))
+        if test_files:
+            return test_files[0]
+    return None
+
+
+def _enrich_with_quality(
+    result: AnalysisResult,
+    src: Path,
+    tests_path: str | None,
+    coverage_data: dict[str, float] | None,
+    *,
+    config: GazeConfig,
+) -> None:
+    """Enrich an AnalysisResult in-place with O1 contract coverage data.
+
+    Resolves the tests path, runs ``build_contract_coverage_map()``, and
+    re-scores each ``FunctionTarget`` that has a matching
+    ``ContractCoverageResult``.  When no tests path can be resolved the
+    function returns immediately (GazeCRAP stays null, OC-003 compliant).
+
+    The lazy import of ``build_contract_coverage_map`` is intentional: it
+    avoids loading ``quality/pipeline.py`` on every ``gazepy crap``
+    invocation that omits ``--tests`` (same pattern as the ``quality``
+    command at line 512).
+
+    Args:
+        result: AnalysisResult produced by ``_run_crap()``; mutated in-place.
+        src: Resolved source path passed to the crap command.
+        tests_path: Raw ``--tests`` option value, or ``None`` when omitted.
+        coverage_data: Line coverage dict from the coverage step, or ``None``.
+        config: GazeConfig with threshold and classification values.
+    """
+    resolved_tests = _resolve_crap_tests_path(src, tests_path)
+    if resolved_tests is None:
+        return
+
+    from gaze_py.quality.pipeline import build_contract_coverage_map
+
+    coverage_map = build_contract_coverage_map(src, resolved_tests, config)
+    for target in result.functions:
+        ccr = coverage_map.get(target.name)
+        if ccr is not None:
+            # "no_test_coverage": percentage=None → else branch →
+            # gaze_crap stays null per Go contract (D5).
+            _score_target(
+                target,
+                line_coverage_frac=target.score.line_coverage if target.score else None,
+                config=config,
+                quality_result=ccr,
+            )
+    # Re-build summary to reflect updated contract_coverage data.
+    result.summary = _build_summary(result.functions, config=config, coverage_data=coverage_data)
 
 
 def _run_crap(

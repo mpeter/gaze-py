@@ -6,3 +6,6 @@ effects, and computing coverage percentages.
 
 Entry point: quality.pipeline.assess()
 """
+
+from gaze_py.quality.pipeline import AssessResult as AssessResult
+from gaze_py.quality.pipeline import build_contract_coverage_map as build_contract_coverage_map

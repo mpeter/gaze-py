@@ -1,7 +1,7 @@
 ---
 description: Run the reviewer governance council to audit codebase or spec compliance.
 ---
-<!-- scaffolded by uf v0.15.0 -->
+<!-- scaffolded by uf vdev -->
 # Command: /review-council
 
 ## User Input
@@ -152,24 +152,24 @@ Review the current codebase for compliance with the Behavioral Constraints in `A
 
    #### Phase 1b -- Gaze Quality Analysis (conditional)
 
-   a. Check if `gazepy` is available:
+   a. Check if `gaze` is available:
       ```bash
-      uv run gazepy --version 2>/dev/null || which gazepy
+      which gaze
       ```
 
-   b. **If `gazepy` is available**: invoke the
+   b. **If `gaze` is available**: invoke the
       `gaze-reporter` agent via the Task tool
       (subagent_type: `gaze-reporter`) with prompt
       `"full"` to produce a comprehensive quality
-      report (CRAP scores, side-effect detection,
-      health assessment). Capture
+      report (CRAP scores, quality metrics,
+      classification, health assessment). Capture
       the agent's output as the **Gaze Report**.
 
-   c. **If `gazepy` is NOT available**: skip with an
+   c. **If `gaze` is NOT available**: skip with an
       informational note:
-      > "gazepy not installed -- skipping quality
+      > "Gaze not installed -- skipping quality
       > analysis. Install with
-      > `uv tool install gaze-py`."
+      > `brew install unbound-force/tap/gaze`."
 
       Proceed to step 2 without Gaze data.
 
@@ -203,7 +203,27 @@ Review the current codebase for compliance with the Behavioral Constraints in `A
 
    For each agent, instruct it to review the full branch diff (all changed files vs `main`) and return its verdict (**APPROVE** or **REQUEST CHANGES**) along with all findings.
 
-3. Collect all **REQUEST CHANGES** findings from the discovered reviewers. If all discovered reviewers return **APPROVE**, report the result and stop.
+3. Collect all **REQUEST CHANGES** findings from the
+   discovered reviewers. If all discovered reviewers
+   return **APPROVE**, report the result and stop.
+
+   **Cross-persona finding consolidation**: Before
+   proceeding to the fix loop, group findings from
+   different personas that (a) affect the same
+   component, file, or pipeline stage, (b) share a
+   common root cause, and (c) together produce a risk
+   greater than any individual finding. Merge each
+   group into a single consolidated finding:
+   - Apply compound severity escalation from
+     `severity.md` to determine the combined severity.
+   - Preserve per-persona attribution (e.g.,
+     "Adversary: missing checksum + SRE: privileged
+     blast radius → consolidated MEDIUM").
+   - Present the consolidated finding with one unified
+     recommendation addressing the root cause.
+
+   Findings with independent root causes MUST remain
+   separate even if they affect the same file.
 
 4. If there are **REQUEST CHANGES**, address the findings by making the necessary code fixes. Then re-run all discovered reviewers to verify the fixes. Repeat this loop until all discovered reviewers return **APPROVE** or the process has exceeded 3 iterations.
 
@@ -250,7 +270,16 @@ step, determine which artifacts to review:
 
    For each agent, instruct it to **operate in Spec Review Mode**: review the spec artifacts identified in the review scope above (not code), plus `.specify/memory/constitution.md` and `AGENTS.md`. Include the workflow tier (Speckit/OpenSpec) in the agent prompt so it can tailor its review accordingly. Instruct the agent to return its verdict (**APPROVE** or **REQUEST CHANGES**) along with all findings.
 
-2. Collect all **REQUEST CHANGES** findings from the discovered reviewers. If all discovered reviewers return **APPROVE**, report the result and stop.
+2. Collect all **REQUEST CHANGES** findings from the
+   discovered reviewers. If all discovered reviewers
+   return **APPROVE**, report the result and stop.
+
+   **Cross-persona finding consolidation**: Apply the
+   same consolidation rule as Code Review Mode Step 3
+   — group findings from different personas that share
+   a root cause, apply compound severity escalation
+   from `severity.md`, and present as consolidated
+   findings with per-persona attribution preserved.
 
 3. If there are **REQUEST CHANGES**, apply the **hybrid fix policy**:
 

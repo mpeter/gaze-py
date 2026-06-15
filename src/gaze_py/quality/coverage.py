@@ -26,6 +26,7 @@ def compute_contract_coverage(
     mapped: list[tuple[AssertionSite, SideEffectType | None]],
     *,
     config: GazeConfig,
+    no_test_coverage: bool = False,
 ) -> ContractCoverageResult:
     """Compute contract coverage for a test-target pair.
 
@@ -37,12 +38,23 @@ def compute_contract_coverage(
     Per OC-003: when there are no contractual effects, percentage is None.
     This distinguishes "no contractual effects" from "0% coverage".
 
+    When ``no_test_coverage=True`` and the target has detected effects, the
+    function returns ``percentage=None`` with ``reason="no_test_coverage"``.
+    This matches the Go porting contract (contract.go:148): "no test = no
+    coverage data, not 0%". The ``"no_test_coverage"`` reason supersedes
+    ``"all_effects_ambiguous"`` — any non-empty effects set triggers it.
+    When ``no_test_coverage=True`` but the target has no effects, the call
+    falls through to normal computation (returns ``"no_effects_detected"``).
+
     Args:
         target: The production FunctionTarget with detected side effects.
         mapped: List of (AssertionSite, SideEffectType | None) from
             map_assertions_to_effects(). Length must equal the assertion count.
         config: GazeConfig providing contractual_threshold and
             incidental_threshold for the classification engine.
+        no_test_coverage: When True and target has effects, return
+            percentage=None with reason="no_test_coverage" (Go contract D5).
+            Defaults to False, preserving all existing caller behaviour.
 
     Returns:
         ContractCoverageResult with coverage metrics.
@@ -51,6 +63,23 @@ def compute_contract_coverage(
         config.contractual_threshold,
         config.incidental_threshold,
     )
+
+    # no_test_coverage fast-path: effects exist but no test targets this function.
+    # "no_test_coverage" supersedes "all_effects_ambiguous" — any non-empty effects
+    # set triggers this path regardless of classification state (matches Go behaviour
+    # where effectsSet membership drives the check, not classification outcome).
+    if no_test_coverage and target.effects:
+        contractual_count = sum(
+            1 for effect in target.effects if engine.classify(effect, target).label == "contractual"
+        )
+        return ContractCoverageResult(
+            percentage=None,
+            covered_effects=0,
+            total_contractual=contractual_count,
+            over_specification_count=0,
+            unmapped_assertions=0,
+            reason="no_test_coverage",
+        )
 
     contractual: list[SideEffect] = []
     incidental_types: set[SideEffectType] = set()
