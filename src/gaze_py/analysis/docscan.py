@@ -15,7 +15,7 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
-from gaze_py.config.loader import GazeConfig
+from gaze_py.config.loader import SENTINELS, GazeConfig
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ def _find_repo_root(start: Path) -> Path:
         current = current.parent
 
     while True:
-        if (current / "pyproject.toml").exists() or (current / ".git").exists():
+        if any((current / s).exists() for s in SENTINELS):
             return current
         parent = current.parent
         if parent == current:  # filesystem root reached

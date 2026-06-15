@@ -1500,3 +1500,96 @@ def test_docscan_exits_zero_and_valid_json(tmp_path: Path) -> None:
         assert "path" in item, f"Missing 'path' key in {item}"
         assert "content" in item, f"Missing 'content' key in {item}"
         assert "priority" in item, f"Missing 'priority' key in {item}"
+
+
+# ---------------------------------------------------------------------------
+# Task 5.4 — DS-008: analyze/crap doc wiring integration test
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_classify_calls_scan_docs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """DS-008 / AC-5: gazepy analyze --classify calls scan_docs() for doc augmentation.
+
+    Verifies that when --classify is used (which triggers detect_and_classify()),
+    the docscan integration is invoked before classification.
+    """
+    import gaze_py.analysis.docscan as docscan_module
+    import gaze_py.cli.main as cli_main
+
+    # Create a minimal Python source file
+    src_file = tmp_path / "example.py"
+    src_file.write_text(
+        "def my_func(x: int) -> int:\n    return x + 1\n",
+        encoding="utf-8",
+    )
+    # Create a .md file so scan_docs has something to return
+    (tmp_path / "README.md").write_text("This function returns a value.")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='test'")
+
+    scan_calls: list[Path] = []
+    original_scan = docscan_module.scan_docs
+
+    def capturing_scan(root: Path, config: object) -> list[object]:
+        scan_calls.append(root)
+        return original_scan(root, config)  # type: ignore[arg-type]
+
+    # Patch scan_docs at the CLI module level (where it was imported)
+    monkeypatch.setattr(cli_main, "scan_docs", capturing_scan)
+
+    runner = CliRunner()
+    result = runner.invoke(cli_main.cli, ["analyze", str(tmp_path), "--classify", "--format=json"])
+
+    assert result.exit_code == 0, f"analyze --classify failed: {result.output}"
+    assert len(scan_calls) > 0, "scan_docs was not called — doc wiring missing"
+
+
+def test_analyze_classify_continues_when_scan_docs_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """DS-008: analyze --classify continues gracefully when scan_docs() raises.
+
+    Constitution Principle VI: scan failure must never abort analysis.
+    The BLE001-suppressed except Exception in _run_analyze() must catch the
+    error, emit a warning to stderr, and continue with docs_text=None.
+    """
+    import warnings
+
+    import gaze_py.cli.main as cli_main
+
+    src_file = tmp_path / "example.py"
+    src_file.write_text(
+        "def my_func(x: int) -> int:\n    return x + 1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='test'")
+
+    def raising_scan(root: object, config: object) -> object:
+        raise RuntimeError("simulated scan failure")
+
+    monkeypatch.setattr(cli_main, "scan_docs", raising_scan)
+
+    runner = CliRunner()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = runner.invoke(
+            cli_main.cli, ["analyze", str(tmp_path), "--classify", "--format=json"]
+        )
+
+    # Must exit 0 despite scan failure (graceful degradation)
+    assert result.exit_code == 0, f"analyze failed: {result.output}"
+
+    # Must have emitted a warning about the scan failure
+    scan_warnings = [
+        w
+        for w in caught
+        if "docscan" in str(w.message).lower()
+        or "scan" in str(w.message).lower()
+        or "doc" in str(w.message).lower()
+    ]
+    assert len(scan_warnings) > 0, (
+        f"Expected warning about scan failure, got warnings: {[str(w.message) for w in caught]}"
+    )
