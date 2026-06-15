@@ -10,7 +10,7 @@ description: >
   Supports full, crap, and analyze modes. Handles null O1 fields gracefully.
 ---
 
-# gazepy-reporter
+# gaze-reporter
 
 ## Binary Resolution
 
@@ -23,7 +23,7 @@ Resolve the `gazepy` binary in this order:
 
 ## Modes
 
-Invoked as `/gazepy [mode] [path]` where mode is one of:
+Invoked as `/gaze [mode] [path]` where mode is one of:
 
 - *(none)* or `full` — run both analyze and crap; emit full report
 - `crap` — run crap only; emit CRAP scores
@@ -68,8 +68,8 @@ Mandatory section markers (per UF formatting contract):
 - ⚪ Not scored (null crap — analyze-only output)
 - ⚠️ Alert prefix for functions in the CRAPload set or above threshold
 
-See `../unbound-force/.opencode/agents/gaze-reporter.md` for the canonical
-reference implementation (Go gaze version — adapt binary name to `gazepy`).
+This is the Python implementation of the gaze-reporter agent.
+The Go gaze implementation lives at `github.com/unbound-force/gaze`.
 
 ## Output Structure
 

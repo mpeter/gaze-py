@@ -152,24 +152,24 @@ Review the current codebase for compliance with the Behavioral Constraints in `A
 
    #### Phase 1b -- Gaze Quality Analysis (conditional)
 
-   a. Check if `gaze` is available:
+   a. Check if `gazepy` is available:
       ```bash
-      which gaze
+      uv run gazepy --version 2>/dev/null || which gazepy
       ```
 
-   b. **If `gaze` is available**: invoke the
+   b. **If `gazepy` is available**: invoke the
       `gaze-reporter` agent via the Task tool
       (subagent_type: `gaze-reporter`) with prompt
       `"full"` to produce a comprehensive quality
-      report (CRAP scores, quality metrics,
-      classification, health assessment). Capture
+      report (CRAP scores, side-effect detection,
+      health assessment). Capture
       the agent's output as the **Gaze Report**.
 
-   c. **If `gaze` is NOT available**: skip with an
+   c. **If `gazepy` is NOT available**: skip with an
       informational note:
-      > "Gaze not installed -- skipping quality
+      > "gazepy not installed -- skipping quality
       > analysis. Install with
-      > `brew install unbound-force/tap/gaze`."
+      > `uv tool install gaze-py`."
 
       Proceed to step 2 without Gaze data.
 

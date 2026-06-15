@@ -22,8 +22,8 @@ _ASSETS = files("gaze_py.cli.assets")
 # Relative paths within the assets package → target paths within .opencode/.
 # Each tuple is (asset_subpath, target_relative_to_opencode).
 _ASSET_MAP: tuple[tuple[str, str], ...] = (
-    ("agents/gazepy-reporter.md", "agents/gazepy-reporter.md"),
-    ("commands/gazepy.md", "commands/gazepy.md"),
+    ("agents/gaze-reporter.md", "agents/gaze-reporter.md"),
+    ("commands/gaze.md", "commands/gaze.md"),
 )
 
 

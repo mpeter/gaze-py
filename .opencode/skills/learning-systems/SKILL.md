@@ -60,5 +60,5 @@ Returns top 5 most frequent failure patterns with recommendations.
 
 - **Store** after completing work: learnings, decisions, gotchas
 - **Query** before starting work: check if someone solved it before
-- Use `hivemind_store` for general learnings
+- Use `dewey_store_learning` for general learnings
 - Use `forge_record_outcome` for structured forge metrics

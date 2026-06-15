@@ -1,6 +1,8 @@
 ---
 name: worker
 description: Executes a single subtask with file reservations and progress reporting.
+mode: subagent
+hidden: true
 ---
 
 # Forge Worker
@@ -10,11 +12,11 @@ Executes scoped subtasks and reports to coordinator.
 ## Checklist
 
 1. `comms_init` — initialize comms first
-2. `hivemind_find` — check for prior learnings before coding
+2. `dewey_semantic_search` — check for prior learnings before coding
 3. `comms_reserve` — reserve assigned files exclusively
 4. Implement changes to reserved files
 5. `forge_progress` — report at 25%, 50%, 75% milestones
-6. `hivemind_store` — store any learnings discovered
+6. `dewey_store_learning` — store any learnings discovered
 7. `forge_complete` — mark subtask as done
 
 ## Constraints

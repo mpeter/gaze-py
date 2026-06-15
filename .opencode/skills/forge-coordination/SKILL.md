@@ -11,7 +11,7 @@ Patterns for coordinating parallel agent work.
 ## Coordinator Protocol
 
 1. **Initialize**: `comms_init(project_path=".", task_description="...")`
-2. **Check learnings**: `hivemind_find(query="<task keywords>")`
+2. **Check learnings**: `dewey_semantic_search(query="<task keywords>")`
 3. **Select strategy**: `forge_get_strategy_insights(task="<task>")`
 4. **Decompose**: `forge_decompose(task="<task>", context="<learnings>")`
 5. **Create epic**: `org_create_epic(epic_title="<task>", subtasks=[...])`
@@ -19,16 +19,16 @@ Patterns for coordinating parallel agent work.
 7. **Monitor**: `comms_inbox()` + `forge_status(epic_id, project_key)`
 8. **Review**: `forge_review(task_id, files_touched)` for each worker
 9. **Complete**: `forge_complete(bead_id, summary, files_touched)`
-10. **Learn**: `hivemind_store(information="...", tags="forge,<topic>")`
+10. **Learn**: `dewey_store_learning(information="...", tags="forge,<topic>")`
 
 ## Worker Protocol
 
 1. **Initialize**: `comms_init(project_path=".", task_description="...")`
-2. **Check learnings**: `hivemind_find(query="<task keywords>")`
+2. **Check learnings**: `dewey_semantic_search(query="<task keywords>")`
 3. **Reserve files**: `comms_reserve(paths=[...], reason="...")`
 4. **Implement**: Make changes to reserved files
 5. **Report progress**: `forge_progress(bead_id, progress_percent, status)`
-6. **Store learnings**: `hivemind_store(information="...", tags="...")`
+6. **Store learnings**: `dewey_store_learning(information="...", tags="...")`
 7. **Complete**: `forge_complete(bead_id, summary, files_touched)`
 
 ## File Reservation Rules

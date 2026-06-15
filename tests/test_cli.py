@@ -1296,8 +1296,8 @@ def test_init_creates_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     runner = CliRunner()
     result = runner.invoke(cli, ["init"])
     assert result.exit_code == 0, result.output
-    assert (tmp_path / ".opencode" / "agents" / "gazepy-reporter.md").exists()
-    assert (tmp_path / ".opencode" / "commands" / "gazepy.md").exists()
+    assert (tmp_path / ".opencode" / "agents" / "gaze-reporter.md").exists()
+    assert (tmp_path / ".opencode" / "commands" / "gaze.md").exists()
     assert "created" in result.output
 
 
@@ -1310,7 +1310,7 @@ def test_init_idempotent_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     runner.invoke(cli, ["init"])
 
     # Modify file content to verify it is NOT overwritten.
-    reporter = tmp_path / ".opencode" / "agents" / "gazepy-reporter.md"
+    reporter = tmp_path / ".opencode" / "agents" / "gaze-reporter.md"
     reporter.write_bytes(reporter.read_bytes() + b"\n# user edit\n")
     original = reporter.read_bytes()
 
@@ -1328,14 +1328,14 @@ def test_init_force_overwrites(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     runner = CliRunner()
     runner.invoke(cli, ["init"])
 
-    reporter = tmp_path / ".opencode" / "agents" / "gazepy-reporter.md"
+    reporter = tmp_path / ".opencode" / "agents" / "gaze-reporter.md"
     reporter.write_bytes(b"user edited content")
 
     result = runner.invoke(cli, ["init", "--force"])
     assert result.exit_code == 0, result.output
     assert "overwrote" in result.output
-    # Original asset content should be restored (contains "gazepy-reporter").
-    assert b"gazepy-reporter" in reporter.read_bytes()
+    # Original asset content should be restored (contains "gaze-reporter").
+    assert b"gaze-reporter" in reporter.read_bytes()
 
 
 def test_init_force_does_not_duplicate_version_marker(
@@ -1349,7 +1349,7 @@ def test_init_force_does_not_duplicate_version_marker(
     runner.invoke(cli, ["init", "--force"])
     runner.invoke(cli, ["init", "--force"])
 
-    reporter = tmp_path / ".opencode" / "agents" / "gazepy-reporter.md"
+    reporter = tmp_path / ".opencode" / "agents" / "gaze-reporter.md"
     content = reporter.read_text()
     assert content.count("scaffolded by gazepy") == 1
 
@@ -1364,8 +1364,8 @@ def test_init_version_marker_after_frontmatter(
     runner = CliRunner()
     runner.invoke(cli, ["init"])
 
-    # gazepy-reporter.md has frontmatter; verify marker position.
-    reporter = tmp_path / ".opencode" / "agents" / "gazepy-reporter.md"
+    # gaze-reporter.md has frontmatter; verify marker position.
+    reporter = tmp_path / ".opencode" / "agents" / "gaze-reporter.md"
     lines = reporter.read_text().splitlines()
 
     # Find the closing --- of frontmatter.
@@ -1397,8 +1397,8 @@ def test_init_version_marker_inserts_after_frontmatter_integration(
     runner = CliRunner()
     runner.invoke(cli, ["init"])
 
-    # Both assets have frontmatter; verify the marker is present in commands/gazepy.md.
-    commands = tmp_path / ".opencode" / "commands" / "gazepy.md"
+    # Both assets have frontmatter; verify the marker is present in commands/gaze.md.
+    commands = tmp_path / ".opencode" / "commands" / "gaze.md"
     content = commands.read_text()
     assert "scaffolded by gazepy" in content
 
@@ -1417,7 +1417,7 @@ def test_init_warns_no_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 def test_init_rejects_symlink_escape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """init exits 1 when a file inside .opencode/ is a symlink escaping the tree.
 
-    The guard fires on file-level symlinks: when .opencode/agents/gazepy-reporter.md
+    The guard fires on file-level symlinks: when .opencode/agents/gaze-reporter.md
     is a symlink pointing to a file outside .opencode/, resolve() follows the link and
     is_relative_to() correctly rejects the resolved path.
     """
@@ -1433,7 +1433,7 @@ def test_init_rejects_symlink_escape(tmp_path: Path, monkeypatch: pytest.MonkeyP
     # Create .opencode/agents/ as a real directory, then plant a file-level symlink.
     opencode_agents = tmp_path / ".opencode" / "agents"
     opencode_agents.mkdir(parents=True)
-    (opencode_agents / "gazepy-reporter.md").symlink_to(outside_file)
+    (opencode_agents / "gaze-reporter.md").symlink_to(outside_file)
 
     runner = CliRunner()
     result = runner.invoke(cli, ["init", "--force"])
@@ -1466,7 +1466,7 @@ def test_init_rejects_opencode_prefix_sibling(
     # resolves to the prefix-sibling path (.opencode_sibling/x.md).
     opencode_agents = tmp_path / ".opencode" / "agents"
     opencode_agents.mkdir(parents=True)
-    (opencode_agents / "gazepy-reporter.md").symlink_to(sibling_file)
+    (opencode_agents / "gaze-reporter.md").symlink_to(sibling_file)
 
     runner = CliRunner()
     result = runner.invoke(cli, ["init", "--force"])

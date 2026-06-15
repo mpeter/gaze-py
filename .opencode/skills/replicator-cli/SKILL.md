@@ -43,4 +43,4 @@ make install  # Install to GOPATH/bin
 - `org_*` (11 tools) — work item management
 - `comms_*` (10 tools) — agent messaging and file reservations
 - `forge_*` (24 tools) — multi-agent coordination
-- `hivemind_*` (8 tools) — learning storage and retrieval
+- `dewey_store_learning`, `dewey_semantic_search` — learning storage and retrieval (direct; `hivemind_*` tools are deprecated proxies)
