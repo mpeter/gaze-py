@@ -1477,10 +1477,20 @@ def init(force: bool) -> None:
 
     Creates (or updates with --force):
       .opencode/agents/gaze-reporter.md
+      .opencode/agents/gaze-test-generator.md
+      .opencode/agents/reviewer-testing.md
       .opencode/commands/gaze.md
+      .opencode/commands/gaze-fix.md
+      .opencode/commands/speckit.testreview.md
+      .opencode/references/doc-scoring-model.md
+      .opencode/references/example-report.md
 
-    Skips existing files unless --force is given. Warns when no pyproject.toml
-    is found in cwd (assets are still written).
+    User-owned files (gaze-reporter.md, reviewer-testing.md, gaze.md) are
+    skipped when they already exist unless --force is given. Tool-owned files
+    (gaze-test-generator.md, gaze-fix.md, speckit.testreview.md, references/)
+    are updated automatically when their content changes (overwrite-on-diff).
+
+    Warns when no pyproject.toml is found in cwd (assets are still written).
     """
     result = _scaffold_run(
         target_dir=Path.cwd() / ".opencode",
@@ -1488,9 +1498,29 @@ def init(force: bool) -> None:
         version=_version,
         stdout=True,
     )
+
+    any_action = result.created or result.overwritten or result.updated
+    if any_action:
+        click.echo("gazepy OpenCode integration initialized:")
+    else:
+        click.echo("gazepy OpenCode integration already up to date:")
+
     for path in result.created:
-        click.echo(f"created  {path}")
+        click.echo(f"  created: .opencode/{path}")
     for path in result.skipped:
-        click.echo(f"skipped  {path} (use --force to overwrite)")
+        click.echo(f"  skipped: .opencode/{path} (already exists)")
     for path in result.overwritten:
-        click.echo(f"overwrote {path}")
+        click.echo(f"  overwritten: .opencode/{path}")
+    for path in result.updated:
+        click.echo(f"  updated: .opencode/{path} (content changed)")
+
+    click.echo()
+    click.echo("Run /gaze for quality reports and /speckit.testreview for testability analysis.")
+
+    # Count only user-owned skipped files for the --force hint.
+    from gaze_py.cli.scaffold import _TOOL_OWNED
+
+    user_skipped = [p for p in result.skipped if p not in _TOOL_OWNED]
+    if user_skipped:
+        word = "file" if len(user_skipped) == 1 else "files"
+        click.echo(f"{len(user_skipped)} {word} skipped (use --force to overwrite).")
