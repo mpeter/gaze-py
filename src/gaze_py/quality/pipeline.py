@@ -9,6 +9,7 @@ Orchestrates the full pipeline:
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from gaze_py.quality.coverage import compute_contract_coverage
 from gaze_py.quality.mapper import build_call_bindings, map_assertions_to_effects
 from gaze_py.quality.models import TestFunc
 from gaze_py.quality.pairing import _build_astroid_graph, find_test_functions, pair_to_targets
-from gaze_py.taxonomy.models import FunctionTarget, QualityReport
+from gaze_py.taxonomy.models import ContractCoverageResult, FunctionTarget, QualityReport
 
 
 @dataclass(frozen=True)
@@ -247,3 +248,53 @@ def _collect_test_functions(tests_path: Path) -> list[TestFunc]:
     for py_file in collect_py_files(tests_path):
         results.extend(find_test_functions(py_file))
     return results
+
+
+def build_contract_coverage_map(
+    src_path: Path,
+    tests_path: Path,
+    config: GazeConfig,
+) -> dict[str, ContractCoverageResult]:
+    """Build a mapping from production function name to its best ContractCoverageResult.
+
+    Runs the full O1 quality assessment pipeline via ``assess()`` and
+    consolidates the results into a flat dict keyed by function name.
+    When multiple test functions target the same production function, the
+    entry with the highest ``percentage`` is kept (or the first entry when
+    both percentages are ``None``).
+
+    On any exception from ``assess()``, a warning is emitted to stderr and
+    an empty dict is returned so callers can degrade gracefully (OC-003).
+
+    Args:
+        src_path: Source directory or file to analyze for side effects.
+        tests_path: Test directory or file containing test functions to assess.
+        config: GazeConfig with classification thresholds.
+
+    Returns:
+        Dict mapping function name → ContractCoverageResult.  Empty when the
+        pipeline fails or no reports are produced.
+    """
+    try:
+        result = assess(src_path, tests_path, config=config)
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"warning: quality pipeline failed: {exc}\n")
+        return {}
+
+    coverage_map: dict[str, ContractCoverageResult] = {}
+    for report in result.reports + result.untested:
+        if report.target_function is None or report.contract_coverage is None:
+            continue
+        name = report.target_function
+        ccr = report.contract_coverage
+        if name not in coverage_map:
+            coverage_map[name] = ccr
+        else:
+            existing = coverage_map[name]
+            # Keep the entry with the higher percentage; when both are None,
+            # the first entry wins (insertion order preserved).
+            if ccr.percentage is not None and (
+                existing.percentage is None or ccr.percentage > existing.percentage
+            ):
+                coverage_map[name] = ccr
+    return coverage_map

@@ -1644,3 +1644,140 @@ def test_analyze_classify_continues_when_scan_docs_fails(
     assert len(scan_warnings) > 0, (
         f"Expected warning about scan failure, got warnings: {[str(w.message) for w in caught]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 6.4: gazepy crap --tests integration
+# ---------------------------------------------------------------------------
+
+# Paths to the quality testdata fixtures (reuse constants from quality section).
+_QUALITY_TESTDATA_CRAP = Path(__file__).parent / "testdata" / "quality"
+_QUALITY_SRC_CRAP = _QUALITY_TESTDATA_CRAP / "src"
+_QUALITY_TESTS_CRAP = _QUALITY_TESTDATA_CRAP / "tests"
+
+
+def test_crap_with_tests_populates_contract_coverage_reason(tmp_path: Path) -> None:
+    """crap --tests populates contract_coverage_reason for at least one function.
+
+    Runs crap on tests/testdata/quality/src/ with --tests pointing at the
+    quality test fixtures.  At least one function must have a non-null
+    contract_coverage_reason in the JSON output (e.g. "no_test_coverage"
+    for orphan_compute, or a real coverage reason for paired functions).
+
+    Uses --coverprofile with an empty files dict to skip the pytest subprocess
+    (coverage data is not required for contract_coverage_reason to be populated).
+    """
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "crap",
+            str(_QUALITY_SRC_CRAP),
+            "--format=json",
+            f"--tests={_QUALITY_TESTS_CRAP}",
+            f"--coverprofile={cov_file}",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    data = _parse_json(result.output)
+    functions = data["functions"]
+    assert isinstance(functions, list)
+    reasons = [fn.get("contract_coverage_reason") for fn in functions]
+    assert any(r is not None for r in reasons), (
+        f"Expected at least one non-null contract_coverage_reason; got: {reasons}"
+    )
+
+
+def test_crap_no_test_coverage_reason_gaze_crap_still_null(tmp_path: Path) -> None:
+    """crap --tests: orphan_compute has no_test_coverage reason and null gaze_crap.
+
+    The uncovered.py fixture contains orphan_compute which has no corresponding
+    test.  Per D5 / Go contract: no_test_coverage → percentage=None →
+    gaze_crap stays null (not a float).
+
+    Uses --coverprofile with an empty files dict to skip the pytest subprocess.
+    """
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "crap",
+            str(_QUALITY_SRC_CRAP),
+            "--format=json",
+            f"--tests={_QUALITY_TESTS_CRAP}",
+            f"--coverprofile={cov_file}",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    data = _parse_json(result.output)
+    functions = data["functions"]
+
+    orphan = next(
+        (fn for fn in functions if fn.get("name") == "orphan_compute"),
+        None,
+    )
+    assert orphan is not None, (
+        f"orphan_compute not found in crap output; functions: {[f.get('name') for f in functions]}"
+    )
+    assert orphan.get("contract_coverage_reason") == "no_test_coverage", (
+        f"Expected 'no_test_coverage', got: {orphan.get('contract_coverage_reason')!r}"
+    )
+    # D5 / Go contract: no_test_coverage → gaze_crap must be null (not a float).
+    assert orphan.get("gaze_crap") is None, (
+        f"Expected gaze_crap=null for no_test_coverage function, got: {orphan.get('gaze_crap')!r}"
+    )
+
+
+def test_crap_without_tests_gaze_crap_null(tmp_path: Path) -> None:
+    """crap without --tests in a dir with no discoverable tests: all gaze_crap are null.
+
+    Creates a minimal source file in a temp dir with no tests/ subdirectory
+    and no test_*.py files.  Without quality pipeline data, gaze_crap must
+    remain null for all functions (OC-003 compliant).
+    """
+    source = tmp_path / "example.py"
+    source.write_text("def foo():\n    return 1\n", encoding="utf-8")
+    # Provide coverage so CRAP is computed (not null), but no --tests.
+    cov: dict[str, object] = {"files": {"example.py": {"summary": {"percent_covered": 80.0}}}}
+    cov_file = tmp_path / "coverage.json"
+    cov_file.write_text(json.dumps(cov), encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "crap",
+            str(tmp_path),
+            "--format=json",
+            f"--coverprofile={cov_file}",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    data = _parse_json(result.output)
+    for fn in data["functions"]:
+        assert fn.get("gaze_crap") is None, (
+            f"Expected gaze_crap=null without --tests, got {fn.get('gaze_crap')!r} "
+            f"for function {fn.get('name')!r}"
+        )
+
+
+def test_crap_help_shows_tests_option() -> None:
+    """gazepy crap --help output contains '--tests'."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["crap", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--tests" in result.output, (
+        f"Expected '--tests' in crap --help output; got:\n{result.output}"
+    )
