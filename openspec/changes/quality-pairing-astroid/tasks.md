@@ -604,3 +604,5 @@
 - [x] 7.6 `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
 
 <!-- spec-review: passed -->
+
+<!-- code-review: passed -->
