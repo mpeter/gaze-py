@@ -510,3 +510,315 @@ def test_stdout_write_detected() -> None:
     assert any(e.type == SideEffectType.StdoutWrite for e in all_effects), (
         f"Expected StdoutWrite, got: {[e.type for e in all_effects]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: New detector tests (tasks 2.1–2.21)
+# ---------------------------------------------------------------------------
+
+
+def test_filesystem_pathlib_delete_detected() -> None:
+    """EC-005: FileSystemDelete detected from Path.unlink()."""
+    targets = FileDetector.detect(FIXTURES / "filesystem_pathlib_delete.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.FileSystemDelete for e in all_effects), (
+        f"Expected FileSystemDelete, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_filesystem_pathlib_meta_detected() -> None:
+    """EC-005: FileSystemMeta detected from Path.chmod()."""
+    targets = FileDetector.detect(FIXTURES / "filesystem_pathlib_meta.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.FileSystemMeta for e in all_effects), (
+        f"Expected FileSystemMeta, got: {[e.type for e in all_effects]}"
+    )
+
+
+@pytest.mark.parametrize("method", ["write_text", "write_bytes"])
+def test_filesystem_pathlib_write_detected(method: str) -> None:
+    """EC-005: FileSystemWrite detected from Path.write_text/write_bytes()."""
+    targets = FileDetector.detect(FIXTURES / "filesystem_pathlib_write.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.FileSystemWrite for e in all_effects), (
+        f"Expected FileSystemWrite, got: {[e.type for e in all_effects]}"
+    )
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        "reflection_mutation_setattr.py",
+        "reflection_mutation_dunder.py",
+    ],
+)
+def test_reflection_mutation_detected(fixture: str) -> None:
+    """EC-005: ReflectionMutation detected from setattr() and obj.__setattr__()."""
+    targets = FileDetector.detect(FIXTURES / fixture, root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.ReflectionMutation for e in all_effects), (
+        f"Expected ReflectionMutation in {fixture}, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_goroutine_spawn_executor_detected() -> None:
+    """EC-005: GoroutineSpawn detected from executor.submit()."""
+    targets = FileDetector.detect(FIXTURES / "goroutine_spawn_executor.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.GoroutineSpawn for e in all_effects), (
+        f"Expected GoroutineSpawn, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_finalizer_registration_detected() -> None:
+    """EC-005: FinalizerRegistration detected from weakref.finalize()."""
+    targets = FileDetector.detect(FIXTURES / "finalizer_registration.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.FinalizerRegistration for e in all_effects), (
+        f"Expected FinalizerRegistration, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_cgo_call_detected() -> None:
+    """EC-005: CgoCall detected from ctypes.CDLL()."""
+    targets = FileDetector.detect(FIXTURES / "cgo_call.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.CgoCall for e in all_effects), (
+        f"Expected CgoCall, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_stdout_write_sys_write_detected() -> None:
+    """EC-005: StdoutWrite detected from sys.stdout.write()."""
+    targets = FileDetector.detect(FIXTURES / "stdout_write_sys.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.StdoutWrite for e in all_effects), (
+        f"Expected StdoutWrite, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_context_cancellation_event_set_detected() -> None:
+    """EC-005: ContextCancellation detected from event.set() on a parameter.
+
+    Covers detector.py lines 877-884 (.set() branch of _handle_param_attr_call).
+    """
+    targets = FileDetector.detect(FIXTURES / "context_cancellation_event.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.ContextCancellation for e in all_effects), (
+        f"Expected ContextCancellation, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_global_mutation_simple_assign_detected() -> None:
+    """EC-005: GlobalMutation detected from simple assignment to global variable.
+
+    Covers visit_Assign GlobalMutation branch (detector.py:530); distinct from
+    test_global_mutation_detected() which covers visit_AugAssign via global_mutation.py.
+    """
+    targets = FileDetector.detect(FIXTURES / "global_mutation_simple_assign.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.GlobalMutation for e in all_effects), (
+        f"Expected GlobalMutation, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_receiver_mutation_augmented_assign_detected() -> None:
+    """EC-005: ReceiverMutation detected from self.x += 1 in a method.
+
+    Covers visit_AugAssign ReceiverMutation branch (detector.py:547).
+    """
+    targets = FileDetector.detect(FIXTURES / "receiver_mutation_augassign.py", root=ROOT)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.ReceiverMutation for e in all_effects), (
+        f"Expected ReceiverMutation, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_open_keyword_mode_produces_filesystem_write(tmp_path: Path) -> None:
+    """EC-002: open() with mode='w' as keyword arg → FileSystemWrite.
+
+    Covers _extract_open_mode keyword path (detector.py:1074-1077).
+    """
+    src = tmp_path / "example.py"
+    src.write_text("def f(path):\n    open(path, mode='w')\n")
+    targets = FileDetector.detect(src, root=tmp_path)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.FileSystemWrite for e in all_effects), (
+        f"Expected FileSystemWrite from open(mode='w'), got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_vararg_param_triggers_slice_mutation_detection(tmp_path: Path) -> None:
+    """EC-002: *args param captured and .append() triggers SliceMutation.
+
+    # CR-004: _extract_params tested indirectly — *args capture only observable
+    # via effect detection on the resulting parameter set.
+    """
+    src = tmp_path / "example.py"
+    src.write_text("def f(*args):\n    args.append(1)\n")
+    targets = FileDetector.detect(src, root=tmp_path)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.SliceMutation for e in all_effects), (
+        f"Expected SliceMutation from *args.append(), got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_kwarg_param_triggers_map_mutation_detection(tmp_path: Path) -> None:
+    """EC-002: **kwargs param captured and .update() triggers MapMutation.
+
+    # CR-004: _extract_params tested indirectly — **kwargs capture only observable
+    # via effect detection on the resulting parameter set.
+    """
+    src = tmp_path / "example.py"
+    src.write_text('def f(**kwargs):\n    kwargs.update({"x": 1})\n')
+    targets = FileDetector.detect(src, root=tmp_path)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.MapMutation for e in all_effects), (
+        f"Expected MapMutation from **kwargs.update(), got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_detect_raises_gaze_parse_error_on_unreadable_file(tmp_path: Path) -> None:
+    """EC-002: FileDetector.detect() raises GazeParseError when file is unreadable."""
+    src = tmp_path / "secret.py"
+    src.write_text("def f(): pass\n")
+    # Probe: skip if chmod is not enforced (e.g. running as root)
+    src.chmod(0o000)
+    try:
+        src.read_text()
+        pytest.skip("chmod 000 not enforced in this environment")
+    except OSError:
+        pass
+    try:
+        with pytest.raises(GazeParseError):
+            FileDetector.detect(src, root=tmp_path)
+    finally:
+        src.chmod(0o644)  # always restore so tmp_path cleanup succeeds
+
+
+def test_detect_uses_filename_when_path_outside_root(tmp_path: Path) -> None:
+    """EC-002: detect() uses filename-only when path is outside root."""
+    src = tmp_path / "mymodule.py"
+    src.write_text("def f(): pass\n")
+    # Use a sibling dir that is guaranteed not to be an ancestor of tmp_path
+    other_root = tmp_path.parent / "nonexistent_sibling_xyz"
+    targets = FileDetector.detect(src, root=other_root)
+    assert targets
+    assert any(t.file_path == src.name for t in targets), (
+        f"Expected file_path={src.name!r}, got: {[t.file_path for t in targets]}"
+    )
+
+
+def test_deferred_return_mutation_not_produced_without_finally(tmp_path: Path) -> None:
+    """EC-002: try/except without finally → no DeferredReturnMutation."""
+    src = tmp_path / "example.py"
+    src.write_text(
+        "def f():\n"
+        "    x = 1\n"
+        "    try:\n"
+        "        return x\n"
+        "    except Exception:\n"
+        "        pass\n"
+    )
+    targets = FileDetector.detect(src, root=tmp_path)
+    assert targets  # confirms file was parsed
+    all_effects = [e for t in targets for e in t.effects]
+    assert not any(e.type == SideEffectType.DeferredReturnMutation for e in all_effects), (
+        f"Unexpected DeferredReturnMutation without finally: {[e.type for e in all_effects]}"
+    )
+
+
+def test_deferred_return_mutation_via_finally_augassign(tmp_path: Path) -> None:
+    """EC-002: finally block with augmented assignment → DeferredReturnMutation.
+
+    Covers detector.py:1000-1001.
+    """
+    src = tmp_path / "example.py"
+    src.write_text(
+        "def f():\n"
+        "    x = 1\n"
+        "    try:\n"
+        "        return x\n"
+        "    finally:\n"
+        "        x += 1\n"
+    )
+    targets = FileDetector.detect(src, root=tmp_path)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.DeferredReturnMutation for e in all_effects), (
+        f"Expected DeferredReturnMutation from finally: {[e.type for e in all_effects]}"
+    )
+
+
+def test_finally_nonmatching_name_produces_no_deferred_mutation(tmp_path: Path) -> None:
+    """EC-002: finally assigns to z but y/e returned → no DeferredReturnMutation (no overlap).
+
+    Covers handler-body recursion (detector.py:1042).
+    """
+    src = tmp_path / "example.py"
+    src.write_text(
+        "def f():\n"
+        "    y = 1\n"
+        "    try:\n"
+        "        return y\n"
+        "    except Exception as e:\n"
+        "        return e\n"
+        "    finally:\n"
+        "        z = 0\n"
+    )
+    targets = FileDetector.detect(src, root=tmp_path)
+    assert targets  # parse succeeded
+    all_effects = [e for t in targets for e in t.effects]
+    assert not any(e.type == SideEffectType.DeferredReturnMutation for e in all_effects), (
+        f"Unexpected DeferredReturnMutation (z not in return names): {[e.type for e in all_effects]}"
+    )
+
+
+def test_closure_capture_mutation_via_augmented_assign(tmp_path: Path) -> None:
+    """EC-002: nonlocal + augmented assign → ClosureCaptureMutation.
+
+    Covers detector.py:1207-1220.
+    """
+    src = tmp_path / "example.py"
+    src.write_text(
+        "def outer():\n"
+        "    x = 0\n"
+        "    def inner():\n"
+        "        nonlocal x\n"
+        "        x += 1\n"
+        "    return inner\n"
+    )
+    targets = FileDetector.detect(src, root=tmp_path)
+    assert targets
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.ClosureCaptureMutation for e in all_effects), (
+        f"Expected ClosureCaptureMutation, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_caller_count_reflects_callers_map_value() -> None:
+    """EC-002: callers dict populates FunctionTarget.caller_count.
+
+    Covers detector.py:1346. Note: the function in pure_function.py is named 'pure'.
+    """
+    targets = FileDetector.detect(FIXTURES / "pure_function.py", root=ROOT, callers={"pure": 5})
+    assert targets
+    matched = [t for t in targets if t.name == "pure"]
+    assert matched, f"pure not found in targets: {[t.name for t in targets]}"
+    assert matched[0].caller_count == 5, (  # noqa: PLR2004
+        f"Expected caller_count=5, got {matched[0].caller_count}"
+    )

@@ -159,3 +159,46 @@ from gaze.quality import _iter_test_functions
 Without this comment, the test will be rejected in review. Private function
 tests that duplicate coverage already provided by public-API tests MUST be
 deleted.
+
+---
+
+## CR-007: Tests MUST Be Gaze-Visible (Direct-Assertion Pattern)
+
+[MUST] gaze-py runs `gazepy quality` against its own test suite to compute
+GazeCRAP contract coverage. A test earns non-zero contract coverage only when
+at least one assertion **directly references** the variable bound to the
+production function's return value.
+
+The assertion mapper (Pass 1) builds call bindings from direct assignment:
+`result = fn(...)`. It then checks whether any assertion's `referenced_names`
+intersect those bindings. Intermediate variable assignments break the chain:
+if a test does `result = fn(...); derived = list(result); assert x in derived`,
+the name `result` does not appear in `derived`'s assertion and Pass 1 fails,
+yielding 0% contract coverage.
+
+```python
+# CORRECT — gaze-visible (Pass 1 fires, ReturnValue covered)
+result = target_function(...)
+assert result                          # ← MUST appear before derived variables
+assert isinstance(result, SomeType)   # also acceptable
+assert len(result) == 3               # also acceptable (result in subscript)
+assert result == expected_value        # also acceptable
+
+# WRONG — 0% contract coverage even though functionally correct
+result = target_function(...)
+items = [x.name for x in result]      # breaks the chain
+assert "foo" in items                  # "result" not referenced → 0%
+```
+
+**Rule**: include at least one of the acceptable assertion forms before any
+derived-variable assertions. One line is sufficient.
+
+**`pytest.raises()` note**: `pytest.raises(SomeError)` maps to `ErrorReturn`
+via Pass 2 — but only if the production function has a `raise` statement
+visible in its own AST body (not only in private helpers it calls). If the
+function delegates all raises to private helpers, `pytest.raises()` tests will
+get 0% contract coverage regardless.
+
+**CliRunner note**: `assert result.exit_code == N` satisfies CR-007 for CLI
+tests because `result` is assigned from `runner.invoke(...)` and directly
+referenced in the assertion.

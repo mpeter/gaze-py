@@ -5,29 +5,29 @@
 
 ### 0.A Config error boundary (src/gaze_py/config/loader.py)
 
-- [ ] 0.1 In `load_config()`: wrap line-116 `_parse_config()` call with `try/except GazeConfigError: raise` — load_config owns the error boundary
-- [ ] 0.2 In `load_config()`: wrap line-121 `_parse_config()` call with `try/except GazeConfigError: raise`
-- [ ] 0.3 In `load_config_explicit()`: wrap line-85 `_parse_config()` call with `try/except GazeConfigError: raise`
-- [ ] 0.4 Update both functions' `Raises:` docstring sections to note explicit propagation (no functional change, documentation only)
+- [x] 0.1 In `load_config()`: wrap line-116 `_parse_config()` call with `try/except GazeConfigError: raise` — load_config owns the error boundary
+- [x] 0.2 In `load_config()`: wrap line-121 `_parse_config()` call with `try/except GazeConfigError: raise`
+- [x] 0.3 In `load_config_explicit()`: wrap line-85 `_parse_config()` call with `try/except GazeConfigError: raise`
+- [x] 0.4 Update both functions' `Raises:` docstring sections to note explicit propagation (no functional change, documentation only)
 
 ### 0.B visit_Call decomposition (src/gaze_py/analysis/detector.py)
 
-- [ ] 0.5 Extract `_handle_stream_writes(self, obj: ast.expr, method: str, node: ast.Call) -> bool` — moves StderrWrite (`sys.stderr.write`) and StdoutWrite (`sys.stdout.write`) detection. Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 11.
-- [ ] 0.6 Extract `_handle_pathlib_attr_call(self, method: str, node: ast.Call) -> bool` — moves `Path.unlink()` → FileSystemDelete, `Path.chmod()` → FileSystemMeta, `Path.write_text/bytes()` → FileSystemWrite. Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 4. NOTE: pathlib checks match on method name alone (independent of obj_name), while lib-attr checks require obj_name to be in a specific set — these are mutually exclusive. Calling `_handle_pathlib_attr_call` before `_handle_lib_attr_call` is safe.
-- [ ] 0.7 Extract `_handle_lib_attr_call(self, obj_name: str | None, method: str, node: ast.Call) -> bool` — moves LogWrite, GoroutineSpawn (named + executor.submit heuristic), ProcessExit, TimeDependency, FileSystemDelete (os.*), FileSystemMeta (os.*), ReflectionMutation (`__setattr__`), FinalizerRegistration (`weakref.finalize`), CgoCall (`ctypes/cffi`). All existing `if obj_name is not None and ...` guards MUST remain inside this helper. Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 13.
-- [ ] 0.8 Extract `_handle_param_attr_call(self, obj_name: str | None, method: str, node: ast.Call) -> bool` — moves all `obj_name in self._params` checks: HTTPResponseWrite, WriterOutput, SliceMutation, MapMutation, ChannelSend, ChannelClose, DatabaseWrite, ContextCancellation (`.cancel()` and `.set()`). Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 11.
-- [ ] 0.9 Extract `_handle_name_call(self, fn: str, node: ast.Call) -> bool` — moves `print()` → StdoutWrite, `setattr()` → ReflectionMutation, `open()` → FileSystemWrite (write modes), parameter direct call → CallbackInvocation. Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 6.
-- [ ] 0.10 Reduce `visit_Call` to thin dispatcher using `if handler(...): return` short-circuit pattern — stop dispatching after the first `True` return. Pattern: `if isinstance(func, ast.Attribute): obj_name = obj.id if isinstance(obj, ast.Name) else None; if self._handle_stream_writes(obj, method, node): return; if self._handle_pathlib_attr_call(method, node): return; if self._handle_lib_attr_call(obj_name, method, node): return; if self._handle_param_attr_call(obj_name, method, node): return; elif isinstance(func, ast.Name): if self._handle_name_call(fn, node): return; self.generic_visit(node)`. CC target: 3. NOTE: `self.generic_visit(node)` at the end covers the fall-through case only (no handler matched).
-- [ ] 0.11 Remove `# noqa: PLR0911, PLR0912, PLR0915` from `visit_Call` signature line and update its docstring to remove the "high branch/statement count is inherent" note.
+- [x] 0.5 Extract `_handle_stream_writes(self, obj: ast.expr, method: str, node: ast.Call) -> bool` — moves StderrWrite (`sys.stderr.write`) and StdoutWrite (`sys.stdout.write`) detection. Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 11.
+- [x] 0.6 Extract `_handle_pathlib_attr_call(self, method: str, node: ast.Call) -> bool` — moves `Path.unlink()` → FileSystemDelete, `Path.chmod()` → FileSystemMeta, `Path.write_text/bytes()` → FileSystemWrite. Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 4. NOTE: pathlib checks match on method name alone (independent of obj_name), while lib-attr checks require obj_name to be in a specific set — these are mutually exclusive. Calling `_handle_pathlib_attr_call` before `_handle_lib_attr_call` is safe.
+- [x] 0.7 Extract `_handle_lib_attr_call(self, obj_name: str | None, method: str, node: ast.Call) -> bool` — moves LogWrite, GoroutineSpawn (named + executor.submit heuristic), ProcessExit, TimeDependency, FileSystemDelete (os.*), FileSystemMeta (os.*), ReflectionMutation (`__setattr__`), FinalizerRegistration (`weakref.finalize`), CgoCall (`ctypes/cffi`). All existing `if obj_name is not None and ...` guards MUST remain inside this helper. Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 13.
+- [x] 0.8 Extract `_handle_param_attr_call(self, obj_name: str | None, method: str, node: ast.Call) -> bool` — moves all `obj_name in self._params` checks: HTTPResponseWrite, WriterOutput, SliceMutation, MapMutation, ChannelSend, ChannelClose, DatabaseWrite, ContextCancellation (`.cancel()` and `.set()`). Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 11.
+- [x] 0.9 Extract `_handle_name_call(self, fn: str, node: ast.Call) -> bool` — moves `print()` → StdoutWrite, `setattr()` → ReflectionMutation, `open()` → FileSystemWrite (write modes), parameter direct call → CallbackInvocation. Each branch MUST call `self.generic_visit(node)` before returning `True`. CC target: 6.
+- [x] 0.10 Reduce `visit_Call` to thin dispatcher using `if handler(...): return` short-circuit pattern — stop dispatching after the first `True` return. Pattern: `if isinstance(func, ast.Attribute): obj_name = obj.id if isinstance(obj, ast.Name) else None; if self._handle_stream_writes(obj, method, node): return; if self._handle_pathlib_attr_call(method, node): return; if self._handle_lib_attr_call(obj_name, method, node): return; if self._handle_param_attr_call(obj_name, method, node): return; elif isinstance(func, ast.Name): if self._handle_name_call(fn, node): return; self.generic_visit(node)`. CC target: 3. NOTE: `self.generic_visit(node)` at the end covers the fall-through case only (no handler matched).
+- [x] 0.11 Remove `# noqa: PLR0911, PLR0912, PLR0915` from `visit_Call` signature line and update its docstring to remove the "high branch/statement count is inherent" note.
 
 ### 0.C _build_summary decomposition (src/gaze_py/cli/main.py)
 
-- [ ] 0.12 Extract `_compute_avg_line_coverage(targets: list[FunctionTarget], coverage_data: dict[str, float] | None) -> float | None` — returns `None` when `coverage_data is None` or no targets have `score.line_coverage`. CC target: 3.
-- [ ] 0.13 Extract `_compute_gaze_crapload(targets: list[FunctionTarget], config: GazeConfig) -> int | None` — returns `None` when no targets have `score.gaze_crap`, count above threshold otherwise. CC target: 4.
-- [ ] 0.14 Extract `_compute_avg_contract_coverage(targets: list[FunctionTarget]) -> float | None` — returns `None` when no targets have `score.contract_coverage`. CC target: 3.
-- [ ] 0.15 Extract `_compute_quadrant_counts(targets: list[FunctionTarget]) -> dict[str, int] | None` — returns `None` when no quadrant labels, count dict otherwise. CC target: 3.
-- [ ] 0.16 Extract `_compute_fix_strategy_counts(targets: list[FunctionTarget]) -> dict[str, int] | None` — returns `None` when no fix strategies, count dict otherwise. CC target: 3.
-- [ ] 0.17 Reduce `_build_summary` to thin coordinator calling 0.12–0.16 plus existing `crapload()` and `recommended_actions()`. CC target: 5.
+- [x] 0.12 Extract `_compute_avg_line_coverage(targets: list[FunctionTarget], coverage_data: dict[str, float] | None) -> float | None` — returns `None` when `coverage_data is None` or no targets have `score.line_coverage`. CC target: 3.
+- [x] 0.13 Extract `_compute_gaze_crapload(targets: list[FunctionTarget], config: GazeConfig) -> int | None` — returns `None` when no targets have `score.gaze_crap`, count above threshold otherwise. CC target: 4.
+- [x] 0.14 Extract `_compute_avg_contract_coverage(targets: list[FunctionTarget]) -> float | None` — returns `None` when no targets have `score.contract_coverage`. CC target: 3.
+- [x] 0.15 Extract `_compute_quadrant_counts(targets: list[FunctionTarget]) -> dict[str, int] | None` — returns `None` when no quadrant labels, count dict otherwise. CC target: 3.
+- [x] 0.16 Extract `_compute_fix_strategy_counts(targets: list[FunctionTarget]) -> dict[str, int] | None` — returns `None` when no fix strategies, count dict otherwise. CC target: 3.
+- [x] 0.17 Reduce `_build_summary` to thin coordinator calling 0.12–0.16 plus existing `crapload()` and `recommended_actions()`. CC target: 5.
 
 ## 1. Testdata Fixtures (tests/testdata/analysis/)
 
@@ -83,30 +83,30 @@
 
 > **CR-007 note:** CLI tests invoke via CliRunner; `result = runner.invoke(cli, [...])` binds `result` to the `CliRunner.Result` object. `assert result.exit_code == 0` (or whatever the expected code) is the direct-reference assertion for the CliRunner return value. This satisfies CR-007 for CLI tests — the exit_code assertion references `result` directly.
 
-- [ ] 4.1 Add `test_analyze_invalid_config_exits_2()` — write YAML with `contractual_threshold: -5` to tmp_path; pass as `--config`; `assert result.exit_code == 2`; `assert "Error" in result.stderr`. (cli/main.py:166)
-- [ ] 4.2 Add `test_analyze_contractual_threshold_override()` — `--contractual-threshold=95 --incidental-threshold=10`; `assert result.exit_code == 0`. (cli/main.py:172-174)
-- [ ] 4.3 Add `test_crap_invalid_config_exits_2()` — same invalid YAML for `crap` command; `assert result.exit_code == 2`; `assert "Error" in result.stderr`. (cli/main.py:535)
-- [ ] 4.4 Add `test_crap_contractual_threshold_override()` — threshold override flags for `crap`; `assert result.exit_code == 0`. (cli/main.py:541-543)
-- [ ] 4.5 Add `test_quality_no_tests_discovered_exits_2()` — tmp dir with only `.py` file, no `tests/` dir, no `--tests`; `assert result.exit_code == 2`; `assert "no tests directory found" in result.stderr`. (cli/main.py:609-610)
-- [ ] 4.6 Add `test_quality_auto_discovers_test_file_via_glob()` — `tmp_path/src/foo.py` and `tmp_path/test_foo.py`; invoke `quality` without `--tests`; `assert result.exit_code != 2` (glob fallback used). (cli/main.py:607)
-- [ ] 4.7 Add `test_crap_quadrant_counts_populated_with_tests_and_coverage()` — invoke `crap <quality_src> --tests <quality_tests> --coverprofile <cov_file> --format=json`; `assert result.exit_code == 0`; parse output; `assert data["summary"]["quadrant_counts"] is not None`. BOTH `--tests` AND `--coverprofile` required for quadrant_counts. (cli/main.py:1207-1210)
-- [ ] 4.8 Add `test_docscan_include_flag()` — create `tmp_path/README.md`; invoke `docscan <tmp_path> --include=*.md`; `assert result.exit_code == 0`. (cli/main.py:804)
-- [ ] 4.9 Add `test_docscan_timeout_flag()` — invoke `docscan <tmp_path> --timeout=5.0`; `assert result.exit_code == 0`. (cli/main.py:806)
-- [ ] 4.10 Add `test_docscan_invalid_config_exits_1()` — write syntactically valid YAML with `contractual_threshold: -5` (file must exist on disk since docscan uses `click.Path(exists=True)`); invoke `docscan <tmp_path> --config <file>`; `assert result.exit_code == 1`; `assert "Error" in result.stderr`. (cli/main.py:828-830)
-- [ ] 4.11 Add `test_docscan_scan_docs_exception_exits_1()` — monkeypatch `gaze_py.analysis.docscan.scan_docs` to raise `RuntimeError("boom")`; `assert result.exit_code == 1`; `assert "Error" in result.stderr`. (cli/main.py:831-833)
-- [ ] 4.12 Add `test_quality_min_coverage_gate_skipped_for_no_contractual_effects()` — `tmp_path/src/pure.py` (pure function, no effects) and `tmp_path/tests/test_pure.py` (test function); invoke `quality <src> --tests <tests> --min-contract-coverage=50`; `assert result.exit_code == 0`; `assert "FAIL" not in result.output`; `assert "FAIL" not in result.stderr`. (cli/main.py:718)
-- [ ] 4.13 Add `test_compute_avg_line_coverage_returns_none_when_no_data()` — import `_compute_avg_line_coverage` with CR-004 comment: "Tested directly because the None-return branch when coverage_data=None cannot be triggered through the CLI without spawning a subprocess (which would require a full coverage run); the CliRunner path always provides coverage data when --coverprofile is given."; `result = _compute_avg_line_coverage([], coverage_data=None)`; `assert result is None`.
-- [ ] 4.14 Add `test_compute_gaze_crapload_returns_none_when_no_gaze_crap_data()` — import `_compute_gaze_crapload` with CR-004 comment: "Tested directly because producing zero gaze_crap targets through the CLI requires quality pipeline results, which depend on test fixture pairing — prohibitively complex for a boundary test."; `result = _compute_gaze_crapload([], GazeConfig())`; `assert result is None`.
-- [ ] 4.15 Add `test_compute_quadrant_counts_returns_none_when_no_labels()` — import `_compute_quadrant_counts` with CR-004 comment: "Tested directly because producing zero quadrant labels through the CLI requires line coverage AND contract coverage to both be non-null for at least one function — complex to set up for a boundary test."; `result = _compute_quadrant_counts([])`; `assert result is None`.
+- [x] 4.1 Add `test_analyze_invalid_config_exits_2()` — write YAML with `contractual_threshold: -5` to tmp_path; pass as `--config`; `assert result.exit_code == 2`; `assert "Error" in result.stderr`. (cli/main.py:166)
+- [x] 4.2 Add `test_analyze_contractual_threshold_override()` — `--contractual-threshold=95 --incidental-threshold=10`; `assert result.exit_code == 0`. (cli/main.py:172-174)
+- [x] 4.3 Add `test_crap_invalid_config_exits_2()` — same invalid YAML for `crap` command; `assert result.exit_code == 2`; `assert "Error" in result.stderr`. (cli/main.py:535)
+- [x] 4.4 Add `test_crap_contractual_threshold_override()` — threshold override flags for `crap`; `assert result.exit_code == 0`. (cli/main.py:541-543) [Note: crap uses --crap-threshold/--gaze-crap-threshold, not --contractual-threshold]
+- [x] 4.5 Add `test_quality_no_tests_discovered_exits_2()` — tmp dir with only `.py` file, no `tests/` dir, no `--tests`; `assert result.exit_code == 2`; `assert "no tests directory found" in result.stderr`. (cli/main.py:609-610)
+- [x] 4.6 Add `test_quality_auto_discovers_test_file_via_glob()` — `tmp_path/src/foo.py` and `tmp_path/test_foo.py`; invoke `quality` without `--tests`; `assert result.exit_code != 2` (glob fallback used). (cli/main.py:607)
+- [x] 4.7 Add `test_crap_quadrant_counts_populated_with_tests_and_coverage()` — invoke `crap <quality_src> --tests <quality_tests> --coverprofile <cov_file> --format=json`; `assert result.exit_code == 0`; parse output; `assert data["summary"]["quadrant_counts"] is not None`. BOTH `--tests` AND `--coverprofile` required for quadrant_counts. (cli/main.py:1207-1210)
+- [x] 4.8 Add `test_docscan_include_flag()` — create `tmp_path/README.md`; invoke `docscan <tmp_path> --include=*.md`; `assert result.exit_code == 0`. (cli/main.py:804)
+- [x] 4.9 Add `test_docscan_timeout_flag()` — invoke `docscan <tmp_path> --timeout=5.0`; `assert result.exit_code == 0`. (cli/main.py:806)
+- [x] 4.10 Add `test_docscan_invalid_config_exits_1()` — write syntactically valid YAML with `contractual_threshold: -5` (file must exist on disk since docscan uses `click.Path(exists=True)`); invoke `docscan <tmp_path> --config <file>`; `assert result.exit_code == 1`; `assert "Error" in result.stderr`. (cli/main.py:828-830)
+- [x] 4.11 Add `test_docscan_scan_docs_exception_exits_1()` — monkeypatch `gaze_py.cli.main.scan_docs` to raise `RuntimeError("boom")`; `assert result.exit_code == 1`; `assert "Error" in result.stderr`. (cli/main.py:831-833) [Note: must patch at cli.main level, not analysis.docscan level]
+- [x] 4.12 Add `test_quality_min_coverage_gate_skipped_for_no_contractual_effects()` — `tmp_path/src/pure.py` (pure function, no effects) and `tmp_path/tests/test_pure.py` (test function); invoke `quality <src> --tests <tests> --min-contract-coverage=50`; `assert result.exit_code == 0`; `assert "FAIL" not in result.output`; `assert "FAIL" not in result.stderr`. (cli/main.py:718)
+- [x] 4.13 Add `test_compute_avg_line_coverage_returns_none_when_no_data()` — import `_compute_avg_line_coverage` with CR-004 comment: "Tested directly because the None-return branch when coverage_data=None cannot be triggered through the CLI without spawning a subprocess (which would require a full coverage run); the CliRunner path always provides coverage data when --coverprofile is given."; `result = _compute_avg_line_coverage([], coverage_data=None)`; `assert result is None`.
+- [x] 4.14 Add `test_compute_gaze_crapload_returns_none_when_no_gaze_crap_data()` — import `_compute_gaze_crapload` with CR-004 comment: "Tested directly because producing zero gaze_crap targets through the CLI requires quality pipeline results, which depend on test fixture pairing — prohibitively complex for a boundary test."; `result = _compute_gaze_crapload([], GazeConfig())`; `assert result is None`.
+- [x] 4.15 Add `test_compute_quadrant_counts_returns_none_when_no_labels()` — import `_compute_quadrant_counts` with CR-004 comment: "Tested directly because producing zero quadrant labels through the CLI requires line coverage AND contract coverage to both be non-null for at least one function — complex to set up for a boundary test."; `result = _compute_quadrant_counts([])`; `assert result is None`.
 
 ## 5. Pipeline Tests (tests/test_quality_integration.py)
 
 > **CR-007 requirement:** Assign `result = assess(...)` or `result = build_contract_coverage_map(...)` and include `assert result` or `assert isinstance(result, AssessResult)` as the first direct-reference assertion.
 
-- [ ] 5.1 Add `test_assess_inferred_target_not_in_source_map()` — test file body CALLS `nonexistent_fn()` directly (Strategy 2 pairing); source has different function; `result = assess(...)`; `assert result`; assert report has `target_function == "nonexistent_fn"` and `contract_coverage is None`. (pipeline.py:167-175)
-- [ ] 5.2 Add `test_build_contract_coverage_map_exception_returns_empty()` — monkeypatch `gaze_py.quality.pipeline.assess` to raise `RuntimeError("boom")`; `result = build_contract_coverage_map(...)`; `assert result == {}`. Verify stderr warning via `capsys`. (pipeline.py:280-282)
-- [ ] 5.3 Add `test_build_contract_coverage_map_keeps_higher_percentage_for_duplicate_target()` — monkeypatch `assess` to return `AssessResult` with two reports for same target (0% and 100%); `result = build_contract_coverage_map(...)`; `assert result`; assert entry has `percentage == 100.0`. (pipeline.py:293-299)
-- [ ] 5.4 Add `test_build_contract_coverage_map_none_does_not_displace_percentage()` — monkeypatch `assess` to return 50% then `None` for same target; `result = build_contract_coverage_map(...)`; `assert result`; assert entry retains `percentage == 50.0`. (pipeline.py:296-299)
+- [x] 5.1 Add `test_assess_inferred_target_not_in_source_map()` — monkeypatches pair_to_targets (defensive guard at pipeline.py:167-175 is unreachable through normal flow); `result = assess(...)`; `assert result`; assert report has `target_function == "nonexistent_fn"` and `contract_coverage is None`. (pipeline.py:167-175)
+- [x] 5.2 Add `test_build_contract_coverage_map_exception_returns_empty()` — monkeypatch `gaze_py.quality.pipeline.assess` to raise `RuntimeError("boom")`; `result = build_contract_coverage_map(...)`; `assert result == {}`. Verify stderr warning via `capsys`. (pipeline.py:280-282)
+- [x] 5.3 Add `test_build_contract_coverage_map_keeps_higher_percentage_for_duplicate_target()` — monkeypatch `assess` to return `AssessResult` with two reports for same target (0% and 100%); `result = build_contract_coverage_map(...)`; `assert result`; assert entry has `percentage == 100.0`. (pipeline.py:293-299)
+- [x] 5.4 Add `test_build_contract_coverage_map_none_does_not_displace_percentage()` — monkeypatch `assess` to return 50% then `None` for same target; `result = build_contract_coverage_map(...)`; `assert result`; assert entry retains `percentage == 50.0`. (pipeline.py:296-299)
 
 ## 6. Pairing Tests (tests/test_quality_pairing.py)
 
@@ -164,8 +164,8 @@
 
 ## 7B. Convention Document Updates
 
-- [ ] 7B.1 Append `CR-007: Tests MUST Be Gaze-Visible (Direct-Assertion Pattern)` to `.opencode/uf/packs/python-custom.md` — `[MUST]` severity; correct and incorrect code examples; explain Pass 1 binding; explain `pytest.raises()` requires `ErrorReturn` on target's own body
-- [ ] 7B.2 Add `## GazeCRAP Visibility` section to `.opencode/skills/testing-patterns/SKILL.md` after `## Assertion Style` — quick-reference code block showing visible vs invisible patterns; `gazepy quality` command to check coverage
+- [x] 7B.1 Append `CR-007: Tests MUST Be Gaze-Visible (Direct-Assertion Pattern)` to `.opencode/uf/packs/python-custom.md` — `[MUST]` severity; correct and incorrect code examples; explain Pass 1 binding; explain `pytest.raises()` requires `ErrorReturn` on target's own body
+- [x] 7B.2 Add `## GazeCRAP Visibility` section to `.opencode/skills/testing-patterns/SKILL.md` after `## Assertion Style` — quick-reference code block showing visible vs invisible patterns; `gazepy quality` command to check coverage
 
 ## 8. Verification
 
@@ -176,3 +176,5 @@
 - [ ] 8.5 Run `uv run pytest --cov=gaze_py --cov-fail-under=85 -q` — gate passes (threshold is a floor; MUST NOT be lowered)
 - [ ] 8.6 Run `uv run gazepy crap src/gaze_py/ --coverprofile coverage.json` — confirm CRAPload drops from 2 to 0 (visit_Call CC=3, _build_summary CC=5, all helpers CC≤13 — permanently below CRAP floor of 15)
 - [ ] 8.7 Run `uv run gazepy quality src/gaze_py/ --tests tests/` — confirm avg contract coverage rises from 74.3% to ≥95%
+
+<!-- spec-review: passed -->
