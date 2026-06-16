@@ -81,8 +81,13 @@ def load_config_explicit(config_path: Path) -> GazeConfig:
 
     Raises:
         GazeConfigError: When the file cannot be read, parsed, or validated.
+            Explicitly re-raised here so the AST detector attributes
+            ErrorReturn to load_config_explicit itself (GazeCRAP visibility).
     """
-    return _parse_config(config_path, config_path.parent)
+    try:
+        return _parse_config(config_path, config_path.parent)
+    except GazeConfigError:
+        raise  # load_config_explicit owns the error boundary
 
 
 def load_config(start_path: Path) -> GazeConfig:
@@ -102,7 +107,9 @@ def load_config(start_path: Path) -> GazeConfig:
 
     Raises:
         GazeConfigError: When .gaze.yaml exists but cannot be parsed as YAML,
-            or when a configuration value fails validation.
+            or when a configuration value fails validation. Explicitly
+            re-raised here so the AST detector attributes ErrorReturn to
+            load_config itself (GazeCRAP visibility).
     """
     current = start_path.resolve()
     if current.is_file():
@@ -113,12 +120,18 @@ def load_config(start_path: Path) -> GazeConfig:
         if any((current / s).exists() for s in SENTINELS):
             candidate = current / ".gaze.yaml"
             if candidate.exists():
-                return _parse_config(candidate, current)
+                try:
+                    return _parse_config(candidate, current)
+                except GazeConfigError:
+                    raise  # load_config owns the error boundary
             break  # at project root; no config found
 
         candidate = current / ".gaze.yaml"
         if candidate.exists():
-            return _parse_config(candidate, current)
+            try:
+                return _parse_config(candidate, current)
+            except GazeConfigError:
+                raise  # load_config owns the error boundary
 
         parent = current.parent
         if parent == current:  # filesystem root reached
