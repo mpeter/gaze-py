@@ -727,12 +727,7 @@ def test_deferred_return_mutation_not_produced_without_finally(tmp_path: Path) -
     """EC-002: try/except without finally → no DeferredReturnMutation."""
     src = tmp_path / "example.py"
     src.write_text(
-        "def f():\n"
-        "    x = 1\n"
-        "    try:\n"
-        "        return x\n"
-        "    except Exception:\n"
-        "        pass\n"
+        "def f():\n    x = 1\n    try:\n        return x\n    except Exception:\n        pass\n"
     )
     targets = FileDetector.detect(src, root=tmp_path)
     assert targets  # confirms file was parsed
@@ -749,12 +744,7 @@ def test_deferred_return_mutation_via_finally_augassign(tmp_path: Path) -> None:
     """
     src = tmp_path / "example.py"
     src.write_text(
-        "def f():\n"
-        "    x = 1\n"
-        "    try:\n"
-        "        return x\n"
-        "    finally:\n"
-        "        x += 1\n"
+        "def f():\n    x = 1\n    try:\n        return x\n    finally:\n        x += 1\n"
     )
     targets = FileDetector.detect(src, root=tmp_path)
     assert targets
@@ -784,7 +774,7 @@ def test_finally_nonmatching_name_produces_no_deferred_mutation(tmp_path: Path) 
     assert targets  # parse succeeded
     all_effects = [e for t in targets for e in t.effects]
     assert not any(e.type == SideEffectType.DeferredReturnMutation for e in all_effects), (
-        f"Unexpected DeferredReturnMutation (z not in return names): {[e.type for e in all_effects]}"
+        f"Unexpected DeferredReturnMutation (no overlap): {[e.type for e in all_effects]}"
     )
 
 

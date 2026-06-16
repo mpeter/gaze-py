@@ -693,12 +693,14 @@ class _FunctionVisitor(ast.NodeVisitor):
 
         return False
 
-    def _handle_lib_attr_call(  # noqa: PLR0911
+    def _handle_goroutine_process_time(
         self, obj_name: str | None, method: str, node: ast.Call
     ) -> bool:
-        """Detect library attribute call effects (logging, threading, os, etc.).
+        """Detect goroutine spawn, process exit, and time dependency effects.
 
-        All obj_name guards remain inside this helper per spec requirement.
+        Extracted from ``_handle_lib_attr_call`` to reduce its cyclomatic
+        complexity.  Handles the four compound-condition branches that each
+        require an ``obj_name is not None`` guard before a set-membership test.
 
         Args:
             obj_name: The object name if the receiver is a simple Name, else None.
@@ -706,18 +708,8 @@ class _FunctionVisitor(ast.NodeVisitor):
             node: The full ast.Call node.
 
         Returns:
-            True when a library attribute effect was detected and added.
+            True when an effect was detected and added.
         """
-        # LogWrite: logging.info/debug/warning/error/critical/log(...)
-        if obj_name in _LOG_NAMES:
-            self._add(
-                SideEffectType.LogWrite,
-                node,
-                f"Function writes a log entry via {obj_name}.{method}()",
-            )
-            self.generic_visit(node)
-            return True
-
         # GoroutineSpawn: threading.Thread, asyncio.create_task, etc.
         if obj_name is not None and (obj_name, method) in _GOROUTINE_SPAWN_CALLS:
             self._add(
@@ -758,6 +750,39 @@ class _FunctionVisitor(ast.NodeVisitor):
                 f"Function reads the current time via {obj_name}.{method}()",
             )
             self.generic_visit(node)
+            return True
+
+        return False
+
+    def _handle_lib_attr_call(  # noqa: PLR0911
+        self, obj_name: str | None, method: str, node: ast.Call
+    ) -> bool:
+        """Detect library attribute call effects (logging, threading, os, etc.).
+
+        All obj_name guards remain inside this helper per spec requirement.
+        Goroutine spawn, process exit, and time dependency detection are
+        delegated to ``_handle_goroutine_process_time`` to keep CC ≤ 10.
+
+        Args:
+            obj_name: The object name if the receiver is a simple Name, else None.
+            method: The method name being called.
+            node: The full ast.Call node.
+
+        Returns:
+            True when a library attribute effect was detected and added.
+        """
+        # LogWrite: logging.info/debug/warning/error/critical/log(...)
+        if obj_name in _LOG_NAMES:
+            self._add(
+                SideEffectType.LogWrite,
+                node,
+                f"Function writes a log entry via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # Delegate goroutine/process/time detection to reduce CC.
+        if self._handle_goroutine_process_time(obj_name, method, node):
             return True
 
         # FileSystemDelete: os.remove, os.unlink, shutil.rmtree
