@@ -31,53 +31,53 @@
 
 ## 1. Testdata Fixtures (tests/testdata/analysis/)
 
-- [x] 1.1 Create `reflection_mutation_setattr.py` — `def f(obj): setattr(obj, "x", 1)`
-- [x] 1.2 Create `reflection_mutation_dunder.py` — `def f(obj): obj.__setattr__("x", 1)`
-- [x] 1.3 Create `goroutine_spawn_executor.py` — `def f(fn): executor.submit(fn)` with `# ruff: noqa: F821` header and comment: "executor is a bare name matching the GoroutineSpawn heuristic set. Parsed as AST only, never executed."
-- [x] 1.4 Create `finalizer_registration.py` — `import weakref; def f(obj, cb): weakref.finalize(obj, cb)`
-- [x] 1.5 Create `cgo_call.py` — `import ctypes; def f(): ctypes.cdll.LoadLibrary("lib.so")`
-- [x] 1.6 Create `filesystem_pathlib_delete.py` — `def f(p): p.unlink()` (supplements existing `filesystem_delete.py`)
-- [x] 1.7 Create `filesystem_pathlib_meta.py` — `def f(p): p.chmod(0o755)` (supplements existing `filesystem_meta.py`)
-- [x] 1.8 Create `filesystem_pathlib_write.py` — `def f_text(p): p.write_text("x")` and `def f_bytes(p): p.write_bytes(b"x")` in single file (supplements existing `filesystem_write.py`)
-- [x] 1.9 Create `context_cancellation_event.py` — `def f(event): event.set()` (covers `.set()` branch; distinct from existing `.cancel()` branch in `context_cancellation.py`)
-- [x] 1.10 Create `stdout_write_sys.py` — `import sys; def f(): sys.stdout.write("x")` (covers `sys.stdout.write()` attribute-call path; distinct from `print()` path in `stdout_write.py`)
-- [x] 1.11 Create `global_mutation_simple_assign.py` — `COUNTER = 0; def f(): global COUNTER; COUNTER = 99` (covers `visit_Assign` GlobalMutation branch at detector.py:530; distinct from existing `global_mutation.py` which covers `visit_AugAssign`)
-- [x] 1.12 Create `receiver_mutation_augassign.py` — class with method `def m(self): self.x += 1` (covers `visit_AugAssign` ReceiverMutation branch at detector.py:547; distinct from existing `receiver_mutation.py`)
+- [ ] 1.1 Create `reflection_mutation_setattr.py` — `def f(obj): setattr(obj, "x", 1)`
+- [ ] 1.2 Create `reflection_mutation_dunder.py` — `def f(obj): obj.__setattr__("x", 1)`
+- [ ] 1.3 Create `goroutine_spawn_executor.py` — `def f(fn): executor.submit(fn)` with `# ruff: noqa: F821` header and comment: "executor is a bare name matching the GoroutineSpawn heuristic set. Parsed as AST only, never executed."
+- [ ] 1.4 Create `finalizer_registration.py` — `import weakref; def f(obj, cb): weakref.finalize(obj, cb)`
+- [ ] 1.5 Create `cgo_call.py` — `import ctypes; def f(): ctypes.cdll.LoadLibrary("lib.so")`
+- [ ] 1.6 Create `filesystem_pathlib_delete.py` — `def f(p): p.unlink()` (supplements existing `filesystem_delete.py`)
+- [ ] 1.7 Create `filesystem_pathlib_meta.py` — `def f(p): p.chmod(0o755)` (supplements existing `filesystem_meta.py`)
+- [ ] 1.8 Create `filesystem_pathlib_write.py` — `def f_text(p): p.write_text("x")` and `def f_bytes(p): p.write_bytes(b"x")` in single file (supplements existing `filesystem_write.py`)
+- [ ] 1.9 Create `context_cancellation_event.py` — `def f(event): event.set()` (covers `.set()` branch; distinct from existing `.cancel()` branch in `context_cancellation.py`)
+- [ ] 1.10 Create `stdout_write_sys.py` — `import sys; def f(): sys.stdout.write("x")` (covers `sys.stdout.write()` attribute-call path; distinct from `print()` path in `stdout_write.py`)
+- [ ] 1.11 Create `global_mutation_simple_assign.py` — `COUNTER = 0; def f(): global COUNTER; COUNTER = 99` (covers `visit_Assign` GlobalMutation branch at detector.py:530; distinct from existing `global_mutation.py` which covers `visit_AugAssign`)
+- [ ] 1.12 Create `receiver_mutation_augassign.py` — class with method `def m(self): self.x += 1` (covers `visit_AugAssign` ReceiverMutation branch at detector.py:547; distinct from existing `receiver_mutation.py`)
 
 ## 2. Detector Tests (tests/test_detector.py)
 
 > **CR-007 requirement:** Every new test MUST assign the return value of `FileDetector.detect()` to `targets` and include `assert targets` as the first assertion before any derived-variable assertions.
 
-- [x] 2.1 Add `test_filesystem_pathlib_delete_detected()` — fixture 1.6, `assert targets`, assert `FileSystemDelete` (EC-005)
-- [x] 2.2 Add `test_filesystem_pathlib_meta_detected()` — fixture 1.7, `assert targets`, assert `FileSystemMeta` (EC-005)
-- [x] 2.3 Add `@pytest.mark.parametrize("method", ["write_text", "write_bytes"]) def test_filesystem_pathlib_write_detected(method)` — fixture 1.8, `assert targets`, assert `FileSystemWrite` (EC-005; TC-005 MUST)
-- [x] 2.4 Add `@pytest.mark.parametrize("fixture", ["reflection_mutation_setattr.py", "reflection_mutation_dunder.py"]) def test_reflection_mutation_detected(fixture)` — `assert targets`, assert `ReflectionMutation` (EC-005; TC-005 MUST)
-- [x] 2.5 Add `test_goroutine_spawn_executor_detected()` — fixture 1.3, `assert targets`, assert `GoroutineSpawn` (EC-005)
-- [x] 2.6 Add `test_finalizer_registration_detected()` — fixture 1.4, `assert targets`, assert `FinalizerRegistration` (EC-005)
-- [x] 2.7 Add `test_cgo_call_detected()` — fixture 1.5, `assert targets`, assert `CgoCall` (EC-005)
-- [x] 2.8 Add `test_stdout_write_sys_write_detected()` — fixture 1.10, `assert targets`, assert `StdoutWrite` (EC-005)
-- [x] 2.9 Add `test_context_cancellation_event_set_detected()` — fixture 1.9, `assert targets`, assert `ContextCancellation`; cite detector.py lines 877-884 (EC-005)
-- [x] 2.10 Add `test_global_mutation_simple_assign_detected()` — fixture 1.11, `assert targets`, assert `GlobalMutation`; comment: "Covers visit_Assign branch (detector.py:530); distinct from test_global_mutation_detected() which covers visit_AugAssign" (EC-005)
-- [x] 2.11 Add `test_receiver_mutation_augmented_assign_detected()` — fixture 1.12, `assert targets`, assert `ReceiverMutation`; cite detector.py line 547 (EC-005)
-- [x] 2.12 Add `test_open_keyword_mode_produces_filesystem_write()` — inline `def f(path): open(path, mode="w")`, `assert targets`, assert `FileSystemWrite`. Covers `_extract_open_mode` keyword path (detector.py:1074-1077).
-- [x] 2.13 Add `test_vararg_param_triggers_slice_mutation_detection()` — source `def f(*args): args.append(1)`, `assert targets`, assert `SliceMutation`. CR-004 comment: `_extract_params` tested indirectly — `*args` capture only observable via effect detection.
-- [x] 2.14 Add `test_kwarg_param_triggers_map_mutation_detection()` — source `def f(**kwargs): kwargs.update({"x": 1})`, `assert targets`, assert `MapMutation`. Same CR-004 comment.
-- [x] 2.15 Add `test_detect_raises_gaze_parse_error_on_unreadable_file()` — create tmp file, probe-skip if chmod not enforced, `chmod 000`, `try/finally` restores `chmod(0o644)`, assert `pytest.raises(GazeParseError)`.
-- [x] 2.16 Add `test_detect_uses_filename_when_path_outside_root()` — `root = tmp_path.parent / "nonexistent_sibling"` (portable). `assert targets`; assert `any(t.file_path == path.name for t in targets)` (order-independent; consistent with existing detector test pattern).
-- [x] 2.17 Add `test_deferred_return_mutation_not_produced_without_finally()` — inline `try/except` with no `finally`. `assert targets` first; then assert no `DeferredReturnMutation`.
-- [x] 2.18 Add `test_deferred_return_mutation_via_finally_augassign()` — inline `try: return x; finally: x += 1`. `assert targets`; assert `DeferredReturnMutation`. Covers detector.py:1000-1001.
-- [x] 2.19 Add `test_finally_nonmatching_name_produces_no_deferred_mutation()` — inline `try: return y; except Exception as e: return e; finally: z = 0`. `assert targets`; assert no `DeferredReturnMutation`. Covers handler-body recursion (detector.py:1042).
-- [x] 2.20 Add `test_closure_capture_mutation_via_augmented_assign()` — inline outer+inner with `nonlocal x; x += 1`. `assert targets`; assert `ClosureCaptureMutation`. Covers detector.py:1207-1220.
-- [x] 2.21 Add `test_caller_count_reflects_callers_map_value()` — `FileDetector.detect(path, root=ROOT, callers={"f": 5})`. `assert targets`; assert `targets[0].caller_count == 5`. Covers detector.py:1346.
+- [ ] 2.1 Add `test_filesystem_pathlib_delete_detected()` — fixture 1.6, `assert targets`, assert `FileSystemDelete` (EC-005)
+- [ ] 2.2 Add `test_filesystem_pathlib_meta_detected()` — fixture 1.7, `assert targets`, assert `FileSystemMeta` (EC-005)
+- [ ] 2.3 Add `@pytest.mark.parametrize("method", ["write_text", "write_bytes"]) def test_filesystem_pathlib_write_detected(method)` — fixture 1.8, `assert targets`, assert `FileSystemWrite` (EC-005; TC-005 MUST)
+- [ ] 2.4 Add `@pytest.mark.parametrize("fixture", ["reflection_mutation_setattr.py", "reflection_mutation_dunder.py"]) def test_reflection_mutation_detected(fixture)` — `assert targets`, assert `ReflectionMutation` (EC-005; TC-005 MUST)
+- [ ] 2.5 Add `test_goroutine_spawn_executor_detected()` — fixture 1.3, `assert targets`, assert `GoroutineSpawn` (EC-005)
+- [ ] 2.6 Add `test_finalizer_registration_detected()` — fixture 1.4, `assert targets`, assert `FinalizerRegistration` (EC-005)
+- [ ] 2.7 Add `test_cgo_call_detected()` — fixture 1.5, `assert targets`, assert `CgoCall` (EC-005)
+- [ ] 2.8 Add `test_stdout_write_sys_write_detected()` — fixture 1.10, `assert targets`, assert `StdoutWrite` (EC-005)
+- [ ] 2.9 Add `test_context_cancellation_event_set_detected()` — fixture 1.9, `assert targets`, assert `ContextCancellation`; cite detector.py lines 877-884 (EC-005)
+- [ ] 2.10 Add `test_global_mutation_simple_assign_detected()` — fixture 1.11, `assert targets`, assert `GlobalMutation`; comment: "Covers visit_Assign branch (detector.py:530); distinct from test_global_mutation_detected() which covers visit_AugAssign" (EC-005)
+- [ ] 2.11 Add `test_receiver_mutation_augmented_assign_detected()` — fixture 1.12, `assert targets`, assert `ReceiverMutation`; cite detector.py line 547 (EC-005)
+- [ ] 2.12 Add `test_open_keyword_mode_produces_filesystem_write()` — inline `def f(path): open(path, mode="w")`, `assert targets`, assert `FileSystemWrite`. Covers `_extract_open_mode` keyword path (detector.py:1074-1077).
+- [ ] 2.13 Add `test_vararg_param_triggers_slice_mutation_detection()` — source `def f(*args): args.append(1)`, `assert targets`, assert `SliceMutation`. CR-004 comment: `_extract_params` tested indirectly — `*args` capture only observable via effect detection.
+- [ ] 2.14 Add `test_kwarg_param_triggers_map_mutation_detection()` — source `def f(**kwargs): kwargs.update({"x": 1})`, `assert targets`, assert `MapMutation`. Same CR-004 comment.
+- [ ] 2.15 Add `test_detect_raises_gaze_parse_error_on_unreadable_file()` — create tmp file, probe-skip if chmod not enforced, `chmod 000`, `try/finally` restores `chmod(0o644)`, assert `pytest.raises(GazeParseError)`.
+- [ ] 2.16 Add `test_detect_uses_filename_when_path_outside_root()` — `root = tmp_path.parent / "nonexistent_sibling"` (portable). `assert targets`; assert `any(t.file_path == path.name for t in targets)` (order-independent; consistent with existing detector test pattern).
+- [ ] 2.17 Add `test_deferred_return_mutation_not_produced_without_finally()` — inline `try/except` with no `finally`. `assert targets` first; then assert no `DeferredReturnMutation`.
+- [ ] 2.18 Add `test_deferred_return_mutation_via_finally_augassign()` — inline `try: return x; finally: x += 1`. `assert targets`; assert `DeferredReturnMutation`. Covers detector.py:1000-1001.
+- [ ] 2.19 Add `test_finally_nonmatching_name_produces_no_deferred_mutation()` — inline `try: return y; except Exception as e: return e; finally: z = 0`. `assert targets`; assert no `DeferredReturnMutation`. Covers handler-body recursion (detector.py:1042).
+- [ ] 2.20 Add `test_closure_capture_mutation_via_augmented_assign()` — inline outer+inner with `nonlocal x; x += 1`. `assert targets`; assert `ClosureCaptureMutation`. Covers detector.py:1207-1220.
+- [ ] 2.21 Add `test_caller_count_reflects_callers_map_value()` — `FileDetector.detect(path, root=ROOT, callers={"f": 5})`. `assert targets`; assert `targets[0].caller_count == 5`. Covers detector.py:1346.
 
 ## 3. Complexity Tests (tests/test_complexity.py)
 
 > **CR-007 requirement:** Assign return value to `result` and include `assert result == N` as the primary assertion (satisfies both CR-007 and TC-008 specific-values requirement simultaneously).
 
-- [x] 3.1 Add `test_async_nested_function_scored_independently()` — use `ast.walk(module)` with name filters (NOT `_parse_first_fn()`); assert outer `result = cyclomatic_complexity(outer_node)` then `assert result == 1`; assert inner independently. (CX-002)
-- [x] 3.2 Add `test_set_comprehension_if_increments_complexity()` — `result = cyclomatic_complexity(fn)` for `{x for x in lst if x > 0}`; `assert result == 2`. (CX-002)
-- [x] 3.3 Add `test_dict_comprehension_if_increments_complexity()` — `result = cyclomatic_complexity(fn)` for `{k: v for k, v in d.items() if k}`; `assert result == 2`. (CX-002)
-- [x] 3.4 Add `test_generator_expression_if_increments_complexity()` — `result = cyclomatic_complexity(fn)` for `sum(x for x in lst if x)`; `assert result == 2`. (CX-002)
+- [ ] 3.1 Add `test_async_nested_function_scored_independently()` — use `ast.walk(module)` with name filters (NOT `_parse_first_fn()`); assert outer `result = cyclomatic_complexity(outer_node)` then `assert result == 1`; assert inner independently. (CX-002)
+- [ ] 3.2 Add `test_set_comprehension_if_increments_complexity()` — `result = cyclomatic_complexity(fn)` for `{x for x in lst if x > 0}`; `assert result == 2`. (CX-002)
+- [ ] 3.3 Add `test_dict_comprehension_if_increments_complexity()` — `result = cyclomatic_complexity(fn)` for `{k: v for k, v in d.items() if k}`; `assert result == 2`. (CX-002)
+- [ ] 3.4 Add `test_generator_expression_if_increments_complexity()` — `result = cyclomatic_complexity(fn)` for `sum(x for x in lst if x)`; `assert result == 2`. (CX-002)
 
 ## 4. CLI Tests (tests/test_cli.py)
 
@@ -112,55 +112,55 @@
 
 > **CR-007 requirement:** Assign return value and assert on it directly.
 
-- [x] 6.1 Add `test_find_project_root_falls_back_to_parent_when_no_markers()` — import `_find_project_root` directly with CR-004 comment; create file in tmp_path with no project-root markers above; `result = _find_project_root(some_file)`; `assert result == some_file.parent`.
-- [x] 6.2 Add `test_pair_astroid_filename_not_under_root_uses_stem()` — monkeypatch `gaze_py.quality.pairing._find_project_root` to return `tmp_path.parent / "nonexistent_sibling"` (portable); construct a minimal source_names set that includes the test file's stem; `result = _pair_astroid(test_func, source_names, graph={})`; `assert result is None` — when the stem matches nothing in source_names the function returns None without raising. If the stem happens to match, assert `isinstance(result, str)`. The key property is no `ValueError` is raised from the stem fallback path.
+- [ ] 6.1 Add `test_find_project_root_falls_back_to_parent_when_no_markers()` — import `_find_project_root` directly with CR-004 comment; create file in tmp_path with no project-root markers above; `result = _find_project_root(some_file)`; `assert result == some_file.parent`.
+- [ ] 6.2 Add `test_pair_astroid_filename_not_under_root_uses_stem()` — monkeypatch `gaze_py.quality.pairing._find_project_root` to return `tmp_path.parent / "nonexistent_sibling"` (portable); construct a minimal source_names set that includes the test file's stem; `result = _pair_astroid(test_func, source_names, graph={})`; `assert result is None` — when the stem matches nothing in source_names the function returns None without raising. If the stem happens to match, assert `isinstance(result, str)`. The key property is no `ValueError` is raised from the stem fallback path.
 
 ## 7. Formatter and Scorer Tests
 
 > **CR-007 requirement:** All new tests assign return values and assert directly on them.
 
-- [x] 7.1 Add `test_oc002_json_default_raises_type_error_for_unknown_type()` in `tests/test_output.py` — import `_json_default` with CR-004 comment; `with pytest.raises(TypeError)`. (`_json_default` HAS `ErrorReturn` visible in its own body, so Pass 2 works.) (OC-002)
-- [x] 7.2 Add `test_text_output_renders_strategy_when_set()` in `tests/test_output.py` — `output = to_text(result_with_strategy)`; `assert output`; `assert "add_tests" in output`. (SC-005)
-- [x] 7.3 Add `test_sc003_crapload_skips_unscored_targets()` in `tests/test_scorer.py` — construct `FunctionTarget` WITHOUT assigning `.score` (leave as default `None` — NOT `Score(crap=None)`); `result = crapload([target], threshold=0.5)`; `assert result == []`. Comment: "score is None — distinct from score.crap is None (covered by test_sc003_crapload_excludes_null_crap)". (SC-003)
-- [x] 7.4 Add `test_sc006_recommended_actions_skips_unscored_targets()` in `tests/test_scorer.py` — same `score=None` construction; `result = recommended_actions([target])`; `assert result == []`. (SC-006)
+- [ ] 7.1 Add `test_oc002_json_default_raises_type_error_for_unknown_type()` in `tests/test_output.py` — import `_json_default` with CR-004 comment; `with pytest.raises(TypeError)`. (`_json_default` HAS `ErrorReturn` visible in its own body, so Pass 2 works.) (OC-002)
+- [ ] 7.2 Add `test_text_output_renders_strategy_when_set()` in `tests/test_output.py` — `output = to_text(result_with_strategy)`; `assert output`; `assert "add_tests" in output`. (SC-005)
+- [ ] 7.3 Add `test_sc003_crapload_skips_unscored_targets()` in `tests/test_scorer.py` — construct `FunctionTarget` WITHOUT assigning `.score` (leave as default `None` — NOT `Score(crap=None)`); `result = crapload([target], threshold=0.5)`; `assert result == []`. Comment: "score is None — distinct from score.crap is None (covered by test_sc003_crapload_excludes_null_crap)". (SC-003)
+- [ ] 7.4 Add `test_sc006_recommended_actions_skips_unscored_targets()` in `tests/test_scorer.py` — same `score=None` construction; `result = recommended_actions([target])`; `assert result == []`. (SC-006)
 
 ## 7A. Existing Test Assertion Fixes (CR-007 — one line each)
 
 > Add exactly one direct-reference assertion line to each test. No other logic changes.
 > The assertion MUST appear immediately after the production function call.
 
-- [x] 7A.1 `test_scorer.py::test_sc003_crapload_returns_targets_above_threshold` — add `assert len(result) == 2` before `names = [t.name for t in result]`
-- [x] 7A.2 `test_scorer.py::test_sc006_recommended_actions_sort_order` — add `assert len(result) == 3` before `strategies = [r["strategy"] for r in result]`
-- [x] 7A.3 `test_scorer.py::test_sc006_recommended_actions_excludes_null_strategy` — add `assert result == []` (recommended_actions returns list, never None; this is more specific than `is not None`)
-- [x] 7A.4 `test_quality_integration.py::test_simple_fixture_full_coverage` — add `assert result` after `result = assess(...)`
-- [x] 7A.5 `test_quality_integration.py::test_raises_fixture_coverage` — add `assert result` after `result = assess(...)`
-- [x] 7A.6 `test_quality_integration.py::test_undertested_fixture_zero_coverage` — add `assert result` after `result = assess(...)`
-- [x] 7A.7 `test_quality_integration.py::test_attribute_mutation_fixture_coverage` — add `assert result` after `result = assess(...)`
-- [x] 7A.8 `test_quality_integration.py::test_assess_paired_functions_not_in_untested` — add `assert result` after `result = assess(...)`
-- [x] 7A.9 `test_quality_integration.py::test_assess_untested_test_function_is_empty_string` — add `assert result` after `result = assess(...)`
-- [x] 7A.10 `test_quality_integration.py::test_target_func_filtering` — add `assert isinstance(result, AssessResult)` after `result = assess(...)` (AssessResult is already imported; more specific than `is not None`)
-- [x] 7A.11 `test_quality_integration.py::test_target_func_no_match` — add `assert isinstance(result, AssessResult)` after `result = assess(...)`
-- [x] 7A.12 `test_quality_integration.py::test_empty_tests_path_returns_empty` — add `assert isinstance(result, AssessResult)` after `result = assess(...)` (test already asserts `result.reports == ()`; this adds the direct-reference for Pass 1)
-- [x] 7A.13 `test_quality_integration.py::test_nonexistent_tests_file_returns_empty` — add `assert isinstance(result, AssessResult)` after `result = assess(...)`
-- [x] 7A.14 `test_quality_pairing.py::test_find_test_functions` — add `assert isinstance(results, list)` before `names = [tf.name for tf in results]` (more specific than bare `assert results` which is falsy for empty list)
-- [x] 7A.15 `test_docscan.py::test_scan_docs_returns_sorted` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)` (list is never None; isinstance is more specific than `is not None`)
-- [x] 7A.16 `test_docscan.py::test_priority_assignment` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)`
-- [x] 7A.17 `test_docscan.py::test_exclude_filter` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)`
-- [x] 7A.18 `test_docscan.py::test_exclude_filter_glob_pattern` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)`
-- [x] 7A.19 `test_docscan.py::test_include_filter` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)`
-- [x] 7A.20 `test_docscan.py::test_detect_and_classify_passes_docs_text` — change bare `detect_and_classify(...)` call to `result = detect_and_classify(...); assert result`
-- [x] 7A.21 `test_output.py::test_oc002_json_function_has_required_fields` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.22 `test_output.py::test_oc002_json_summary_has_threshold_fields` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.23 `test_output.py::test_oc002_recommended_actions_entry_keys` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.24 `test_output.py::test_oc003_line_coverage_is_null_when_not_provided` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.25 `test_output.py::test_oc003_effect_confidence_range_is_null_key_present` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.26 `test_output.py::test_oc003_effect_confidence_range_serializes_as_list` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.27 `test_output.py::test_oc003_contract_coverage_reason_for_pure_function` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.28 `test_output.py::test_json_output_is_valid_json` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.29 `test_output.py::test_json_output_enum_values_are_strings` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.30 `test_output.py::test_json_output_tier_enum_is_string` — add `assert output` before `data = json.loads(output)`
-- [x] 7A.31 `test_output.py::test_text_output_one_line_per_function` — add `assert output` before `lines = [line for line in output.splitlines() ...]`
-- [x] 7A.32 `test_cli.py::test_quality_json_serializable` — add `assert config` immediately after `config = load_config(...)`
+- [ ] 7A.1 `test_scorer.py::test_sc003_crapload_returns_targets_above_threshold` — add `assert len(result) == 2` before `names = [t.name for t in result]`
+- [ ] 7A.2 `test_scorer.py::test_sc006_recommended_actions_sort_order` — add `assert len(result) == 3` before `strategies = [r["strategy"] for r in result]`
+- [ ] 7A.3 `test_scorer.py::test_sc006_recommended_actions_excludes_null_strategy` — add `assert result == []` (recommended_actions returns list, never None; this is more specific than `is not None`)
+- [ ] 7A.4 `test_quality_integration.py::test_simple_fixture_full_coverage` — add `assert result` after `result = assess(...)`
+- [ ] 7A.5 `test_quality_integration.py::test_raises_fixture_coverage` — add `assert result` after `result = assess(...)`
+- [ ] 7A.6 `test_quality_integration.py::test_undertested_fixture_zero_coverage` — add `assert result` after `result = assess(...)`
+- [ ] 7A.7 `test_quality_integration.py::test_attribute_mutation_fixture_coverage` — add `assert result` after `result = assess(...)`
+- [ ] 7A.8 `test_quality_integration.py::test_assess_paired_functions_not_in_untested` — add `assert result` after `result = assess(...)`
+- [ ] 7A.9 `test_quality_integration.py::test_assess_untested_test_function_is_empty_string` — add `assert result` after `result = assess(...)`
+- [ ] 7A.10 `test_quality_integration.py::test_target_func_filtering` — add `assert isinstance(result, AssessResult)` after `result = assess(...)` (AssessResult is already imported; more specific than `is not None`)
+- [ ] 7A.11 `test_quality_integration.py::test_target_func_no_match` — add `assert isinstance(result, AssessResult)` after `result = assess(...)`
+- [ ] 7A.12 `test_quality_integration.py::test_empty_tests_path_returns_empty` — add `assert isinstance(result, AssessResult)` after `result = assess(...)` (test already asserts `result.reports == ()`; this adds the direct-reference for Pass 1)
+- [ ] 7A.13 `test_quality_integration.py::test_nonexistent_tests_file_returns_empty` — add `assert isinstance(result, AssessResult)` after `result = assess(...)`
+- [ ] 7A.14 `test_quality_pairing.py::test_find_test_functions` — add `assert isinstance(results, list)` before `names = [tf.name for tf in results]` (more specific than bare `assert results` which is falsy for empty list)
+- [ ] 7A.15 `test_docscan.py::test_scan_docs_returns_sorted` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)` (list is never None; isinstance is more specific than `is not None`)
+- [ ] 7A.16 `test_docscan.py::test_priority_assignment` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)`
+- [ ] 7A.17 `test_docscan.py::test_exclude_filter` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)`
+- [ ] 7A.18 `test_docscan.py::test_exclude_filter_glob_pattern` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)`
+- [ ] 7A.19 `test_docscan.py::test_include_filter` — add `assert isinstance(entries, list)` after `entries = scan_docs(...)`
+- [ ] 7A.20 `test_docscan.py::test_detect_and_classify_passes_docs_text` — change bare `detect_and_classify(...)` call to `result = detect_and_classify(...); assert result`
+- [ ] 7A.21 `test_output.py::test_oc002_json_function_has_required_fields` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.22 `test_output.py::test_oc002_json_summary_has_threshold_fields` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.23 `test_output.py::test_oc002_recommended_actions_entry_keys` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.24 `test_output.py::test_oc003_line_coverage_is_null_when_not_provided` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.25 `test_output.py::test_oc003_effect_confidence_range_is_null_key_present` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.26 `test_output.py::test_oc003_effect_confidence_range_serializes_as_list` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.27 `test_output.py::test_oc003_contract_coverage_reason_for_pure_function` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.28 `test_output.py::test_json_output_is_valid_json` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.29 `test_output.py::test_json_output_enum_values_are_strings` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.30 `test_output.py::test_json_output_tier_enum_is_string` — add `assert output` before `data = json.loads(output)`
+- [ ] 7A.31 `test_output.py::test_text_output_one_line_per_function` — add `assert output` before `lines = [line for line in output.splitlines() ...]`
+- [ ] 7A.32 `test_cli.py::test_quality_json_serializable` — add `assert config` immediately after `config = load_config(...)`
 
 ## 7B. Convention Document Updates
 
@@ -169,14 +169,12 @@
 
 ## 8. Verification
 
-- [x] 8.1 Run `uv run ruff check .` — zero errors
-- [x] 8.2 Run `uv run ruff format --check .` — zero errors
-- [x] 8.3 Run `uv run mypy src/` — zero errors
-- [x] 8.4 Run `uv run pytest -m "not slow" -q` — all new and amended tests pass, no regressions
-- [x] 8.5 Run `uv run pytest --cov=gaze_py --cov-fail-under=85 -q` — gate passes (threshold is a floor; MUST NOT be lowered)
-- [x] 8.6 Run `uv run gazepy crap src/gaze_py/ --coverprofile coverage.json` — confirm CRAPload drops from 2 to 0 (visit_Call CC=3, _build_summary CC=5, all helpers CC≤13 — permanently below CRAP floor of 15)
-- [x] 8.7 Run `uv run gazepy quality src/gaze_py/ --tests tests/` — confirm avg contract coverage rises from 74.3% to ≥95%
+- [ ] 8.1 Run `uv run ruff check .` — zero errors
+- [ ] 8.2 Run `uv run ruff format --check .` — zero errors
+- [ ] 8.3 Run `uv run mypy src/` — zero errors
+- [ ] 8.4 Run `uv run pytest -m "not slow" -q` — all new and amended tests pass, no regressions
+- [ ] 8.5 Run `uv run pytest --cov=gaze_py --cov-fail-under=85 -q` — gate passes (threshold is a floor; MUST NOT be lowered)
+- [ ] 8.6 Run `uv run gazepy crap src/gaze_py/ --coverprofile coverage.json` — confirm CRAPload drops from 2 to 0 (visit_Call CC=3, _build_summary CC=5, all helpers CC≤13 — permanently below CRAP floor of 15)
+- [ ] 8.7 Run `uv run gazepy quality src/gaze_py/ --tests tests/` — confirm avg contract coverage rises from 74.3% to ≥95%
 
 <!-- spec-review: passed -->
-
-<!-- code-review: passed -->
