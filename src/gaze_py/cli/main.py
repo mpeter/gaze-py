@@ -1132,6 +1132,115 @@ def _score_target(
     )
 
 
+def _compute_avg_line_coverage(
+    targets: list[FunctionTarget],
+    coverage_data: dict[str, float] | None,
+) -> float | None:
+    """Compute the average line coverage fraction across all scored targets.
+
+    Args:
+        targets: All FunctionTargets from the analysis run.
+        coverage_data: Coverage data dict, or None when not provided.
+
+    Returns:
+        Mean line_coverage fraction, or None when coverage_data is None or
+        no targets have a non-None line_coverage score.
+    """
+    if coverage_data is None:
+        return None
+    line_coverages = [
+        t.score.line_coverage
+        for t in targets
+        if t.score is not None and t.score.line_coverage is not None
+    ]
+    return sum(line_coverages) / len(line_coverages) if line_coverages else None
+
+
+def _compute_gaze_crapload(
+    targets: list[FunctionTarget],
+    config: GazeConfig,
+) -> int | None:
+    """Count targets whose GazeCRAP score meets or exceeds the threshold.
+
+    Args:
+        targets: All FunctionTargets from the analysis run.
+        config: GazeConfig providing the gaze_crap_threshold.
+
+    Returns:
+        Count of targets above threshold, or None when no targets have a
+        non-None gaze_crap score (GazeCRAP requires O1 quality run).
+    """
+    gaze_crap_targets = [
+        t for t in targets if t.score is not None and t.score.gaze_crap is not None
+    ]
+    if not gaze_crap_targets:
+        return None
+    return sum(
+        1
+        for t in gaze_crap_targets
+        if t.score is not None
+        and t.score.gaze_crap is not None
+        and t.score.gaze_crap >= config.gaze_crap_threshold
+    )
+
+
+def _compute_avg_contract_coverage(targets: list[FunctionTarget]) -> float | None:
+    """Compute the average contract coverage percentage across all scored targets.
+
+    Args:
+        targets: All FunctionTargets from the analysis run.
+
+    Returns:
+        Mean contract_coverage percentage, or None when no targets have a
+        non-None contract_coverage score (requires O1 quality run).
+    """
+    contract_coverages = [
+        t.score.contract_coverage
+        for t in targets
+        if t.score is not None and t.score.contract_coverage is not None
+    ]
+    return sum(contract_coverages) / len(contract_coverages) if contract_coverages else None
+
+
+def _compute_quadrant_counts(targets: list[FunctionTarget]) -> dict[str, int] | None:
+    """Count functions per quadrant label.
+
+    Args:
+        targets: All FunctionTargets from the analysis run.
+
+    Returns:
+        Dict mapping quadrant label to count, or None when no targets have a
+        non-None quadrant label (requires both line and contract coverage).
+    """
+    quadrant_labels = [
+        t.score.quadrant for t in targets if t.score is not None and t.score.quadrant is not None
+    ]
+    if not quadrant_labels:
+        return None
+    counts: dict[str, int] = {}
+    for label in quadrant_labels:
+        counts[label] = counts.get(label, 0) + 1
+    return counts
+
+
+def _compute_fix_strategy_counts(targets: list[FunctionTarget]) -> dict[str, int] | None:
+    """Count functions per fix strategy.
+
+    Args:
+        targets: All FunctionTargets from the analysis run.
+
+    Returns:
+        Dict mapping fix strategy to count, or None when no targets have a
+        non-None fix_strategy (populated whenever CRAP scores are available).
+    """
+    fix_counts: dict[str, int] = {}
+    for t in targets:
+        if t.score is not None and t.score.fix_strategy is not None:
+            strat = t.score.fix_strategy
+            fix_counts[strat] = fix_counts.get(strat, 0) + 1
+    return fix_counts if fix_counts else None
+
+
 def _build_summary(
     all_targets: list[FunctionTarget],
     *,
@@ -1139,6 +1248,9 @@ def _build_summary(
     coverage_data: dict[str, float] | None,
 ) -> Summary:
     """Build the Summary aggregate from all analyzed and scored targets.
+
+    Thin coordinator: delegates each aggregate computation to a focused
+    helper and assembles the final Summary.
 
     Args:
         all_targets: All FunctionTargets from the analysis run (must have scores).
@@ -1158,74 +1270,14 @@ def _build_summary(
     else:
         rec_actions = recommended_actions(all_targets)
 
-    # avg_line_coverage: None when coverage not provided.
-    avg_line_coverage: float | None = None
-    if coverage_data is not None:
-        line_coverages = [
-            t.score.line_coverage
-            for t in all_targets
-            if t.score is not None and t.score.line_coverage is not None
-        ]
-        avg_line_coverage = sum(line_coverages) / len(line_coverages) if line_coverages else None
-
-    # gaze_crapload: count of targets where gaze_crap >= gaze_crap_threshold.
-    # Populated whenever GazeCRAP scores are available (requires O1 quality run).
-    gaze_crapload_count: int | None = None
-    gaze_crap_targets = [
-        t for t in all_targets if t.score is not None and t.score.gaze_crap is not None
-    ]
-    if gaze_crap_targets:
-        gaze_crapload_count = sum(
-            1
-            for t in gaze_crap_targets
-            if t.score is not None
-            and t.score.gaze_crap is not None
-            and t.score.gaze_crap >= config.gaze_crap_threshold
-        )
-
-    # avg_contract_coverage: mean of non-None contract_coverage values.
-    # Populated whenever O1 quality results are available.
-    contract_coverages = [
-        t.score.contract_coverage
-        for t in all_targets
-        if t.score is not None and t.score.contract_coverage is not None
-    ]
-    avg_contract_coverage: float | None = (
-        sum(contract_coverages) / len(contract_coverages) if contract_coverages else None
-    )
-
-    # quadrant_counts: count of functions per quadrant label.
-    # Populated whenever quadrant labels are available (requires both line and
-    # contract coverage, so only from the quality command with line coverage).
-    quadrant_labels = [
-        t.score.quadrant
-        for t in all_targets
-        if t.score is not None and t.score.quadrant is not None
-    ]
-    quadrant_counts: dict[str, int] | None = None
-    if quadrant_labels:
-        counts: dict[str, int] = {}
-        for label in quadrant_labels:
-            counts[label] = counts.get(label, 0) + 1
-        quadrant_counts = counts
-
-    # fix_strategy_counts: count of functions per fix strategy.
-    # Populated whenever CRAP scores are available (does NOT require O1).
-    fix_counts: dict[str, int] = {}
-    for t in all_targets:
-        if t.score is not None and t.score.fix_strategy is not None:
-            strat = t.score.fix_strategy
-            fix_counts[strat] = fix_counts.get(strat, 0) + 1
-    fix_strategy_counts: dict[str, int] | None = fix_counts if fix_counts else None
-
     return Summary(
         function_count=len(all_targets),
         crapload=crapload_count,
-        gaze_crapload=gaze_crapload_count,
-        avg_line_coverage=avg_line_coverage,
-        avg_contract_coverage=avg_contract_coverage,
-        quadrant_counts=quadrant_counts,
-        fix_strategy_counts=fix_strategy_counts,
+        gaze_crapload=_compute_gaze_crapload(all_targets, config),
+        avg_line_coverage=_compute_avg_line_coverage(all_targets, coverage_data),
+        avg_contract_coverage=_compute_avg_contract_coverage(all_targets),
+        quadrant_counts=_compute_quadrant_counts(all_targets),
+        fix_strategy_counts=_compute_fix_strategy_counts(all_targets),
         recommended_actions=rec_actions,
         crap_threshold=config.crap_threshold,
         gaze_crap_threshold=config.gaze_crap_threshold,

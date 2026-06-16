@@ -602,9 +602,381 @@ class _FunctionVisitor(ast.NodeVisitor):
     # Call-based effects
     # ------------------------------------------------------------------
 
-    def visit_Call(  # noqa: N802, PLR0911, PLR0912, PLR0915
-        self, node: ast.Call
-    ) -> None:
+    def _handle_stream_writes(self, obj: ast.expr, method: str, node: ast.Call) -> bool:
+        """Detect StderrWrite and StdoutWrite from sys.stderr/stdout.write().
+
+        Args:
+            obj: The object expression (left side of the attribute call).
+            method: The method name being called.
+            node: The full ast.Call node.
+
+        Returns:
+            True when a stream write effect was detected and added.
+        """
+        # StderrWrite: sys.stderr.write(...)
+        if (
+            method == "write"
+            and isinstance(obj, ast.Attribute)
+            and obj.attr == "stderr"
+            and isinstance(obj.value, ast.Name)
+            and obj.value.id == "sys"
+        ):
+            self._add(
+                SideEffectType.StderrWrite,
+                node,
+                "Function writes to stderr via sys.stderr.write()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # StdoutWrite: sys.stdout.write(...)
+        if (
+            method == "write"
+            and isinstance(obj, ast.Attribute)
+            and obj.attr == "stdout"
+            and isinstance(obj.value, ast.Name)
+            and obj.value.id == "sys"
+        ):
+            self._add(
+                SideEffectType.StdoutWrite,
+                node,
+                "Function writes to stdout via sys.stdout.write()",
+            )
+            self.generic_visit(node)
+            return True
+
+        return False
+
+    def _handle_pathlib_attr_call(self, method: str, node: ast.Call) -> bool:
+        """Detect pathlib.Path filesystem effects from method name alone.
+
+        Checks match on method name only (independent of obj_name), so this
+        helper is safe to call before _handle_lib_attr_call which requires
+        obj_name to be in a specific set.
+
+        Args:
+            method: The method name being called.
+            node: The full ast.Call node.
+
+        Returns:
+            True when a pathlib filesystem effect was detected and added.
+        """
+        # pathlib.Path.unlink() — FileSystemDelete
+        if method == "unlink":
+            self._add(
+                SideEffectType.FileSystemDelete,
+                node,
+                "Function deletes a filesystem entry via Path.unlink()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # pathlib.Path.chmod() — FileSystemMeta
+        if method == "chmod":
+            self._add(
+                SideEffectType.FileSystemMeta,
+                node,
+                "Function modifies filesystem permissions via Path.chmod()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # pathlib.Path.write_text / write_bytes — FileSystemWrite
+        if method in {"write_text", "write_bytes"}:
+            self._add(
+                SideEffectType.FileSystemWrite,
+                node,
+                f"Function writes to the filesystem via Path.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        return False
+
+    def _handle_lib_attr_call(  # noqa: PLR0911
+        self, obj_name: str | None, method: str, node: ast.Call
+    ) -> bool:
+        """Detect library attribute call effects (logging, threading, os, etc.).
+
+        All obj_name guards remain inside this helper per spec requirement.
+
+        Args:
+            obj_name: The object name if the receiver is a simple Name, else None.
+            method: The method name being called.
+            node: The full ast.Call node.
+
+        Returns:
+            True when a library attribute effect was detected and added.
+        """
+        # LogWrite: logging.info/debug/warning/error/critical/log(...)
+        if obj_name in _LOG_NAMES:
+            self._add(
+                SideEffectType.LogWrite,
+                node,
+                f"Function writes a log entry via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # GoroutineSpawn: threading.Thread, asyncio.create_task, etc.
+        if obj_name is not None and (obj_name, method) in _GOROUTINE_SPAWN_CALLS:
+            self._add(
+                SideEffectType.GoroutineSpawn,
+                node,
+                f"Function spawns a concurrent task via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # concurrent.futures.*.submit — check for submit on any futures obj
+        if method == "submit" and obj_name is not None:
+            # Heuristic: if the object is named executor/pool/futures
+            if obj_name in {"executor", "pool", "futures", "thread_pool"}:
+                self._add(
+                    SideEffectType.GoroutineSpawn,
+                    node,
+                    "Function submits a task to a thread/process pool",
+                )
+                self.generic_visit(node)
+                return True
+
+        # ProcessExit: sys.exit, os._exit, os.abort
+        if obj_name is not None and (obj_name, method) in _PROCESS_EXIT_CALLS:
+            self._add(
+                SideEffectType.ProcessExit,
+                node,
+                f"Function terminates the process via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # TimeDependency: time.time, time.monotonic, datetime.now, etc.
+        if obj_name is not None and (obj_name, method) in _TIME_CALLS:
+            self._add(
+                SideEffectType.TimeDependency,
+                node,
+                f"Function reads the current time via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # FileSystemDelete: os.remove, os.unlink, shutil.rmtree
+        if obj_name is not None and (obj_name, method) in _FS_DELETE_CALLS:
+            self._add(
+                SideEffectType.FileSystemDelete,
+                node,
+                f"Function deletes a filesystem entry via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # FileSystemMeta: os.chmod, os.chown, os.utime, os.symlink, os.link
+        if obj_name is not None and (obj_name, method) in _FS_META_CALLS:
+            self._add(
+                SideEffectType.FileSystemMeta,
+                node,
+                f"Function modifies filesystem metadata via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # ReflectionMutation: object.__setattr__(...)
+        if method == "__setattr__":
+            self._add(
+                SideEffectType.ReflectionMutation,
+                node,
+                "Function mutates an object via __setattr__()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # FinalizerRegistration: weakref.finalize(...)
+        if obj_name == "weakref" and method == "finalize":
+            self._add(
+                SideEffectType.FinalizerRegistration,
+                node,
+                "Function registers a finalizer via weakref.finalize()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # CgoCall: ctypes.* or cffi.*
+        if obj_name in {"ctypes", "cffi"}:
+            self._add(
+                SideEffectType.CgoCall,
+                node,
+                f"Function calls native code via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        return False
+
+    def _handle_param_attr_call(  # noqa: PLR0911
+        self, obj_name: str | None, method: str, node: ast.Call
+    ) -> bool:
+        """Detect parameter-based attribute call effects.
+
+        All obj_name in self._params guards remain inside this helper.
+
+        Args:
+            obj_name: The object name if the receiver is a simple Name, else None.
+            method: The method name being called.
+            node: The full ast.Call node.
+
+        Returns:
+            True when a parameter attribute effect was detected and added.
+        """
+        if obj_name not in self._params:
+            return False
+
+        # HTTPResponseWrite: .write() on response/resp parameter
+        if method == "write" and obj_name in {"response", "resp"}:
+            self._add(
+                SideEffectType.HTTPResponseWrite,
+                node,
+                f"Function writes to HTTP response via {obj_name}.write()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # WriterOutput: .write() on any other parameter
+        if method == "write":
+            self._add(
+                SideEffectType.WriterOutput,
+                node,
+                f"Function writes to injected writer via {obj_name}.write()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # SliceMutation: list methods on a parameter
+        if method in _SLICE_METHODS:
+            self._add(
+                SideEffectType.SliceMutation,
+                node,
+                f"Function mutates a list parameter via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # MapMutation: dict methods on a parameter
+        if method in _MAP_METHODS:
+            self._add(
+                SideEffectType.MapMutation,
+                node,
+                f"Function mutates a dict parameter via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # ChannelSend: .put() on a parameter
+        if method == "put":
+            self._add(
+                SideEffectType.ChannelSend,
+                node,
+                f"Function sends to a channel/queue via {obj_name}.put()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # ChannelClose: .close() on a parameter
+        if method == "close":
+            self._add(
+                SideEffectType.ChannelClose,
+                node,
+                f"Function closes a channel/queue via {obj_name}.close()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # DatabaseWrite: .execute() or .commit() on a parameter
+        if method in {"execute", "commit"}:
+            self._add(
+                SideEffectType.DatabaseWrite,
+                node,
+                f"Function writes to a database via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # ContextCancellation: .cancel() on any parameter
+        if method == "cancel":
+            self._add(
+                SideEffectType.ContextCancellation,
+                node,
+                f"Function cancels a task/future via {obj_name}.cancel()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # ContextCancellation: .set() on a parameter (threading.Event)
+        if method == "set":
+            self._add(
+                SideEffectType.ContextCancellation,
+                node,
+                f"Function signals cancellation via {obj_name}.set()",
+            )
+            self.generic_visit(node)
+            return True
+
+        return False
+
+    def _handle_name_call(self, fn: str, node: ast.Call) -> bool:
+        """Detect simple name call effects (print, setattr, open, callbacks).
+
+        Args:
+            fn: The function name being called.
+            node: The full ast.Call node.
+
+        Returns:
+            True when a name call effect was detected and added.
+        """
+        # StdoutWrite: print(...)
+        if fn == "print":
+            self._add(
+                SideEffectType.StdoutWrite,
+                node,
+                "Function writes to stdout via print()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # ReflectionMutation: setattr(...)
+        if fn == "setattr":
+            self._add(
+                SideEffectType.ReflectionMutation,
+                node,
+                "Function mutates an object via setattr()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # FileSystemWrite: open(path, mode) with write mode
+        if fn == "open":
+            mode = _extract_open_mode(node)
+            if mode in _WRITE_MODES:
+                self._add(
+                    SideEffectType.FileSystemWrite,
+                    node,
+                    f"Function opens a file for writing with mode '{mode}'",
+                )
+                self.generic_visit(node)
+                return True
+
+        # CallbackInvocation: calling a parameter directly
+        if fn in self._params:
+            self._add(
+                SideEffectType.CallbackInvocation,
+                node,
+                f"Function invokes a callable parameter '{fn}'",
+            )
+            self.generic_visit(node)
+            return True
+
+        return False
+
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
         """Detect call-based effects: SliceMutation, MapMutation, WriterOutput,
         HTTPResponseWrite, ChannelSend, ChannelClose, FileSystemWrite,
         FileSystemDelete, FileSystemMeta, DatabaseWrite, DatabaseTransaction,
@@ -612,323 +984,29 @@ class _FunctionVisitor(ast.NodeVisitor):
         StdoutWrite, StderrWrite, TimeDependency, ProcessExit,
         ReflectionMutation, CgoCall, FinalizerRegistration.
 
-        This method is a dispatch table for all call-based effect types.
-        The high branch/statement count is inherent to the dispatch pattern
-        and cannot be reduced without sacrificing readability or correctness.
+        Thin dispatcher: delegates to focused helper methods and short-circuits
+        after the first match. Falls through to generic_visit when no handler
+        matches.
         """
         func = node.func
-
-        # --- Attribute calls: obj.method(...) ---
         if isinstance(func, ast.Attribute):
             obj = func.value
             method = func.attr
-
             obj_name: str | None = None
             if isinstance(obj, ast.Name):
                 obj_name = obj.id
-
-            # StderrWrite: sys.stderr.write(...)
-            if (
-                method == "write"
-                and isinstance(obj, ast.Attribute)
-                and obj.attr == "stderr"
-                and isinstance(obj.value, ast.Name)
-                and obj.value.id == "sys"
-            ):
-                self._add(
-                    SideEffectType.StderrWrite,
-                    node,
-                    "Function writes to stderr via sys.stderr.write()",
-                )
-                self.generic_visit(node)
+            if self._handle_stream_writes(obj, method, node):
                 return
-
-            # StdoutWrite: sys.stdout.write(...)
-            if (
-                method == "write"
-                and isinstance(obj, ast.Attribute)
-                and obj.attr == "stdout"
-                and isinstance(obj.value, ast.Name)
-                and obj.value.id == "sys"
-            ):
-                self._add(
-                    SideEffectType.StdoutWrite,
-                    node,
-                    "Function writes to stdout via sys.stdout.write()",
-                )
-                self.generic_visit(node)
+            if self._handle_pathlib_attr_call(method, node):
                 return
-
-            # LogWrite: logging.info/debug/warning/error/critical/log(...)
-            if obj_name in _LOG_NAMES:
-                self._add(
-                    SideEffectType.LogWrite,
-                    node,
-                    f"Function writes a log entry via {obj_name}.{method}()",
-                )
-                self.generic_visit(node)
+            if self._handle_lib_attr_call(obj_name, method, node):
                 return
-
-            # GoroutineSpawn: threading.Thread, asyncio.create_task, etc.
-            if obj_name is not None and (obj_name, method) in _GOROUTINE_SPAWN_CALLS:
-                self._add(
-                    SideEffectType.GoroutineSpawn,
-                    node,
-                    f"Function spawns a concurrent task via {obj_name}.{method}()",
-                )
-                self.generic_visit(node)
+            if self._handle_param_attr_call(obj_name, method, node):
                 return
-
-            # concurrent.futures.*.submit — check for submit on any futures obj
-            if method == "submit" and obj_name is not None:
-                # Heuristic: if the object is named executor/pool/futures
-                if obj_name in {"executor", "pool", "futures", "thread_pool"}:
-                    self._add(
-                        SideEffectType.GoroutineSpawn,
-                        node,
-                        "Function submits a task to a thread/process pool",
-                    )
-                    self.generic_visit(node)
-                    return
-
-            # ProcessExit: sys.exit, os._exit, os.abort
-            if obj_name is not None and (obj_name, method) in _PROCESS_EXIT_CALLS:
-                self._add(
-                    SideEffectType.ProcessExit,
-                    node,
-                    f"Function terminates the process via {obj_name}.{method}()",
-                )
-                self.generic_visit(node)
-                return
-
-            # TimeDependency: time.time, time.monotonic, datetime.now, etc.
-            if obj_name is not None and (obj_name, method) in _TIME_CALLS:
-                self._add(
-                    SideEffectType.TimeDependency,
-                    node,
-                    f"Function reads the current time via {obj_name}.{method}()",
-                )
-                self.generic_visit(node)
-                return
-
-            # FileSystemDelete: os.remove, os.unlink, shutil.rmtree
-            if obj_name is not None and (obj_name, method) in _FS_DELETE_CALLS:
-                self._add(
-                    SideEffectType.FileSystemDelete,
-                    node,
-                    f"Function deletes a filesystem entry via {obj_name}.{method}()",
-                )
-                self.generic_visit(node)
-                return
-
-            # FileSystemMeta: os.chmod, os.chown, os.utime, os.symlink, os.link
-            if obj_name is not None and (obj_name, method) in _FS_META_CALLS:
-                self._add(
-                    SideEffectType.FileSystemMeta,
-                    node,
-                    f"Function modifies filesystem metadata via {obj_name}.{method}()",
-                )
-                self.generic_visit(node)
-                return
-
-            # pathlib.Path.unlink() — FileSystemDelete
-            if method == "unlink":
-                self._add(
-                    SideEffectType.FileSystemDelete,
-                    node,
-                    "Function deletes a filesystem entry via Path.unlink()",
-                )
-                self.generic_visit(node)
-                return
-
-            # pathlib.Path.chmod() — FileSystemMeta
-            if method == "chmod":
-                self._add(
-                    SideEffectType.FileSystemMeta,
-                    node,
-                    "Function modifies filesystem permissions via Path.chmod()",
-                )
-                self.generic_visit(node)
-                return
-
-            # pathlib.Path.write_text / write_bytes — FileSystemWrite
-            if method in {"write_text", "write_bytes"}:
-                self._add(
-                    SideEffectType.FileSystemWrite,
-                    node,
-                    f"Function writes to the filesystem via Path.{method}()",
-                )
-                self.generic_visit(node)
-                return
-
-            # ReflectionMutation: object.__setattr__(...)
-            if method == "__setattr__":
-                self._add(
-                    SideEffectType.ReflectionMutation,
-                    node,
-                    "Function mutates an object via __setattr__()",
-                )
-                self.generic_visit(node)
-                return
-
-            # FinalizerRegistration: weakref.finalize(...)
-            if obj_name == "weakref" and method == "finalize":
-                self._add(
-                    SideEffectType.FinalizerRegistration,
-                    node,
-                    "Function registers a finalizer via weakref.finalize()",
-                )
-                self.generic_visit(node)
-                return
-
-            # CgoCall: ctypes.* or cffi.*
-            if obj_name in {"ctypes", "cffi"}:
-                self._add(
-                    SideEffectType.CgoCall,
-                    node,
-                    f"Function calls native code via {obj_name}.{method}()",
-                )
-                self.generic_visit(node)
-                return
-
-            # Parameter-based effects — obj must be a known parameter
-            if obj_name in self._params:
-                # HTTPResponseWrite: .write() on response/resp parameter
-                if method == "write" and obj_name in {"response", "resp"}:
-                    self._add(
-                        SideEffectType.HTTPResponseWrite,
-                        node,
-                        f"Function writes to HTTP response via {obj_name}.write()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-                # WriterOutput: .write() on any other parameter
-                if method == "write":
-                    self._add(
-                        SideEffectType.WriterOutput,
-                        node,
-                        f"Function writes to injected writer via {obj_name}.write()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-                # SliceMutation: list methods on a parameter
-                if method in _SLICE_METHODS:
-                    self._add(
-                        SideEffectType.SliceMutation,
-                        node,
-                        f"Function mutates a list parameter via {obj_name}.{method}()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-                # MapMutation: dict methods on a parameter
-                if method in _MAP_METHODS:
-                    self._add(
-                        SideEffectType.MapMutation,
-                        node,
-                        f"Function mutates a dict parameter via {obj_name}.{method}()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-                # ChannelSend: .put() on a parameter
-                if method == "put":
-                    self._add(
-                        SideEffectType.ChannelSend,
-                        node,
-                        f"Function sends to a channel/queue via {obj_name}.put()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-                # ChannelClose: .close() on a parameter
-                if method == "close":
-                    self._add(
-                        SideEffectType.ChannelClose,
-                        node,
-                        f"Function closes a channel/queue via {obj_name}.close()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-                # DatabaseWrite: .execute() or .commit() on a parameter
-                if method in {"execute", "commit"}:
-                    self._add(
-                        SideEffectType.DatabaseWrite,
-                        node,
-                        f"Function writes to a database via {obj_name}.{method}()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-                # ContextCancellation: .cancel() on any parameter
-                if method == "cancel":
-                    self._add(
-                        SideEffectType.ContextCancellation,
-                        node,
-                        f"Function cancels a task/future via {obj_name}.cancel()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-                # ContextCancellation: .set() on a parameter (threading.Event)
-                if method == "set":
-                    self._add(
-                        SideEffectType.ContextCancellation,
-                        node,
-                        f"Function signals cancellation via {obj_name}.set()",
-                    )
-                    self.generic_visit(node)
-                    return
-
-        # --- Simple name calls: func(...) ---
         elif isinstance(func, ast.Name):
             fn = func.id
-
-            # StdoutWrite: print(...)
-            if fn == "print":
-                self._add(
-                    SideEffectType.StdoutWrite,
-                    node,
-                    "Function writes to stdout via print()",
-                )
-                self.generic_visit(node)
+            if self._handle_name_call(fn, node):
                 return
-
-            # ReflectionMutation: setattr(...)
-            if fn == "setattr":
-                self._add(
-                    SideEffectType.ReflectionMutation,
-                    node,
-                    "Function mutates an object via setattr()",
-                )
-                self.generic_visit(node)
-                return
-
-            # FileSystemWrite: open(path, mode) with write mode
-            if fn == "open":
-                mode = _extract_open_mode(node)
-                if mode in _WRITE_MODES:
-                    self._add(
-                        SideEffectType.FileSystemWrite,
-                        node,
-                        f"Function opens a file for writing with mode '{mode}'",
-                    )
-                    self.generic_visit(node)
-                    return
-
-            # CallbackInvocation: calling a parameter directly
-            if fn in self._params:
-                self._add(
-                    SideEffectType.CallbackInvocation,
-                    node,
-                    f"Function invokes a callable parameter '{fn}'",
-                )
-                self.generic_visit(node)
-                return
-
         self.generic_visit(node)
 
     # ------------------------------------------------------------------
