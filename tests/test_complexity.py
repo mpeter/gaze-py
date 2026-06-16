@@ -291,8 +291,7 @@ async def outer():
     module = ast.parse(source)
     outer_node = next(n for n in module.body if isinstance(n, ast.AsyncFunctionDef))
     inner_node = next(
-        n for n in ast.walk(outer_node)
-        if isinstance(n, ast.AsyncFunctionDef) and n.name == "inner"
+        n for n in ast.walk(outer_node) if isinstance(n, ast.AsyncFunctionDef) and n.name == "inner"
     )
     result = cyclomatic_complexity(outer_node)
     assert result == 1, f"Expected outer CC=1 (no own decisions), got {result}"
