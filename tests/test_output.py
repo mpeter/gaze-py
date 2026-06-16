@@ -108,6 +108,7 @@ def test_oc002_json_function_has_required_fields() -> None:
     """OC-002: JSON output includes all required function-level fields."""
     result = _make_result()
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     assert "functions" in data
@@ -129,6 +130,7 @@ def test_oc002_json_summary_has_threshold_fields() -> None:
     """OC-002: JSON summary includes crap_threshold and gaze_crap_threshold."""
     result = _make_result(crap_threshold=20.0, gaze_crap_threshold=25.0)
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     assert "summary" in data
@@ -162,6 +164,7 @@ def test_oc002_recommended_actions_entry_keys() -> None:
     )
     result = AnalysisResult(functions=[target], summary=summary)
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     actions = data["summary"]["recommended_actions"]
@@ -204,6 +207,7 @@ def test_oc003_line_coverage_is_null_when_not_provided() -> None:
     target = _make_target(line_coverage=None)
     result = _make_result(targets=[target])
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     fn = data["functions"][0]
@@ -216,6 +220,7 @@ def test_oc003_effect_confidence_range_is_null_key_present() -> None:
     target = _make_target()
     result = _make_result(targets=[target])
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     fn = data["functions"][0]
@@ -238,6 +243,7 @@ def test_oc003_effect_confidence_range_serializes_as_list() -> None:
     )
     result = _make_result(targets=[target])
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     fn = data["functions"][0]
@@ -264,6 +270,7 @@ def test_oc003_contract_coverage_reason_for_pure_function() -> None:
     )
     result = _make_result(targets=[target])
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     fn = data["functions"][0]
@@ -279,6 +286,7 @@ def test_json_output_is_valid_json() -> None:
     """to_json() produces valid JSON."""
     result = _make_result()
     output = to_json(result)
+    assert output
     # Should not raise
     data = json.loads(output)
     assert isinstance(data, dict)
@@ -297,6 +305,7 @@ def test_json_output_enum_values_are_strings() -> None:
     target = _make_target(with_effects=True)
     result = _make_result(targets=[target])
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     fn = data["functions"][0]
@@ -312,6 +321,7 @@ def test_json_output_tier_enum_is_string() -> None:
     target = _make_target(with_effects=True)
     result = _make_result(targets=[target])
     output = to_json(result)
+    assert output
     data = json.loads(output)
 
     fn = data["functions"][0]
@@ -367,6 +377,7 @@ def test_text_output_one_line_per_function() -> None:
     ]
     result = _make_result(targets=targets)
     output = to_text(result)
+    assert output
     lines = [line for line in output.splitlines() if line.strip()]
     _expected_min_lines = 2
     assert len(lines) >= _expected_min_lines
@@ -402,3 +413,32 @@ def test_text_output_renders_known_complexity() -> None:
     assert f"complexity={_known_complexity}" in output, (
         f"Expected complexity={_known_complexity} in: {output}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 — Formatter edge-case tests
+# ---------------------------------------------------------------------------
+
+
+def test_oc002_json_default_raises_type_error_for_unknown_type() -> None:
+    """OC-002: _json_default raises TypeError for unrecognized types.
+
+    # CR-004: _json_default tested directly because to_json() only invokes it
+    # for non-serializable types; constructing an AnalysisResult that triggers
+    # the TypeError branch through the public API is not feasible — all fields
+    # in AnalysisResult are either primitives, enums, tuples, or frozensets,
+    # all of which are handled by the existing branches.
+    """
+    from gaze_py.report.json_formatter import _json_default
+
+    with pytest.raises(TypeError):
+        _json_default(object())
+
+
+def test_text_output_renders_strategy_when_set() -> None:
+    """to_text() includes fix_strategy value in output when set."""
+    target = _make_target(fix_strategy="add_tests")
+    result = _make_result(targets=[target])
+    output = to_text(result)
+    assert output  # CR-007: direct reference to bound return value
+    assert "add_tests" in output

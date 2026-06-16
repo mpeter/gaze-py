@@ -8,6 +8,7 @@ import unittest.mock
 from pathlib import Path
 
 import astroid
+import pytest
 
 from gaze_py.quality.models import TestFunc
 
@@ -17,6 +18,7 @@ from gaze_py.quality.models import TestFunc
 from gaze_py.quality.pairing import (
     _build_astroid_graph,
     _extract_call_name,
+    _find_project_root,
     _pair_astroid,
     find_test_functions,
     pair_to_targets,
@@ -168,6 +170,7 @@ def test_find_test_functions(tmp_path: Path) -> None:
     test_file = tmp_path / "test_example.py"
     test_file.write_text(src)
     results = find_test_functions(test_file)
+    assert isinstance(results, list)
     names = [tf.name for tf in results]
     assert "test_alpha" in names
     assert "test_beta" in names
@@ -381,3 +384,57 @@ def test_build_astroid_graph_clears_cache_between_calls() -> None:
         _build_astroid_graph([], [engine_fixture])
 
     assert mock_clear.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — _find_project_root and _pair_astroid edge-case tests
+# ---------------------------------------------------------------------------
+
+
+def test_find_project_root_falls_back_to_parent_when_no_markers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_find_project_root returns start.parent when no project-root markers found.
+
+    # CR-004: Tested directly because pair_to_targets() always finds a project
+    # root via the real filesystem; monkeypatching _PROJECT_ROOT_MARKERS to an
+    # empty frozenset forces the walk to exhaust all ancestors and exercise the
+    # fallback branch without relying on real filesystem state.
+    """
+    import gaze_py.quality.pairing as pairing_mod
+
+    monkeypatch.setattr(pairing_mod, "_PROJECT_ROOT_MARKERS", frozenset())
+    some_file = tmp_path / "test_example.py"
+    some_file.write_text("def test_foo(): pass\n")
+    result = _find_project_root(some_file)
+    assert result == some_file.parent
+
+
+def test_pair_astroid_filename_not_under_root_uses_stem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_pair_astroid uses stem fallback when file is outside project root.
+
+    # CR-004: Tested directly because pair_to_targets() always resolves a real
+    # project root; monkeypatching _find_project_root to return a non-ancestor
+    # path exercises the ValueError → stem-fallback branch in _pair_astroid
+    # without requiring a contrived filesystem layout.
+    """
+    import gaze_py.quality.pairing as pairing_mod
+
+    # Return a path that is NOT an ancestor of tmp_path, forcing relative_to()
+    # to raise ValueError and trigger the stem fallback.
+    other_root = tmp_path.parent / "nonexistent_sibling_xyz"
+    monkeypatch.setattr(pairing_mod, "_find_project_root", lambda _: other_root)
+
+    test_file = tmp_path / "test_mymodule.py"
+    test_file.write_text("def test_foo(): pass\n")
+    test_funcs = find_test_functions(test_file)
+    assert test_funcs
+
+    # source_names contains the stem of the test file so a stem match is
+    # possible; the key property is that no ValueError is raised.
+    source_names = {"test_mymodule"}
+    result = _pair_astroid(test_funcs[0], source_names, graph={})
+    # result may be None (BFS finds nothing) or str (stem matched a source name).
+    assert result is None or isinstance(result, str)

@@ -271,3 +271,65 @@ def outer():
     assert cyclomatic_complexity(inner_node) == 3, (  # noqa: PLR2004
         f"Expected inner complexity 3, got {cyclomatic_complexity(inner_node)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: New complexity tests (tasks 3.1–3.4)
+# ---------------------------------------------------------------------------
+
+
+def test_async_nested_function_scored_independently() -> None:
+    """CX-002: async nested function scored independently of outer async function."""
+    source = """\
+async def outer():
+    async def inner(a, b):
+        if a:
+            return a
+        return b
+    return inner
+"""
+    module = ast.parse(source)
+    outer_node = next(n for n in module.body if isinstance(n, ast.AsyncFunctionDef))
+    inner_node = next(
+        n for n in ast.walk(outer_node)
+        if isinstance(n, ast.AsyncFunctionDef) and n.name == "inner"
+    )
+    result = cyclomatic_complexity(outer_node)
+    assert result == 1, f"Expected outer CC=1 (no own decisions), got {result}"
+    inner_result = cyclomatic_complexity(inner_node)
+    assert inner_result == 2, (  # noqa: PLR2004
+        f"Expected inner CC=2 (1 base + 1 if), got {inner_result}"
+    )
+
+
+def test_set_comprehension_if_increments_complexity() -> None:
+    """CX-002: set comprehension with if-filter adds one branch point."""
+    source = """\
+def f(lst):
+    return {x for x in lst if x > 0}
+"""
+    fn = _parse_first_fn(source)
+    result = cyclomatic_complexity(fn)
+    assert result == 2, f"Expected CC=2 (1 base + 1 set-comp if), got {result}"  # noqa: PLR2004
+
+
+def test_dict_comprehension_if_increments_complexity() -> None:
+    """CX-002: dict comprehension with if-filter adds one branch point."""
+    source = """\
+def f(d):
+    return {k: v for k, v in d.items() if k}
+"""
+    fn = _parse_first_fn(source)
+    result = cyclomatic_complexity(fn)
+    assert result == 2, f"Expected CC=2 (1 base + 1 dict-comp if), got {result}"  # noqa: PLR2004
+
+
+def test_generator_expression_if_increments_complexity() -> None:
+    """CX-002: generator expression with if-filter adds one branch point."""
+    source = """\
+def f(lst):
+    return sum(x for x in lst if x > 0)
+"""
+    fn = _parse_first_fn(source)
+    result = cyclomatic_complexity(fn)
+    assert result == 2, f"Expected CC=2 (1 base + 1 gen-expr if), got {result}"  # noqa: PLR2004

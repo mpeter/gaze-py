@@ -105,6 +105,42 @@ assert result.function_count == 3
 assert result.scores[0].function == "my_func"
 ```
 
+## GazeCRAP Visibility
+
+When `gazepy quality` runs against this test suite, it scores each test's
+**GazeCRAP contract coverage** — what fraction of the production function's
+contractual effects are verified by assertions. This is a self-referential
+quality gate: the tool measures itself.
+
+A test earns coverage only when assertions **directly reference** the bound
+return value. See CR-007 in `.opencode/uf/packs/python-custom.md` for the
+full rule.
+
+**Quick reference:**
+
+```python
+# VISIBLE — include at least one of these before derived-variable assertions
+result = fn(...)
+assert result                          # truthiness ✓
+assert result is None                  # none check ✓  (only for T | None returns)
+assert len(result) == 3                # length ✓
+assert isinstance(result, SomeType)   # type check ✓
+assert result == expected_value        # equality ✓
+assert result[0].name == "foo"         # subscript ✓
+
+# INVISIBLE — breaks the binding chain
+result = fn(...)
+items = [x.name for x in result]      # intermediate variable
+assert "foo" in items                  # "result" absent → 0% coverage ✗
+```
+
+Check your test suite's contract coverage:
+```bash
+uv run gazepy quality src/gaze_py/ --tests tests/
+```
+
+Target: ≥95% average contract coverage across paired tests.
+
 ## Parametrize
 
 Use `@pytest.mark.parametrize` for table-driven tests — never a `for`

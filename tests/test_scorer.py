@@ -120,6 +120,7 @@ def test_sc003_crapload_returns_targets_above_threshold() -> None:
         _make_target("null_crap", None),
     ]
     result = crapload(targets, threshold=15.0)
+    assert len(result) == 2
     names = [t.name for t in result]
     assert "high" in names
     assert "medium" in names  # >= 15.0 is included
@@ -326,6 +327,7 @@ def test_sc006_recommended_actions_sort_order() -> None:
         _make_target_with_strategy("fn_decompose_and_test", 25.0, "decompose_and_test"),
     ]
     result = recommended_actions(targets)
+    assert len(result) == 3
     strategies = [r["strategy"] for r in result]
     # add_tests < add_assertions < decompose_and_test < decompose
     assert strategies.index("add_tests") < strategies.index("decompose_and_test")
@@ -359,6 +361,7 @@ def test_sc006_recommended_actions_excludes_null_strategy() -> None:
         _make_target_with_strategy("fn_no_strategy", 5.0, None),
     ]
     result = recommended_actions(targets)
+    assert len(result) == 1
     names = [r["function"] for r in result]
     assert "fn_with_strategy" in names
     assert "fn_no_strategy" not in names
@@ -381,3 +384,34 @@ def test_sc006_recommended_actions_correct_values() -> None:
     assert action["file"] == "src/foo.py"
     assert action["strategy"] == "decompose"
     assert action["crap"] == pytest.approx(30.0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 — Scorer edge-case tests (unscored targets)
+# ---------------------------------------------------------------------------
+
+
+def test_sc003_crapload_skips_unscored_targets() -> None:
+    """SC-003: crapload skips FunctionTargets where score is None (not score.crap=None).
+
+    score is None (unset) — distinct from Score(crap=None) which is a different
+    branch covered by test_sc003_crapload_excludes_null_crap.
+    """
+    # Construct target WITHOUT assigning .score (score stays as default None).
+    # This is distinct from Score(crap=None) which is a different branch.
+    target = FunctionTarget(name="f", file_path="f.py", line=1, complexity=5)
+    # target.score is None (unset), NOT Score(crap=None)
+    result = crapload([target], threshold=0.5)
+    assert result == []
+
+
+def test_sc006_recommended_actions_skips_unscored_targets() -> None:
+    """SC-006: recommended_actions skips FunctionTargets where score is None.
+
+    score is None (unset) — distinct from Score(fix_strategy=None) which is a
+    different branch covered by test_sc006_recommended_actions_excludes_null_strategy.
+    """
+    target = FunctionTarget(name="f", file_path="f.py", line=1, complexity=5)
+    # score is None (unset), not Score(fix_strategy=None)
+    result = recommended_actions([target])
+    assert result == []

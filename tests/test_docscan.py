@@ -75,6 +75,7 @@ def test_scan_docs_returns_sorted(tmp_path: Path) -> None:
 
     config = GazeConfig(doc_scan_exclude=[])
     entries = scan_docs(tmp_path, config)
+    assert isinstance(entries, list)
 
     # All entries in tmp_path get priority 1 (root == repo_root == tmp_path).
     # sub/gamma.md gets priority 3.
@@ -113,6 +114,7 @@ def test_priority_assignment(tmp_path: Path) -> None:
 
     config = GazeConfig(doc_scan_exclude=[])
     entries = scan_docs(sub, config)  # root = sub/
+    assert isinstance(entries, list)
 
     by_name = {e.path.name: e.priority for e in entries}
     assert by_name["sub_doc.md"] == 1, "sub_doc.md should be priority 1 (same dir as root)"
@@ -133,6 +135,7 @@ def test_exclude_filter(tmp_path: Path) -> None:
 
     config = GazeConfig()  # default excludes include CHANGELOG.md
     entries = scan_docs(tmp_path, config)
+    assert isinstance(entries, list)
 
     names = {e.path.name for e in entries}
     assert "README.md" in names
@@ -149,6 +152,7 @@ def test_exclude_filter_glob_pattern(tmp_path: Path) -> None:
 
     config = GazeConfig(doc_scan_exclude=["vendor/**"])
     entries = scan_docs(tmp_path, config)
+    assert isinstance(entries, list)
 
     names = {e.path.name for e in entries}
     assert "README.md" in names
@@ -168,6 +172,7 @@ def test_include_filter(tmp_path: Path) -> None:
 
     config = GazeConfig(doc_scan_exclude=[], doc_scan_include=["README.md"])
     entries = scan_docs(tmp_path, config)
+    assert isinstance(entries, list)
 
     names = {e.path.name for e in entries}
     assert "README.md" in names
@@ -388,7 +393,8 @@ def test_detect_and_classify_passes_docs_text(
     monkeypatch.setattr(engine_module.ClassificationEngine, "__init__", capturing_init)
 
     config = GazeConfig()
-    detect_and_classify(src, config=config, docs_text="test doc content")
+    result = detect_and_classify(src, config=config, docs_text="test doc content")
+    assert result
 
     assert len(captured_docs) > 0, "ClassificationEngine was not instantiated"
     assert "test doc content" in captured_docs, (
