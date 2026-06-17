@@ -15,10 +15,10 @@
 
 Implement in sequence; each step is a blocker for the next.
 
-- [ ] A.1 O1-A — Test-target pairing (`src/gaze/quality/pairing.py`)
-- [ ] A.2 O1-B — Assertion detection (`src/gaze/quality/assertions.py`)
-- [ ] A.3 O1-C — Assertion → effect mapping (`src/gaze/quality/mapper.py`)
-- [ ] A.4 O1-D — Contract coverage computation (`src/gaze/quality/coverage.py`)
+- [ ] A.1 O1-A — Test-target pairing (`src/gaze_py/quality/pairing.py`)
+- [ ] A.2 O1-B — Assertion detection (`src/gaze_py/quality/assertions.py`)
+- [ ] A.3 O1-C — Assertion → effect mapping (`src/gaze_py/quality/mapper.py`)
+- [ ] A.4 O1-D — Contract coverage computation (`src/gaze_py/quality/coverage.py`)
 - [ ] A.5 O1-E — Populate GazeCRAP, quadrant, fix_strategy, gaze_crapload,
       avg_contract_coverage, quadrant_counts, fix_strategy_counts in output
 - [ ] A.6 O1-F — Populate `effect_confidence_range` field
@@ -28,7 +28,7 @@ Implement in sequence; each step is a blocker for the next.
 Can be implemented independently of O1, but improves CRAP accuracy.
 
 - [ ] B.1 Specify and implement the complexity algorithm explicitly in
-      `src/gaze/analysis/complexity.py` (which AST nodes increment the counter,
+      `src/gaze_py/analysis/complexity.py` (which AST nodes increment the counter,
       nested scope rules, baseline)
 - [ ] B.2 Add a test that computes CRAP from a real Python function
       (not pre-supplied complexity numbers) and verifies against a known result
@@ -45,7 +45,7 @@ Can be implemented in any order after 001 lands.
 
 ### Group D — Classification Enhancements (independent)
 
-- [ ] D.1 O3 — Document scanning signal (`src/gaze/classify/signals/docscan.py`)
+- [ ] D.1 O3 — Document scanning signal (`src/gaze_py/classify/signals/docscan.py`)
 - [ ] D.2 O7 full — Add `doc_scan.exclude` and `doc_scan.timeout` to
       `.gaze.yaml` config [BLOCKED: D.1]
 - [ ] D.3 Revisit P3/P4 no-equivalent types — close SyncPoolOp/UnsafeMutation/

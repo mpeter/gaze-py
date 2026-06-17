@@ -60,13 +60,14 @@ None.
 
 Assessed against `.specify/memory/constitution.md`.
 
-### I. Autonomous Collaboration
+### I. Accuracy
 
 **Assessment**: PASS
 
-The report command produces machine-readable JSON by default (`--ai`
-is optional). When `--ai` is provided, the narrative output is
-human-readable prose. Both modes are self-contained outputs.
+The report command consumes the same pipeline data as `crap` and
+`quality` — CRAP scores, GazeCRAP scores, contract coverage. No
+additional analysis is performed; the AI narrative is a presentation
+layer over accurate underlying data.
 
 ### II. Minimal Assumptions
 
@@ -76,13 +77,14 @@ No assumptions about which LLM is available. Provider detection uses
 `shutil.which()` — if the provider CLI is not on PATH, the command
 fails with a clear error and install hint. No fallback guessing.
 
-### III. Observable Quality
+### III. Actionable Output
 
 **Assessment**: PASS
 
 The `--ai` flag makes AI involvement explicit. Without it, the command
 produces JSON — observable, parseable, pipeable. The system prompt
-source is logged to stderr when `--verbose`.
+source is logged to stderr when `--verbose`. The narrative report
+translates raw scores into prioritised remediation guidance.
 
 ### IV. Testability
 

@@ -63,7 +63,7 @@ The one exception is PyPI publication, which changes the install path.
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` (v1.1.1).
+Assessed against `.specify/memory/constitution.md` (v1.1.3).
 
 ### I. Accuracy
 

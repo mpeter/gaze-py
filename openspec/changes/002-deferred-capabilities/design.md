@@ -9,10 +9,10 @@
 ## O1 — Quality Assessment
 
 O1 is the most architecturally significant deferred item. It adds a new
-subpackage `src/gaze/quality/` with four components:
+subpackage `src/gaze_py/quality/` with four components:
 
 ```
-src/gaze/quality/
+src/gaze_py/quality/
 ├── __init__.py
 ├── pairing.py       # Test-target pairing (O1-A)
 ├── assertions.py    # Assertion detection (O1-B)
@@ -165,20 +165,13 @@ Exit codes:
 
 ## PyPI Release Workflow
 
-```yaml
-# .github/workflows/release.yml
-on:
-  push:
-    tags: ["v*.*.*"]
-jobs:
-  release:
-    steps:
-      - uv build
-      - uv publish --token ${{ secrets.PYPI_TOKEN }}
-```
+> **IMPLEMENTED** — see `.github/workflows/release.yml`. Uses OIDC trusted
+> publishing via `pypa/gh-action-pypi-publish` with `id-token: write`
+> permissions. No stored PyPI token required.
 
-Version is `src/gaze/__init__.py:__version__`. Version bump is manual (no
-automated tooling). Tag creation triggers the release.
+Version is `src/gaze_py/__init__.py:__version__`. Version bump is manual (no
+automated tooling). `workflow_dispatch` trigger with version input and
+preflight validation.
 
 ---
 

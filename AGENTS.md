@@ -136,6 +136,7 @@ uv tool install --force dist/gaze_py-*.whl
 - **Key runtime dependencies**:
   - `click` — CLI framework (`gazepy` entrypoint)
   - `pyyaml` — `.gaze.yaml` configuration loading
+  - `astroid` — AST inference for transitive call-graph pairing (quality pipeline)
 - **Linter / formatter**: `ruff` (check + format), `mypy --strict`
 - **Test runner**: `pytest` with `pytest-cov` (`--cov-fail-under=85`)
 - **CI**: `.github/workflows/test.yml` (matrix: 3.11, 3.12, 3.13 on ubuntu-24.04),
