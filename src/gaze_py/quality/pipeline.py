@@ -51,6 +51,7 @@ def assess(
     *,
     config: GazeConfig,
     target_func: str | None = None,
+    include_unexported: bool = True,
 ) -> AssessResult:
     """Run the full O1 quality assessment pipeline.
 
@@ -66,6 +67,13 @@ def assess(
             to this production function name. Filtering is applied after pairing.
             When set, AssessResult.untested is always empty (filtering would
             incorrectly mark tested-but-filtered functions as untested).
+        include_unexported: When True (default), include underscore-prefixed
+            (private) functions in the source analysis. When False, restrict
+            to public functions only. Defaults to True because Python's ``_``
+            prefix is a convention, not an access boundary — private helpers
+            are often the most complex and least directly tested parts of a
+            codebase. Pass ``include_unexported=False`` to restore the old
+            public-only behaviour.
 
     Returns:
         AssessResult with .reports (one per test function) and .untested
@@ -74,7 +82,12 @@ def assess(
         in tests_path — this is not an error.
     """
     # Step 1: detect and classify source functions (uses shared runner, M1 fixed).
-    source_targets = detect_and_classify(src_path.resolve(), config=config)
+    # include_unexported=True by default so private helpers are included (D1 in design.md).
+    source_targets = detect_and_classify(
+        src_path.resolve(),
+        config=config,
+        include_unexported=include_unexported,
+    )
 
     # Build a lookup map: function name → FunctionTarget.
     target_map: dict[str, FunctionTarget] = {t.name: t for t in source_targets}
@@ -254,6 +267,8 @@ def build_contract_coverage_map(
     src_path: Path,
     tests_path: Path,
     config: GazeConfig,
+    *,
+    include_unexported: bool = True,
 ) -> dict[str, ContractCoverageResult]:
     """Build a mapping from production function name to its best ContractCoverageResult.
 
@@ -270,13 +285,15 @@ def build_contract_coverage_map(
         src_path: Source directory or file to analyze for side effects.
         tests_path: Test directory or file containing test functions to assess.
         config: GazeConfig with classification thresholds.
+        include_unexported: When True (default), include underscore-prefixed
+            (private) functions. Forwarded to ``assess()``.
 
     Returns:
         Dict mapping function name → ContractCoverageResult.  Empty when the
         pipeline fails or no reports are produced.
     """
     try:
-        result = assess(src_path, tests_path, config=config)
+        result = assess(src_path, tests_path, config=config, include_unexported=include_unexported)
     except Exception as exc:  # noqa: BLE001
         sys.stderr.write(f"warning: quality pipeline failed: {exc}\n")
         return {}

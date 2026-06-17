@@ -442,8 +442,11 @@ def crap(
     "--include-unexported",
     "include_unexported",
     is_flag=True,
-    default=False,
-    help="Include underscore-prefixed functions.",
+    default=True,
+    help=(
+        "Include underscore-prefixed functions (default: on)."
+        " Pass --no-include-unexported to restrict to public functions only."
+    ),
 )
 @click.option(
     "--config",
@@ -563,6 +566,7 @@ def quality(
         resolved_tests,
         config=config,
         target_func=target,
+        include_unexported=include_unexported,
     )
 
     # Emit output.
@@ -1714,6 +1718,7 @@ def _enrich_with_quality(
 
     from gaze_py.quality.pipeline import build_contract_coverage_map
 
+    # include_unexported defaults to True — matches _run_crap() at line 1762.
     coverage_map = build_contract_coverage_map(src, resolved_tests, config)
     for target in result.functions:
         ccr = coverage_map.get(target.name)

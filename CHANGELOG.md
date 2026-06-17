@@ -4,6 +4,16 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+### Changed
+- `gazepy quality` and `assess()` now include underscore-prefixed (private)
+  functions by default. Previously excluded, causing the quality pipeline to
+  miss the majority of functions in most Python codebases. Use
+  `--no-include-unexported` to restore the old behaviour. Note: `gazepy
+  analyze` retains `--include-unexported` defaulting to off; only the
+  quality pipeline changes.
+
+- Spec: `openspec/changes/quality-include-private/`
+
 ### Added
 - `gazepy report`: AI-powered narrative reports via subprocess
   adapters (opencode, ollama). Pass --ai opencode to generate a
@@ -40,9 +50,9 @@ All notable changes to gaze-py are documented here.
 ### Known Limitations
 - Private (underscore-prefixed) functions do not receive
   `contract_coverage_reason` enrichment in `gazepy crap --tests`
-  output (assess() uses include_unexported=False by default;
-  deduplication of the double detect_and_classify() call is
-  deferred to a follow-up change)
+  output (deduplication of the double detect_and_classify() call is
+  deferred to a follow-up change; assess() now defaults to
+  include_unexported=True as of this release)
 - Astroid 3.x compatibility is asserted but CI-verified at 4.1.2
   only (astroid>=3.0,<5 — CI-verified at 4.1.2)
 - `MANAGER.clear_cache()` evicts astroid's process-global AST
