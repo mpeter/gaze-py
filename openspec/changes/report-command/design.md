@@ -17,7 +17,7 @@ trivial now that `_enrich_with_quality()` populates
 
 - `gazepy report PATH` produces a narrative report when `--ai` is
   provided; emits the JSON payload to stdout when `--ai` is omitted
-- Three subprocess adapters: `opencode`, `ollama`, `claude`
+- Two subprocess adapters: `opencode`, `ollama` (`claude` deferred to Change 4B)
 - `--max-gaze-crapload` enforced in `crap` and `self-check`
 - `--tests` on `report` enables quality enrichment (optional)
 - No new Python runtime dependencies
@@ -97,6 +97,10 @@ If `model` is None, omit `--model` (uses opencode's configured
 default). Captures stdout. `opencode run` is non-interactive and
 returns the model response on stdout. Default provider.
 
+**Verify before implementation**: Confirm `opencode run <prompt>` accepts
+a single positional argument. If opencode uses stdin or a different flag
+interface, update the adapter accordingly.
+
 **`ollama` adapter**:
 
 ```bash
@@ -106,14 +110,16 @@ echo "<prompt>\n\n<payload>" | ollama run <model>
 Model is required for ollama (no default). If model is None, raise
 `ClickException`. Communicates via stdin pipe.
 
-**`claude` adapter** (Anthropic CLI):
+**`claude` adapter**: Deferred to Change 4B. The Anthropic CLI's
+invocation interface is evolving and cannot be correctly specified at
+this time. For this change, the `claude` provider arm raises
+`ClickException`: `"claude adapter is available in Change 4B. Use
+--ai opencode or --ai ollama."` No binary check needed.
 
-```bash
-claude -p "<prompt>" "<payload>"
-```
-
-Or if the `claude` binary is unavailable, raise `ClickException` with:
-`"Install the Anthropic CLI: pip install anthropic-cli"`.
+**Implementation note**: All adapters MUST use subprocess list form
+(e.g., `["opencode", "run", combined_input]`), never `shell=True`.
+This prevents shell injection and is consistent with the
+`_subprocess_run` injection pattern.
 
 ### D5: Default provider and model
 
@@ -165,7 +171,10 @@ implementation uses: `--ai`, `--model`, `--coverprofile`, `--tests`
 
 `--format` in JSON mode emits `to_json(result)` (same as
 `gazepy crap --format=json`). In AI mode, `--format` is ignored —
-the AI response is always plain text.
+the AI response is always plain text. When `--format` is explicitly
+set (non-default) and `--ai` is also set, emit to stderr:
+`"Warning: --format is ignored in AI mode; output is always plain text."`
+This makes the flag interaction visible without changing behavior.
 
 ### D8: Version bump
 

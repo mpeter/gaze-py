@@ -24,10 +24,12 @@ wire-up included here.
 ### New Capabilities
 
 - `report-command`: `gazepy report` produces AI-powered narrative
-  reports. Subprocess-based adapters for `opencode`, `ollama`, and
-  `claude` CLI. No new Python dependencies. AI is optional — without
-  `--ai`, the command emits the JSON payload to stdout (useful for
-  piping to external tools).
+  reports. Subprocess-based adapters for `opencode` and `ollama`. The
+  `claude` adapter is registered but deferred to Change 4B — passing
+  `--ai claude` raises a clear error with a migration hint. No new
+  Python dependencies. AI is optional — without `--ai`, the command
+  emits the JSON payload to stdout (useful for piping to external
+  tools).
 
 ### Modified Capabilities
 

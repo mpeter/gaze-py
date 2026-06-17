@@ -253,7 +253,7 @@ def analyze(
     type=int,
     default=0,
     show_default=True,
-    help="CI gate: accepted, enforcement deferred until O1. 0 = no limit.",
+    help="CI gate: fail (exit 1) when gaze_crapload exceeds this value. 0 = no limit.",
 )
 @click.option(
     "--ai-mapper",
@@ -379,12 +379,17 @@ def crap(
     _emit(result, output_format)
 
     # CI threshold enforcement — after emitting output.
-    if max_gaze_crapload > 0:
+    if (
+        max_gaze_crapload > 0
+        and result.summary.gaze_crapload is not None
+        and result.summary.gaze_crapload > max_gaze_crapload
+    ):
         click.echo(
-            "Warning: --max-gaze-crapload is not enforced until O1 "
-            "(quality assessment) is implemented. Threshold check skipped.",
+            f"CI gate: gaze_crapload={result.summary.gaze_crapload} "
+            f"exceeds --max-gaze-crapload={max_gaze_crapload}",
             err=True,
         )
+        raise SystemExit(1)
 
     if (
         max_crapload > 0
@@ -881,7 +886,7 @@ def docscan(
     type=int,
     default=0,
     show_default=True,
-    help="CI gate: accepted, enforcement deferred until O1.",
+    help="CI gate: fail (exit 1) when gaze_crapload exceeds this value. 0 = no limit.",
 )
 @click.option(
     "--min-contract-coverage",
@@ -889,6 +894,12 @@ def docscan(
     type=float,
     default=None,
     help="Minimum contract coverage percentage (requires O1).",
+)
+@click.option(
+    "--tests",
+    "tests_path",
+    default=None,
+    help="Test directory or file. Auto-discovered if omitted.",
 )
 @click.option(
     "--ai-timeout",
@@ -906,26 +917,303 @@ def report(
     max_crapload: int,
     max_gaze_crapload: int,
     min_contract_coverage: float | None,
+    tests_path: str | None,
     ai_timeout: int | None,
 ) -> None:
-    """Generate AI-enhanced analysis report for PATH (stub).
+    """Generate an analysis report for PATH.
 
-    Requires O1+O2 — use 'gazepy crap [path]' for CRAP scoring previously
-    available via 'gazepy report'.
+    Without --ai, emits the JSON payload to stdout. With --ai, calls the
+    specified provider subprocess and returns a narrative report.
+
+    PATH may be a single .py file or a directory. Directories are scanned
+    recursively for all .py files.
+
+    When --coverprofile is not provided, gazepy automatically runs pytest with
+    coverage collection. Use --coverprofile to supply a pre-generated report.
+
+    CI gate: --max-crapload exits 1 when the crapload count exceeds the limit.
+    CI gate: --max-gaze-crapload exits 1 when gaze_crapload exceeds the limit.
     """
-    click.echo(
-        "Error: report is not yet implemented in gazepy (requires O1+O2).\n"
-        "       Use 'gazepy crap [path]' for CRAP scoring previously available\n"
-        "       via 'gazepy report'.\n"
-        "       Use Go gaze for full AI reports: gaze report [packages] --ai=claude",
-        err=True,
+    # PATH validation.
+    if path is None:
+        click.echo("Error: missing argument 'PATH'.", err=True)
+        raise SystemExit(2)
+
+    src = Path(path).resolve()
+    if not src.exists():
+        click.echo(f"Error: path does not exist: {path}", err=True)
+        raise SystemExit(2)
+
+    config = load_config(src)
+    coverage_data = _acquire_coverage(src, coverprofile)
+    result = _run_crap(src, coverage_data, config=config)
+    _enrich_with_quality(result, src, tests_path, coverage_data, config=config)
+
+    # JSON-only mode: emit payload first, then enforce gates (HIGH-1 fix:
+    # gates must fire AFTER output so the payload is always written before exit).
+    if ai_provider is None:
+        click.echo(_assemble_report_payload(result))
+        click.echo("Tip: pass --ai opencode to get a narrative report.", err=True)
+        _enforce_crap_gates(result, max_crapload=max_crapload, max_gaze_crapload=max_gaze_crapload)
+        _enforce_min_contract_coverage_from_result(result, min_contract_coverage)
+        return
+
+    # AI mode: warn if --format was explicitly set (non-default).
+    if output_format != "text":
+        click.echo(
+            "Warning: --format is ignored in AI mode; output is always plain text.",
+            err=True,
+        )
+
+    # Lazy import — avoids loading ai.py on every report invocation without --ai.
+    from gaze_py.report.ai import call_ai
+
+    payload = _assemble_report_payload(result)
+    prompt = _load_report_prompt(Path.cwd())
+    effective_timeout = ai_timeout if ai_timeout is not None else 120
+    response = call_ai(
+        prompt,
+        payload,
+        provider=ai_provider,
+        model=model,
+        timeout=effective_timeout,
     )
-    raise SystemExit(1)
+    click.echo(response)
+    # Gates fire after output in AI mode too (HIGH-1 fix: payload always written first).
+    _enforce_crap_gates(result, max_crapload=max_crapload, max_gaze_crapload=max_gaze_crapload)
+    _enforce_min_contract_coverage_from_result(result, min_contract_coverage)
 
 
 # ---------------------------------------------------------------------------
 # Pipeline helpers
 # ---------------------------------------------------------------------------
+
+
+def _acquire_coverage(src: Path, coverprofile: str | None) -> dict[str, float] | None:
+    """Acquire coverage data from a coverprofile or by auto-running pytest.
+
+    Shared by the crap and report commands. When coverprofile is provided,
+    loads it directly. Otherwise runs pytest with --cov and captures the
+    JSON report. Failures are non-fatal — returns None with a warning.
+
+    Args:
+        src: Resolved source path to analyze (passed to --cov).
+        coverprofile: Path to a pre-generated coverage.py JSON report, or None.
+
+    Returns:
+        Dict mapping relative path → percent_covered (0-100), or None.
+    """
+    if coverprofile is not None:
+        try:
+            return _load_coverage_json(coverprofile)
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"Error: {e}", err=True)
+            raise SystemExit(2) from e
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp_f:
+        tmp = tmp_f.name
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                f"--cov={src}",
+                "--cov-report",
+                f"json:{tmp}",
+                "-q",
+                "--tb=no",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return _load_coverage_json(tmp)
+    except (subprocess.CalledProcessError, OSError):
+        click.echo(
+            "Warning: pytest failed or is not installed — "
+            "continuing without coverage data. "
+            "Use --coverprofile to provide a pre-generated report.",
+            err=True,
+        )
+        return None
+    except Exception as exc:  # noqa: BLE001
+        click.echo(
+            f"Warning: coverage JSON could not be parsed — continuing without coverage data. "
+            f"({exc})",
+            err=True,
+        )
+        return None
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
+def _enforce_crap_gates(
+    result: AnalysisResult,
+    *,
+    max_crapload: int,
+    max_gaze_crapload: int,
+) -> None:
+    """Enforce --max-gaze-crapload and --max-crapload CI gates.
+
+    Emits a message to stderr and raises SystemExit(1) when a gate is
+    exceeded. Called after emitting output so the payload is always written
+    before the exit.
+
+    Args:
+        result: AnalysisResult with populated summary.
+        max_crapload: Maximum allowed crapload count. 0 = no limit.
+        max_gaze_crapload: Maximum allowed gaze_crapload count. 0 = no limit.
+    """
+    if (
+        max_gaze_crapload > 0
+        and result.summary.gaze_crapload is not None
+        and result.summary.gaze_crapload > max_gaze_crapload
+    ):
+        click.echo(
+            f"CI gate: gaze_crapload={result.summary.gaze_crapload} "
+            f"exceeds --max-gaze-crapload={max_gaze_crapload}",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if (
+        max_crapload > 0
+        and result.summary.crapload is not None
+        and result.summary.crapload > max_crapload
+    ):
+        click.echo(
+            f"CI gate: crapload={result.summary.crapload} exceeds --max-crapload={max_crapload}",
+            err=True,
+        )
+        raise SystemExit(1)
+
+
+def _enforce_min_contract_coverage_from_result(
+    result: AnalysisResult,
+    min_contract_coverage: float | None,
+) -> None:
+    """Enforce --min-contract-coverage CI gate from an AnalysisResult.
+
+    Inline enforcement for the report command: _check_min_contract_coverage
+    takes QualityReport objects; here we have FunctionTargets with scores.
+
+    Args:
+        result: AnalysisResult with scored FunctionTargets.
+        min_contract_coverage: Minimum required average contract coverage
+            percentage, or None to skip enforcement.
+    """
+    if min_contract_coverage is None:
+        return
+
+    coverages = [
+        (t.name, t.score.contract_coverage)
+        for t in result.functions
+        if t.score is not None and t.score.contract_coverage is not None
+    ]
+    if not coverages:
+        return
+
+    avg_cc = sum(pct for _, pct in coverages) / len(coverages)
+    click.echo(
+        f"contract coverage: {avg_cc:.1f}% avg, min {min_contract_coverage:.0f}% "
+        f"({'PASS' if avg_cc >= min_contract_coverage else 'FAIL'})",
+        err=True,
+    )
+    if avg_cc < min_contract_coverage:
+        for fn_name, pct in coverages:
+            if pct < min_contract_coverage:
+                click.echo(
+                    f"Error: contract coverage below minimum: "
+                    f"{fn_name}: {pct:.1f}% < {min_contract_coverage:.0f}%",
+                    err=True,
+                )
+        raise SystemExit(1)
+
+
+def _strip_frontmatter(content: str) -> str:
+    """Remove YAML frontmatter block from content.
+
+    Frontmatter is the block between the first '---\\n' and the
+    next '\\n---' line. Returns content unchanged if no frontmatter.
+
+    Edge-case contract: handles well-formed frontmatter (opening
+    '---\\n', closing '\\n---\\n'). Malformed frontmatter (no
+    closing '---') returns the full content unchanged — acceptable
+    since gaze-reporter.md always has well-formed frontmatter.
+    Note: leading blank lines immediately after the closing '---'
+    are stripped by lstrip("\\n"). This is intentional — it matches
+    Go's stripFrontmatter() behavior and gaze-reporter.md does not
+    use intentional leading blank lines in its body.
+
+    Args:
+        content: Raw file content, possibly with YAML frontmatter.
+
+    Returns:
+        Content with frontmatter removed, or original content unchanged.
+    """
+    if not content.startswith("---"):
+        return content
+    rest = content[3:].lstrip("\n")
+    idx = rest.find("\n---")
+    if idx < 0:
+        return content
+    after = rest[idx + 4 :]
+    return after.lstrip("\n")
+
+
+def _load_report_prompt(workdir: Path) -> str:
+    """Load the gaze-reporter system prompt.
+
+    Checks for a local .opencode/agents/gaze-reporter.md first
+    (user override). Falls back to the bundled asset.
+
+    AP-004: use importlib.resources, not __file__, for bundled assets.
+    Consistent with scaffold.py anchor: files("gaze_py.cli.assets").
+    The lazy import avoids loading importlib.resources on every
+    CLI invocation without --ai (same pattern as call_ai in report()).
+
+    MEDIUM-1 fix: workdir is resolved to an absolute path before use,
+    and the local file is only read when it resolves to a path contained
+    within workdir (path traversal guard).
+
+    Args:
+        workdir: Project root to search for local override.
+
+    Returns:
+        System prompt string with YAML frontmatter stripped.
+    """
+    workdir = workdir.resolve()
+    local = workdir / ".opencode" / "agents" / "gaze-reporter.md"
+    if local.exists() and local.resolve().is_relative_to(workdir):
+        content = local.read_text(encoding="utf-8")
+    else:
+        # AP-004: use importlib.resources, not __file__, for bundled assets.
+        # Lazy import — avoids loading importlib.resources on every
+        # CLI invocation without --ai (same pattern as call_ai in 4.2).
+        from importlib.resources import files as _pkg_files
+
+        content = (
+            _pkg_files("gaze_py.cli.assets")
+            .joinpath("agents/gaze-reporter.md")
+            .read_text(encoding="utf-8")
+        )
+    return _strip_frontmatter(content)
+
+
+def _assemble_report_payload(result: AnalysisResult) -> str:
+    """Serialize the analysis result as the AI report payload.
+
+    Returns the same JSON that 'gazepy crap --format=json' produces.
+
+    Args:
+        result: AnalysisResult from the CRAP pipeline.
+
+    Returns:
+        JSON string representation of the analysis result.
+    """
+    from gaze_py.report.json_formatter import to_json
+
+    return to_json(result)
 
 
 def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
@@ -1557,7 +1845,7 @@ def schema() -> None:
     type=int,
     default=0,
     show_default=True,
-    help="CI gate: accepted, enforcement deferred until O1. 0 = no limit.",
+    help="CI gate: fail (exit 1) when gaze_crapload exceeds this value. 0 = no limit.",
 )
 def self_check(output_format: str, max_crapload: int, max_gaze_crapload: int) -> None:
     """Run CRAP analysis on gaze-py's own source (dogfooding).
@@ -1579,15 +1867,20 @@ def self_check(output_format: str, max_crapload: int, max_gaze_crapload: int) ->
 
     config = load_config(gaze_py_src)
 
-    if max_gaze_crapload > 0:
-        click.echo(
-            "Warning: --max-gaze-crapload is not enforced until O1 "
-            "(quality assessment) is implemented. Threshold check skipped.",
-            err=True,
-        )
-
     result = _run_crap(gaze_py_src.resolve(), None, config=config)
     _emit(result, output_format)
+
+    if (
+        max_gaze_crapload > 0
+        and result.summary.gaze_crapload is not None
+        and result.summary.gaze_crapload > max_gaze_crapload
+    ):
+        click.echo(
+            f"CI gate: gaze_crapload={result.summary.gaze_crapload} "
+            f"exceeds --max-gaze-crapload={max_gaze_crapload}",
+            err=True,
+        )
+        raise SystemExit(1)
 
     if (
         max_crapload > 0

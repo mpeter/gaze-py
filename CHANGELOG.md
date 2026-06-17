@@ -5,6 +5,23 @@ All notable changes to gaze-py are documented here.
 ## [Unreleased]
 
 ### Added
+- `gazepy report`: AI-powered narrative reports via subprocess
+  adapters (opencode, ollama). Pass --ai opencode to generate a
+  report. Without --ai, emits the JSON payload. (claude adapter
+  registered; available in Change 4B.)
+- `gazepy report --tests`: optional quality enrichment for
+  GazeCRAP, quadrant, and gap hint data in the report payload.
+
+### Fixed
+- `--max-gaze-crapload` now enforced in `crap`, `self-check`, and
+  `report` commands (O5). Previously emitted a stale "deferred
+  until O1" warning; O1 has been shipped since v0.3.
+
+- Spec: `openspec/changes/report-command/`
+
+---
+
+### Added (prior)
 - Strategy 3 pairing via Astroid transitive call graph inference
   (`inference_method: "call_graph_transitive"`, confidence 0.75)
 - `"no_test_coverage"` contract coverage reason code for functions
