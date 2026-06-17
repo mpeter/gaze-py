@@ -49,12 +49,14 @@ None.
 
 Assessed against `.specify/memory/constitution.md`.
 
-### I. Autonomous Collaboration
+### I. Accuracy
 
 **Assessment**: PASS
 
-`gaps` and `gap_hints` are self-describing fields. JSON consumers can
-act on them without additional context. No new communication surfaces.
+`hint_for_effect()` maps every effect type to a concrete assertion
+snippet. All 38 `SideEffectType` values are covered; the match is
+exhaustive with no fallback placeholder. Hints accurately reflect
+the effect's semantic meaning.
 
 ### II. Minimal Assumptions
 
@@ -65,13 +67,14 @@ Hints are generated from the effect type and description only — no
 assumptions about the test framework or project structure. All 38
 effect types are covered; unknown types cannot occur (enum is closed).
 
-### III. Observable Quality
+### III. Actionable Output
 
 **Assessment**: PASS
 
 The gap is surfaced in existing JSON output without a new command or
 flag. Consumers that already parse `quality` JSON gain actionable data
-immediately after upgrading.
+immediately after upgrading. Each hint is a concrete pytest code
+snippet — not a generic description.
 
 ### IV. Testability
 
@@ -98,3 +101,10 @@ snippets. No porting contract is modified or extended.
 No new runtime dependencies. `hints.py` imports only from
 `gaze_py.taxonomy`. Fully usable as a library — `hint_for_effect()`
 is importable without the CLI.
+
+### VII. Supply Chain Integrity
+
+**Assessment**: PASS
+
+No new dependencies. `hints.py` uses only stdlib and internal imports.
+`uv.lock` unchanged.

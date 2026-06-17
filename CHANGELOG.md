@@ -27,7 +27,7 @@ All notable changes to gaze-py are documented here.
   deduplication of the double detect_and_classify() call is
   deferred to a follow-up change)
 - Astroid 3.x compatibility is asserted but CI-verified at 4.1.2
-  only (astroid>=3.0 with no upper bound)
+  only (astroid>=3.0,<5 — CI-verified at 4.1.2)
 - `MANAGER.clear_cache()` evicts astroid's process-global AST
   cache on each `assess()` call; tools sharing the process that
   also use astroid (e.g. pylint) will have their cache cleared

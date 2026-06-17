@@ -109,7 +109,7 @@ Each function in the output includes:
 | `crap` | CRAP score (complexity² × (1 − coverage)³ + complexity), or `null` |
 | `gaze_crap` | GazeCRAP score using contract coverage; populated by `gazepy quality` |
 | `quadrant` | Q1–Q4 classification based on CRAP and GazeCRAP; populated by `gazepy quality` |
-| `fix_strategy` | Recommended action: `add_tests`, `decompose_and_test`, or `decompose` |
+| `fix_strategy` | Recommended action: `add_tests`, `add_assertions`, `decompose_and_test`, or `decompose` |
 | `contract_coverage` | Fraction of contractual effects covered by tests; populated by `gazepy quality` |
 
 The summary section includes `recommended_actions` — up to 20 functions sorted by

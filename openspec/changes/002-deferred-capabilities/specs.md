@@ -234,12 +234,12 @@ implemented; they MUST be no-ops (with a warning) when O1 has not run.
 
 #### Scenario: CRAPload threshold exceeded
 - **GIVEN** `--max-crapload 5` and CRAPload is 8
-- **WHEN** `gazepy analyze` runs
+- **WHEN** `gazepy crap` runs
 - **THEN** exit code is non-zero
 
 #### Scenario: Gaze threshold without O1
 - **GIVEN** `--max-gaze-crapload 3` and O1 has not run
-- **WHEN** `gazepy analyze` runs
+- **WHEN** `gazepy crap` runs
 - **THEN** exit code is 0 and a warning is emitted noting GazeCRAP is unavailable
 
 ---
@@ -311,7 +311,7 @@ The `gaze-py` package MUST be publishable to PyPI so that
 
 - GitHub Actions release workflow triggered on version tag (`v*.*.*`)
 - `uv build` + `uv publish` with PyPI token from GitHub secrets
-- Version bump process (update `__version__` in `src/gaze/__init__.py`)
+- Version bump process (update `__version__` in `src/gaze_py/__init__.py`)
 - Confirmation that the `gaze-py` PyPI name is available and claimed before
   first publish (the existing `gaze` package on PyPI is unrelated; `gaze-py`
   as a name must be verified separately)

@@ -105,13 +105,15 @@ None.
 
 Assessed against `.specify/memory/constitution.md`.
 
-### I. Autonomous Collaboration
+### I. Accuracy
 
 **Assessment**: PASS
 
-All changes expressed through existing JSON schema fields and updated
-reason code values. The `"no_test_coverage"` reason code is
-self-describing. No new communication surfaces.
+The `"no_test_coverage"` reason code corrects a false negative:
+functions with detected side effects but no paired test were previously
+misidentified as `"no_effects_detected"`. Astroid Strategy 3 increases
+pairing from 20/62 to ~31/62, reducing the number of functions with
+inaccurate reason codes.
 
 ### II. Minimal Assumptions
 
@@ -122,14 +124,16 @@ the untested function has — it explicitly signals "unknown, because
 untested." Astroid inference degrades gracefully to unmatched when
 inference fails, preserving existing behaviour.
 
-### III. Observable Quality
+### III. Actionable Output
 
 **Assessment**: PASS
 
 `contract_coverage_reason` becomes accurate for previously-misidentified
 functions. The change is immediately verifiable: `gazepy quality` output
 shows `"no_test_coverage"` instead of `"no_effects_detected"` for
-functions with detected side effects but no paired test.
+functions with detected side effects but no paired test. Users can act
+on the accurate reason code to prioritise writing tests for untested
+functions.
 
 ### IV. Testability
 

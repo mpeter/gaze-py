@@ -123,4 +123,5 @@ jobs:
             fi
             echo "Attempt $i: not yet available, retrying in 30s..."
           done
-          echo "::warning::Smoke test timed out after 150s — verify manually at https://pypi.org/p/gaze-py"
+          echo "::error::Smoke test timed out after 150s — verify manually at https://pypi.org/p/gaze-py"
+          exit 1
