@@ -40,7 +40,7 @@ Therefore hints do not interpolate `target` for specificity — they use
 the effect type and Python-idiomatic boilerplate instead. This is the
 correct Python-native adaptation.
 
-### D2: Effect type → hint mapping (all 38)
+### D2: Effect type → hint mapping (all 38) <!-- id: f7ea3b9d-1d72-041d-7d09-63263d284c72 -->
 
 P0 — Must Detect (5 types, tailored):
 
@@ -80,14 +80,14 @@ P2 — Important (10 types, semi-tailored):
 | `LogWrite` | `with caplog.at_level(logging.DEBUG):\n    target(...)\nassert 'expected' in caplog.text` |
 | `ContextCancellation` | `# assert context/event was cancelled after target()` |
 
-P3–P4 — generic fallback (15 types):
+P3–P4 — generic fallback (12 types):
 
 ```python
 f"# assert {effect.type.value} side effect of target()"
 ```
 
-Applied to: `StdoutWrite`, `StderrWrite`, `EnvVarMutation`, `MutexOp`,
-`WaitGroupOp`, `AtomicOp`, `TimeDependency`, `ProcessExit`,
+Applied to: `EnvVarMutation`, `MutexOp`,
+`WaitGroupOp`, `AtomicOp`, `TimeDependency`,
 `RecoverBehavior`, `ReflectionMutation`, `UnsafeMutation`, `CgoCall`,
 `FinalizerRegistration`, `SyncPoolOp`, `ClosureCaptureMutation`.
 

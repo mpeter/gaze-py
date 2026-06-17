@@ -12,7 +12,7 @@
 
 ## 1. hints.py — pure function module
 
-- [ ] 1.1 Create `src/gaze_py/quality/hints.py` with:
+- [x] 1.1 Create `src/gaze_py/quality/hints.py` with:
       ```python
       from gaze_py.taxonomy.effects import SideEffectType
       from gaze_py.taxonomy.models import SideEffect
@@ -101,7 +101,7 @@
 
 ## 2. Taxonomy — ContractCoverageResult fields
 
-- [ ] 2.1 Add two fields to `ContractCoverageResult` in
+- [x] 2.1 Add two fields to `ContractCoverageResult` in
       `src/gaze_py/taxonomy/models.py`:
       ```python
       gaps: tuple[SideEffect, ...] = ()
@@ -120,7 +120,7 @@
 
 ## 3. Coverage — gap collection
 
-- [ ] 3.1 Update `compute_contract_coverage()` in
+- [x] 3.1 Update `compute_contract_coverage()` in
       `src/gaze_py/quality/coverage.py`:
       - Add import: `from gaze_py.quality.hints import hint_for_effect`
       - After computing `covered_count`, build gap data in a single pass
@@ -145,7 +145,7 @@
 
 ## 4. JSON formatter — schema update
 
-- [ ] 4.1 Verify `quality_to_json()` in
+- [x] 4.1 Verify `quality_to_json()` in
       `src/gaze_py/report/json_formatter.py` serialises the new fields
       correctly. `dataclasses.asdict()` already recursively converts
       nested dataclasses including `SideEffect`. Run:
@@ -157,7 +157,7 @@
 
 ## 5. Tests
 
-- [ ] 5.1 [P] Create `tests/test_quality_hints.py`:
+- [x] 5.1 [P] Create `tests/test_quality_hints.py`:
       Build a minimal `SideEffect` fixture:
       ```python
       def _make_effect(effect_type: SideEffectType) -> SideEffect:
@@ -188,7 +188,7 @@
         a non-empty string for every type (guards against missing match
         arms and empty string returns)
 
-- [ ] 5.2 [P] Append new tests to `tests/test_quality_coverage.py`
+- [x] 5.2 [P] Append new tests to `tests/test_quality_coverage.py`
       (no modification to existing tests):
       - `test_gaps_populated_when_coverage_is_partial` — partial coverage
         (1 of 2 contractual effects covered) → `len(result.gaps) == 1`
@@ -204,7 +204,7 @@
       - `test_gap_hints_are_non_empty_strings` — for partial coverage,
         all hints in `result.gap_hints` are non-empty strings
 
-- [ ] 5.3 Append to `tests/test_quality_integration.py`
+- [x] 5.3 Append to `tests/test_quality_integration.py`
       (no modification to existing tests):
       - `test_quality_report_includes_gap_hints` — run `assess()` on the
         `undertested` fixture (function with `ReturnValue` effect, zero
@@ -215,7 +215,10 @@
 
 ## 6. CI gate
 
-- [ ] 6.1 [P] `uv run ruff check .`
-- [ ] 6.2 [P] `uv run ruff format --check .`
-- [ ] 6.3 [P] `uv run mypy --strict src/`
-- [ ] 6.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+- [x] 6.1 [P] `uv run ruff check .`
+- [x] 6.2 [P] `uv run ruff format --check .`
+- [x] 6.3 [P] `uv run mypy --strict src/`
+- [x] 6.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+
+<!-- spec-review: passed -->
+<!-- code-review: passed -->

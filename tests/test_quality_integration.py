@@ -520,3 +520,36 @@ def test_build_contract_coverage_map_none_does_not_displace_percentage(
     result = build_contract_coverage_map(tmp_path, tmp_path, _default_config())
     assert result
     assert result["fn"].percentage == 50.0
+
+
+# ---------------------------------------------------------------------------
+# gap-hints change — integration test
+# ---------------------------------------------------------------------------
+
+
+def test_quality_report_includes_gap_hints() -> None:
+    """assess() on undertested fixture → gap_hints non-empty, ReturnValue hint fires.
+
+    compute_total has a ReturnValue effect with zero assertions → 0% coverage.
+    The gap_hints tuple must be non-empty and the first hint must contain
+    'result' or 'assert' (the ReturnValue tailored hint).
+    """
+    result = assess(
+        _SRC / "undertested.py",
+        _TESTS / "test_undertested.py",
+        config=_default_config(),
+    )
+    assert result
+    report = next(
+        (r for r in result.reports if r.target_function == "compute_total"),
+        None,
+    )
+    assert report is not None, f"No report for compute_total. Reports: {result.reports}"
+    assert report.contract_coverage is not None
+    assert report.contract_coverage.gap_hints, (
+        "Expected non-empty gap_hints for undertested compute_total, got empty"
+    )
+    first_hint = report.contract_coverage.gap_hints[0]
+    assert "result" in first_hint or "assert" in first_hint, (
+        f"Expected ReturnValue hint containing 'result' or 'assert', got: {first_hint!r}"
+    )
