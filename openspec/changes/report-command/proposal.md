@@ -56,6 +56,17 @@ None.
 - `tests/test_report_ai.py` — new
 - `tests/test_cli.py` — appended tests
 
+## Acceptance Criteria
+
+- AC-1: `gazepy report` without `--ai` exits 0 and emits valid JSON payload
+  to stdout.
+- AC-2: `gazepy report --ai opencode` invokes the opencode subprocess adapter
+  and returns its stdout as the report body.
+- AC-3: `--max-gaze-crapload` enforcement exits 1 when the threshold is
+  exceeded (O5 wire-up).
+- AC-4: Provider binary not found (e.g., `opencode` not on PATH) produces a
+  clear error message with an install hint and exits non-zero.
+
 ## Constitution Alignment
 
 Assessed against `.specify/memory/constitution.md`.
@@ -113,3 +124,11 @@ configurable, CI exit on violation).
 `src/gaze_py/report/ai.py` is a library module — importable without
 the CLI. No new runtime dependencies. AI is opt-in via `--ai` flag.
 The JSON payload mode works standalone without any external tool.
+
+### VII. Supply Chain Integrity
+
+**Assessment**: PASS
+
+No new dependencies. The subprocess adapter pattern uses only stdlib
+(`subprocess`, `shutil.which`). No new entries in `pyproject.toml` or
+`uv.lock`.

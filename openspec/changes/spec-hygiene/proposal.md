@@ -4,15 +4,19 @@ The review council (Iteration 1, 9 Divisor personas) identified spec artifacts
 with missing mandatory sections, vague acceptance criteria, stale tracking
 data, and absent traceability links. These gaps violate Constitution Principle
 IV (Testability — coverage strategy required) and reduce the value of the spec
-corpus as implementation reference material.
+corpus as implementation reference material. Three of the eight HIGH advisories
+(Advisories 3, 4, 5) address CI supply chain issues and are handled separately
+in the `ci-supply-chain` change; this change addresses the remaining five
+(Advisories 1, 2, 6, 7, 8).
 
 ## What Changes
 
 - Add Coverage Strategy sections to `specs/001-gazepy-init-deploys/plan.md`
-  and `openspec/changes/gazepy-fix-command/proposal.md` and
-  `openspec/changes/gazepy-test-generator/proposal.md` (archived — update in
+  and `openspec/changes/archive/gazepy-fix-command/proposal.md` and
+  `openspec/changes/archive/gazepy-test-generator/proposal.md` (archived — update in
   archive for completeness)
-- Add numbered Acceptance Criteria (Given/When/Then) to
+- Fix CHANGELOG `[0.4.1]` terminology: "replicator init" → "uf init"
+- Add numbered Acceptance Criteria (AC-N: format) to
   `openspec/changes/gap-hints/proposal.md` and
   `openspec/changes/report-command/proposal.md`
 - Add `Spec:` traceability paths to every CHANGELOG entry (0.1.0 through

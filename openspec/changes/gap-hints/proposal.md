@@ -45,6 +45,15 @@ None.
 - `tests/test_quality_coverage.py` — appended tests
 - `tests/test_quality_integration.py` — appended test
 
+## Acceptance Criteria
+
+- AC-1: `len(result.gaps) == len(result.gap_hints)` for all contract coverage
+  computations — the two sequences are always co-indexed.
+- AC-2: All 38 `SideEffectType` values produce a non-empty hint string from
+  `hint_for_effect()` — no silent fall-through to an empty string.
+- AC-3: `quality_to_json()` output includes `gaps` (array of effect objects)
+  and `gap_hints` (array of strings) when coverage is partial or zero.
+
 ## Constitution Alignment
 
 Assessed against `.specify/memory/constitution.md`.

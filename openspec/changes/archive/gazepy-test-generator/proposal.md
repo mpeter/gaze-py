@@ -43,6 +43,13 @@ giving Python developers the same workflow their Go counterparts have today.
   intent, structure, and action taxonomy — translated for Python/pytest
   conventions throughout.
 
+## Coverage Strategy
+
+Agent command files are Markdown, not testable Python. Behavioral verification
+is manual (run the command, observe output). CI gate (`ruff`, `mypy`, `pytest`)
+confirms no regressions from the branch. No automated test coverage is required
+or possible for agent prompt Markdown files.
+
 <!-- spec-review: passed -->
 
 <!-- code-review: passed -->
