@@ -43,3 +43,10 @@ equivalent of `/gaze fix`, closing that gap.
 - **Depends on**: `gazepy-test-generator` agent (already present in
   `openspec/changes/gazepy-test-generator/` or merged); `gazepy crap` and
   `gazepy quality` CLI subcommands.
+
+## Coverage Strategy
+
+Agent command files are Markdown, not testable Python. Behavioral verification
+is manual (run the command, observe output). CI gate (`ruff`, `mypy`, `pytest`)
+confirms no regressions from the branch. No automated test coverage is required
+or possible for agent command Markdown files.

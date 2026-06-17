@@ -41,6 +41,20 @@ binary — no brew release required.
 - [x] **VI. Composability First**: `gazepy` remains sole required entry point. No new dependencies.
 - [x] **VII. Supply Chain Integrity**: No new dependencies. `uv.lock` unchanged.
 
+## Coverage Strategy
+
+This is a rename-only change — no new production logic is introduced and no
+new functions are added. Coverage strategy is minimal:
+
+1. All existing scaffold tests in `tests/test_cli.py` are updated to assert
+   the new filenames (`gaze-reporter.md`, `gaze.md`). No new test functions
+   are required beyond path/content assertion updates.
+2. SC-001 and SC-002 (verifying the correct files are created/absent after
+   `gazepy init`) are verified by existing test functions, updated in place.
+3. The 85% coverage floor is maintained via the CI gate (`pytest
+   --cov-fail-under=85`). With no new production code paths added, no new
+   coverage gaps are introduced.
+
 ## Project Structure
 
 ### Documentation (this feature)

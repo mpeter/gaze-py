@@ -15,13 +15,13 @@
 
 Implement in sequence; each step is a blocker for the next.
 
-- [ ] A.1 O1-A — Test-target pairing (`src/gaze_py/quality/pairing.py`)
-- [ ] A.2 O1-B — Assertion detection (`src/gaze_py/quality/assertions.py`)
-- [ ] A.3 O1-C — Assertion → effect mapping (`src/gaze_py/quality/mapper.py`)
-- [ ] A.4 O1-D — Contract coverage computation (`src/gaze_py/quality/coverage.py`)
+- [ ] A.1 O1-A — Test-target pairing (`src/gaze_py/quality/pairing.py`) — SHIPPED 0.3.0
+- [ ] A.2 O1-B — Assertion detection (`src/gaze_py/quality/assertions.py`) — SHIPPED 0.3.0
+- [ ] A.3 O1-C — Assertion → effect mapping (`src/gaze_py/quality/mapper.py`) — SHIPPED 0.3.0
+- [ ] A.4 O1-D — Contract coverage computation (`src/gaze_py/quality/coverage.py`) — SHIPPED 0.3.0
 - [ ] A.5 O1-E — Populate GazeCRAP, quadrant, fix_strategy, gaze_crapload,
-      avg_contract_coverage, quadrant_counts, fix_strategy_counts in output
-- [ ] A.6 O1-F — Populate `effect_confidence_range` field
+      avg_contract_coverage, quadrant_counts, fix_strategy_counts in output — SHIPPED 0.3.0
+- [ ] A.6 O1-F — Populate `effect_confidence_range` field — SHIPPED 0.3.1
 
 ### Group B — Cyclomatic Complexity Algorithm (prerequisite quality improvement)
 
@@ -29,25 +29,25 @@ Can be implemented independently of O1, but improves CRAP accuracy.
 
 - [ ] B.1 Specify and implement the complexity algorithm explicitly in
       `src/gaze_py/analysis/complexity.py` (which AST nodes increment the counter,
-      nested scope rules, baseline)
+      nested scope rules, baseline) — SHIPPED 0.3.1
 - [ ] B.2 Add a test that computes CRAP from a real Python function
-      (not pre-supplied complexity numbers) and verifies against a known result
+      (not pre-supplied complexity numbers) and verifies against a known result — SHIPPED 0.3.1
 
 ### Group C — CLI Enhancements (independent, low risk)
 
 Can be implemented in any order after 001 lands.
 
 - [ ] C.1 O5 — CI threshold flags: `--max-crapload`, `--max-gaze-crapload`
-      (O1-independent portion only)
+      (O1-independent portion only) — SHIPPED 0.2.0
 - [ ] C.2 O5 — `--min-contract-coverage` flag [BLOCKED: A.4]
 - [ ] C.3 O6 full — Coverage profile reuse: support `.coverage` binary format,
       optional internal `coverage run pytest` invocation
 
 ### Group D — Classification Enhancements (independent)
 
-- [ ] D.1 O3 — Document scanning signal (`src/gaze_py/classify/signals/docscan.py`)
+- [ ] D.1 O3 — Document scanning signal (`src/gaze_py/classify/signals/docscan.py`) — SHIPPED 0.4.0
 - [ ] D.2 O7 full — Add `doc_scan.exclude` and `doc_scan.timeout` to
-      `.gaze.yaml` config [BLOCKED: D.1]
+      `.gaze.yaml` config [BLOCKED: D.1] — SHIPPED 0.4.0
 - [ ] D.3 Revisit P3/P4 no-equivalent types — close SyncPoolOp/UnsafeMutation/
       AtomicOp permanently; evaluate WaitGroupOp and RecoverBehavior
 
@@ -58,9 +58,9 @@ Can be implemented in any order after 001 lands.
 
 ### Group F — Distribution (independent, external prerequisite)
 
-- [ ] F.1 Claim `gaze-py` name on PyPI (manual — verify name is unclaimed)
+- [ ] F.1 Claim `gaze-py` name on PyPI (manual — verify name is unclaimed) — SHIPPED 0.2.0
 - [ ] F.2 PyPI publication — GitHub Actions release workflow triggered on
-      version tag
+      version tag — SHIPPED 0.2.0
 
 ### Group G — Cleanup (revisit after 001 is stable)
 

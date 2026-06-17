@@ -32,19 +32,23 @@ All notable changes to gaze-py are documented here.
   cache on each `assess()` call; tools sharing the process that
   also use astroid (e.g. pylint) will have their cache cleared
 
+- Spec: `openspec/changes/archive/quality-pairing-astroid/`
+
 ## [0.4.1] — 2026-06-15
 
 ### Bug Fixes
 
 - **`gazepy init` scaffold asset names corrected** — `init` now deploys
   `gaze-reporter.md` and `gaze.md` instead of `gazepy-reporter.md` and
-  `gazepy.md`, coordinated with the `replicator init` sentinel change.
+  `gazepy.md`, coordinated with the `uf init` sentinel change.
 
 ### Improvements
 
 - **`docscan` repo-root detection** — Uses the shared `SENTINELS` frozenset
   from `gaze_py.config.loader` instead of hard-coded filename checks, keeping
   repo-root detection consistent across the codebase.
+
+- Spec: `specs/001-gazepy-init-deploys/`
 
 ## [0.4.0] — 2026-06-14
 
@@ -78,6 +82,8 @@ gazepy docscan . --exclude "docs/internal/**" --exclude "vendor/**"
 gazepy analyze src/mypackage/
 ```
 
+- Spec: `openspec/changes/archive/o3-docscan/`
+
 ## [0.3.1] — 2026-06-14
 
 ### Bug Fixes / Improvements
@@ -92,6 +98,8 @@ gazepy analyze src/mypackage/
   values. The previous `test_high_complexity_function_greater_than_1`
   (asserted `> 1`) is replaced by `test_high_complexity_function_exact_value`
   (asserts `== 9`).
+
+- Spec: `openspec/changes/archive/effect-confidence-range/`
 
 ## [0.3.0] — 2026-06-14
 
@@ -122,6 +130,8 @@ gazepy quality src/mypackage/
 # CI gate: fail if average contract coverage below threshold
 gazepy quality src/mypackage/ --min-contract-coverage 80
 ```
+
+- Spec: `openspec/changes/archive/o1-quality-pipeline/`
 
 ## [0.2.0] — 2026-06-14
 
@@ -179,6 +189,8 @@ gazepy quality src/mypackage/ --min-contract-coverage 80
 | `gazepy analyze <path> --coverage-json=cov.json` | `gazepy crap <path> --coverprofile=cov.json` |
 | `gazepy report <src> <tests>` | `gazepy crap <src>` |
 
+- Spec: `openspec/changes/archive/cli-parity/`
+
 ## [0.1.0] — 2026-06-13
 
 Initial release — Python-native port of the Go gaze GazeCRAP analysis engine.
@@ -200,3 +212,5 @@ Initial release — Python-native port of the Go gaze GazeCRAP analysis engine.
 - **`.gaze.yaml` configuration** — `contractual_threshold` and
   `incidental_threshold` configurable per-project.
 - **Python 3.11+** — Tested on CPython 3.11, 3.12, 3.13.
+
+- Spec: _(initial release — predates spec workflow)_

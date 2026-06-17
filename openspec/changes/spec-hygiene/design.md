@@ -76,15 +76,29 @@ documentation gap should be resolved for future reference.
 Append a `- Spec: openspec/changes/<name>/` line after each version's
 content. For 0.1.0 (initial release predating the spec workflow), use
 `- Spec: _(initial release — predates spec workflow)_`. For Unreleased,
-reference `openspec/changes/quality-pairing-astroid/`.
+reference `openspec/changes/archive/quality-pairing-astroid/`.
 
-### D5 — 002-deferred-capabilities status update
+### D5 — CHANGELOG terminology fix
 
-Mark each deferred item in `tasks.md` as:
-- `[x]` SHIPPED (vN.N.N) — for items with corresponding CHANGELOG entries
-- `[ ]` — remains open for genuinely deferred items
+In CHANGELOG `[0.4.1]`, the phrase "replicator init" refers to the `uf`
+scaffold tool — it should be "uf init" to match the consistent terminology
+used in the spec and plan for `001-gazepy-init-deploys`. This is a one-line
+factual correction with no design ambiguity.
 
-Items to mark SHIPPED:
+### D6 — 002-deferred-capabilities status update
+
+The `002-deferred-capabilities/tasks.md` file carries an explicit header
+comment: *"No tasks here should be checked off."* To avoid conflicting with
+this convention, shipped items will be annotated with an inline suffix rather
+than checked off:
+
+- Append `— SHIPPED 0.N.N` to the task description text for each shipped item.
+- The checkbox remains `[ ]` — the item is "shipped" but the tracking document's
+  own structural convention is preserved.
+- The header comment is NOT modified — the annotation approach makes it
+  self-evident without changing the document's stated semantics.
+
+Items to annotate SHIPPED:
 - A.1–A.4 (O1 pipeline) — shipped 0.3.0
 - A.5 (GazeCRAP/quadrant/fix_strategy) — shipped 0.3.0
 - A.6 (effect_confidence_range) — shipped 0.3.1
