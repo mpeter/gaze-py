@@ -24,6 +24,10 @@ from gaze_py.taxonomy.models import AnalysisResult, QualityReport
 # Updated in task 8.4 to reflect quality-related output fields populated by
 # the O1 pipeline (gaze_crap, contract_coverage, quadrant, gaze_crapload,
 # avg_contract_coverage, quadrant_counts, fix_strategy_counts).
+# Updated in gap-hints change: contract_coverage objects in quality_to_json()
+# output may now contain `gaps` (array of SideEffect dicts) and `gap_hints`
+# (array of strings) when coverage is partial. Both default to [] when
+# coverage is 100% or when percentage is None (OC-003 null-not-zero paths).
 SCHEMA: str = json.dumps(
     {
         "$schema": "http://json-schema.org/draft-07/schema#",

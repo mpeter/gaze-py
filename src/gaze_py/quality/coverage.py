@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from gaze_py.classify.engine import ClassificationEngine
 from gaze_py.config.loader import GazeConfig
+from gaze_py.quality.hints import hint_for_effect
 from gaze_py.taxonomy.effects import SideEffectType
 from gaze_py.taxonomy.models import (
     AssertionSite,
@@ -122,6 +123,18 @@ def compute_contract_coverage(
     over_spec = sum(1 for _, et in mapped if et in incidental_types)
     unmapped = sum(1 for _, et in mapped if et is None)
 
+    # Build gap data in a single pass over contractual effects, deduplicated by type,
+    # preserving insertion order. Parallel to gap_hints — len(gaps)==len(gap_hints)
+    # is an enforced postcondition (both lists grow together in lockstep).
+    seen_gap_types: set[SideEffectType] = set()
+    gap_effects: list[SideEffect] = []
+    hints: list[str] = []
+    for effect in contractual:
+        if effect.type not in covered_types and effect.type not in seen_gap_types:
+            seen_gap_types.add(effect.type)
+            gap_effects.append(effect)
+            hints.append(hint_for_effect(effect))
+
     return ContractCoverageResult(
         percentage=covered_count / len(contractual_types) * 100.0,
         covered_effects=covered_count,
@@ -129,4 +142,6 @@ def compute_contract_coverage(
         over_specification_count=over_spec,
         unmapped_assertions=unmapped,
         reason=None,
+        gaps=tuple(gap_effects),
+        gap_hints=tuple(hints),
     )

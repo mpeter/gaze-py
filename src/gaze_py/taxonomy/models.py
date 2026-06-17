@@ -284,6 +284,13 @@ class ContractCoverageResult:
             ambiguous effects. Set only when ``reason == "all_effects_ambiguous"``.
         max_confidence: Maximum ``ClassificationResult.score`` across all
             ambiguous effects. Set only when ``reason == "all_effects_ambiguous"``.
+        gaps: Contractual effects with no mapped assertion, in the order
+            they appear in the target function's effects. Parallel to
+            gap_hints. Empty when coverage is 100% or when percentage
+            is None (no contractual effects, no_test_coverage, etc.).
+        gap_hints: Python assertion snippets, one per gap. Parallel to
+            gaps — len(gaps) == len(gap_hints) is an enforced
+            postcondition. Empty when gaps is empty.
     """
 
     percentage: float | None
@@ -294,6 +301,8 @@ class ContractCoverageResult:
     reason: str | None = None
     min_confidence: int | None = None
     max_confidence: int | None = None
+    gaps: tuple[SideEffect, ...] = ()
+    gap_hints: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

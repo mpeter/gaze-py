@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from gaze_py.classify.engine import ClassificationEngine
 from gaze_py.config.loader import GazeConfig
 from gaze_py.quality.coverage import compute_contract_coverage
@@ -314,3 +316,102 @@ def test_no_test_coverage_empty_effects_falls_through() -> None:
     result = compute_contract_coverage(target, mapped, config=config, no_test_coverage=True)
     assert result.reason == "no_effects_detected"
     assert result.percentage is None
+
+
+# ---------------------------------------------------------------------------
+# gap-hints change — gap population tests
+# ---------------------------------------------------------------------------
+
+
+def test_gaps_populated_when_coverage_is_partial() -> None:
+    """1 of 2 contractual effects covered → len(gaps)==1 and len(gap_hints)==1."""
+    effects = [
+        _make_effect(SideEffectType.ReturnValue),
+        _make_effect(SideEffectType.ErrorReturn),
+    ]
+    target = _make_target(effects)
+    # Only ReturnValue is covered; ErrorReturn is the gap.
+    mapped = [
+        (_make_assertion(), SideEffectType.ReturnValue),
+        (_make_assertion(), None),  # unmapped
+    ]
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config)
+    assert len(result.gaps) == 1
+    assert len(result.gap_hints) == 1
+
+
+def test_gaps_empty_when_fully_covered() -> None:
+    """100% coverage → gaps==() and gap_hints==()."""
+    effect = _make_effect(SideEffectType.ReturnValue)
+    target = _make_target([effect])
+    mapped = [(_make_assertion(), SideEffectType.ReturnValue)]
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config)
+    assert result.gaps == ()
+    assert result.gap_hints == ()
+
+
+@pytest.mark.parametrize(
+    "effects_spec,mapped_spec",
+    [
+        # partial: 1 of 2 covered
+        (
+            [SideEffectType.ReturnValue, SideEffectType.ErrorReturn],
+            [(SideEffectType.ReturnValue,), (None,)],
+        ),
+        # full: 1 of 1 covered
+        (
+            [SideEffectType.ReturnValue],
+            [(SideEffectType.ReturnValue,)],
+        ),
+        # zero: 0 of 1 covered
+        (
+            [SideEffectType.ReturnValue],
+            [(None,)],
+        ),
+    ],
+)
+def test_gaps_gap_hints_same_length(
+    effects_spec: list[SideEffectType],
+    mapped_spec: list[tuple[SideEffectType | None]],
+) -> None:
+    """len(gaps) == len(gap_hints) for partial, full, and zero-coverage cases."""
+    effects = [_make_effect(et) for et in effects_spec]
+    target = _make_target(effects)
+    mapped = [(_make_assertion(), spec[0]) for spec in mapped_spec]
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config)
+    assert len(result.gaps) == len(result.gap_hints)
+
+
+def test_gaps_not_populated_when_percentage_is_none() -> None:
+    """no_test_coverage=True → gaps==() and gap_hints==() (OC-003 null-not-zero paths)."""
+    effect = _make_effect(SideEffectType.ReturnValue)
+    target = _make_target([effect])
+    mapped: list[tuple[AssertionSite, SideEffectType | None]] = []
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config, no_test_coverage=True)
+    assert result.percentage is None
+    assert result.gaps == ()
+    assert result.gap_hints == ()
+
+
+def test_gap_hints_are_non_empty_strings() -> None:
+    """For partial coverage, all hints in gap_hints are non-empty strings."""
+    effects = [
+        _make_effect(SideEffectType.ReturnValue),
+        _make_effect(SideEffectType.ErrorReturn),
+    ]
+    target = _make_target(effects)
+    # Only ReturnValue is covered; ErrorReturn is the gap.
+    mapped = [
+        (_make_assertion(), SideEffectType.ReturnValue),
+        (_make_assertion(), None),
+    ]
+    config = _make_config()
+    result = compute_contract_coverage(target, mapped, config=config)
+    assert len(result.gap_hints) >= 1
+    for hint in result.gap_hints:
+        assert isinstance(hint, str)
+        assert hint, f"gap_hints contains an empty string: {result.gap_hints!r}"
