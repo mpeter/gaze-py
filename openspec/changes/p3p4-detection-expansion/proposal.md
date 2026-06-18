@@ -30,8 +30,9 @@ This closes deferred item D.3 from `openspec/changes/002-deferred-capabilities`.
 ### Modified Capabilities
 
 - `effect-detection`: The existing `_handle_lib_attr_call` and
-  `_handle_goroutine_process_time` handlers are extended. A new
-  `visit_Try` method is added to `FunctionVisitor`.
+  `_handle_goroutine_process_time` handlers are extended. New
+  `visit_Try`, `visit_TryStar` (Python 3.11+ `except*`), and
+  `visit_AsyncWith` methods are added to `FunctionVisitor`.
 
 ### Closed (no Python equivalent — formally documented)
 
