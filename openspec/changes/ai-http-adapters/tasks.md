@@ -53,3 +53,4 @@ are required — all tests must run without network access or real sleeping.
 - [x] 6.6 Verify `test.yml` requires no changes — no new secrets, services, or env vars needed in CI
 
 <!-- spec-review: passed -->
+<!-- code-review: passed -->
