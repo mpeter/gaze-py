@@ -39,7 +39,7 @@ Can be implemented in any order after 001 lands.
 
 - [ ] C.1 O5 — CI threshold flags: `--max-crapload`, `--max-gaze-crapload`
       (O1-independent portion only) — SHIPPED 0.2.0
-- [ ] C.2 O5 — `--min-contract-coverage` flag [BLOCKED: A.4]
+- [ ] C.2 O5 — `--min-contract-coverage` flag [BLOCKED: A.4] — SHIPPED 0.5.x (on `quality` and `report` commands)
 - [ ] C.3 O6 full — Coverage profile reuse: support `.coverage` binary format,
       optional internal `coverage run pytest` invocation
 
@@ -54,7 +54,7 @@ Can be implemented in any order after 001 lands.
 ### Group E — Output & Presentation (independent)
 
 - [ ] E.1 O4 — Interactive TUI
-- [ ] E.2 O2 — AI-powered reports adapter pattern (Claude, OpenCode, Ollama)
+- [ ] E.2 O2 — AI-powered reports adapter pattern (Claude, OpenCode, Ollama) — SHIPPED 0.5.x (HTTP REST adapters for Ollama + Vertex AI; see openspec/changes/ai-http-adapters/)
 
 ### Group F — Distribution (independent, external prerequisite)
 
