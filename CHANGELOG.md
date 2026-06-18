@@ -4,6 +4,20 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+### Added
+- `gazepy report`: AI-powered narrative reports via direct HTTP REST calls to
+  Ollama (`/api/generate`) or Vertex AI (`rawPredict`, Anthropic Messages format).
+  Configure in `.gaze.yaml` `ai:` section or via `GAZEPY_AI_*` env vars.
+  Without a configured provider, emits the raw JSON payload to stdout.
+- `gazepy report --model`: per-invocation model override (takes precedence over
+  config file and env vars).
+- `.gaze.yaml` `ai:` section: `provider`, `model`, `endpoint`, `project`,
+  `region`, `timeout` fields for AI report configuration.
+- `GAZEPY_AI_PROVIDER`, `GAZEPY_AI_MODEL`, `GAZEPY_AI_ENDPOINT`,
+  `GAZEPY_AI_PROJECT`, `GAZEPY_AI_REGION`, `GAZEPY_AI_TIMEOUT` env vars.
+- `gap_hints` field on `ContractCoverageResult`: `effect_hint` (which effect
+  type to add assertions for) and `test_hint` (suggested test name pattern).
+
 ### Changed
 - `gazepy quality` and `assess()` now include underscore-prefixed (private)
   functions by default. Previously excluded, causing the quality pipeline to
@@ -12,22 +26,24 @@ All notable changes to gaze-py are documented here.
   analyze` retains `--include-unexported` defaulting to off; only the
   quality pipeline changes.
 
-- Spec: `openspec/changes/quality-include-private/`
-
-### Added
-- `gazepy report`: AI-powered narrative reports via subprocess
-  adapters (opencode, ollama). Pass --ai opencode to generate a
-  report. Without --ai, emits the JSON payload. (claude adapter
-  registered; available in Change 4B.)
-- `gazepy report --tests`: optional quality enrichment for
-  GazeCRAP, quadrant, and gap hint data in the report payload.
+### Removed
+- `gazepy report --ai` flag — provider is now config-driven (`.gaze.yaml`
+  `ai:` section or `GAZEPY_AI_*` env vars). **Migration**: replace
+  `--ai ollama --model llama3.2:3b` with `.gaze.yaml`:
+  `ai: {provider: ollama, model: llama3.2:3b}`
+- `gazepy report --ai-timeout` flag — replaced by `ai.timeout` in `.gaze.yaml`
+  or `GAZEPY_AI_TIMEOUT` env var.
 
 ### Fixed
 - `--max-gaze-crapload` now enforced in `crap`, `self-check`, and
   `report` commands (O5). Previously emitted a stale "deferred
   until O1" warning; O1 has been shipped since v0.3.
 
-- Spec: `openspec/changes/report-command/`
+### Specs
+- `openspec/changes/archive/2026-06-18-quality-include-private/`
+- `openspec/changes/archive/2026-06-18-gap-hints/`
+- `openspec/changes/report-command/` (superseded by `ai-http-adapters`)
+- `openspec/changes/ai-http-adapters/` (PR #39)
 
 ---
 
