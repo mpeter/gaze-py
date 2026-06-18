@@ -122,7 +122,7 @@ This checks only top-level statements in `handler.body` (not nested) — the
 
 **Description strings** — two distinct messages for actionable output:
 - Bare `pass` in handler: `"Function silently suppresses an exception (bare except: pass)"`
-- Return/assignment: `"Function catches an exception and returns a fallback or assigns a default"`
+- Return/assignment: `"Function catches an exception and returns a fallback or assigns a default value"`
 
 **`except*` (Python 3.11+, `ast.TryStar`)**: Same logic as `visit_Try`.
 `ast.TryStar.handlers` are `ast.ExceptHandler` nodes — identical structure.
@@ -168,8 +168,8 @@ For `asyncio.TaskGroup`: detected via `visit_AsyncWith` (D5).
 
 **Note on PLR0911**: `_handle_goroutine_process_time` will gain 3 new `return True`
 branches (asyncio gather/wait, Barrier.wait, futures.wait), bringing total
-return points to 7. Add `# noqa: PLR0911` to the function signature, consistent
-with `_handle_lib_attr_call` and `_handle_param_attr_call`.
+return points to 8 (5 existing + 3 new). Add `# noqa: PLR0911` to the function
+signature, consistent with `_handle_lib_attr_call` and `_handle_param_attr_call`.
 
 **Note on `asyncio.gather` without `await`**: The detection fires on the
 `ast.Call` node regardless of whether it is wrapped in `ast.Await`. A bare
