@@ -69,20 +69,29 @@ Before implementing any task, read:
 
 ## 3. RecoverBehavior detection (visit_Try + visit_TryStar)
 
-- [ ] 3.1 In `src/gaze_py/analysis/detector.py`, add `visit_Try` to
-      `FunctionVisitor` after `visit_With`. The method emits at most one
-      `RecoverBehavior` per function by checking `self._effects` first:
+- [ ] 3.1 In `src/gaze_py/analysis/detector.py`, add a private
+      `_handle_try_node` helper to `FunctionVisitor`, then add thin
+      `visit_Try` and `visit_TryStar` delegates immediately after
+      `visit_With`. This avoids duplicating the detection body across
+      both visitors (DRY — `ast.Try` and `ast.TryStar` both expose
+      `.handlers: list[ast.ExceptHandler]`):
 
       ```python
-      def visit_Try(self, node: ast.Try) -> None:  # noqa: N802
-          """Detect RecoverBehavior from exception-swallowing try/except.
+      def _handle_try_node(
+          self, node: ast.Try | ast.TryStar
+      ) -> None:
+          """Shared RecoverBehavior detection for try/except and except* nodes.
 
           Emits at most one RecoverBehavior per function (checks self._effects).
           Calls generic_visit(node) so visit_Raise fires on re-raise statements
-          inside handlers — RecoverBehavior and ErrorReturn are not mutually exclusive.
+          inside handlers — RecoverBehavior and ErrorReturn are not mutually
+          exclusive.
 
           Only top-level statements in each handler body are inspected for
-          transform-and-re-raise exclusion (not nested inside if/for/with blocks).
+          transform-and-re-raise exclusion (not nested inside if/for/with).
+
+          Args:
+              node: An ast.Try or ast.TryStar node to inspect.
           """
           if not any(
               e.type == SideEffectType.RecoverBehavior for e in self._effects
@@ -96,30 +105,14 @@ Before implementing any task, read:
                       )
                       break
           self.generic_visit(node)
-      ```
 
-- [ ] 3.2 Add `visit_TryStar` immediately after `visit_Try` to handle Python
-      3.11+ `except*` blocks:
+      def visit_Try(self, node: ast.Try) -> None:  # noqa: N802
+          """Detect RecoverBehavior from try/except blocks."""
+          self._handle_try_node(node)
 
-      ```python
       def visit_TryStar(self, node: ast.TryStar) -> None:  # noqa: N802
-          """Detect RecoverBehavior from except* (Python 3.11+ ExceptionGroup) blocks.
-
-          Same heuristic as visit_Try. ast.TryStar.handlers are ast.ExceptHandler
-          nodes — identical structure to ast.Try.handlers.
-          """
-          if not any(
-              e.type == SideEffectType.RecoverBehavior for e in self._effects
-          ):
-              for handler in node.handlers:
-                  if self._is_recovery_handler(handler):
-                      self._add(
-                          SideEffectType.RecoverBehavior,
-                          handler,
-                          self._recover_description(handler),
-                      )
-                      break
-          self.generic_visit(node)
+          """Detect RecoverBehavior from except* (Python 3.11+) blocks."""
+          self._handle_try_node(node)
       ```
 
 - [ ] 3.3 Add the helper `_is_recovery_handler` to `FunctionVisitor`:
@@ -540,6 +533,22 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
         assert `WaitGroupOp` present
       - `test_wait_group_op_barrier_wait` — detect on `barrier_sync`;
         assert `WaitGroupOp` present
+      - `test_wait_group_op_multiple_emissions` — inline source with two
+        qualifying WaitGroupOp calls in the same function:
+        ```python
+        source = textwrap.dedent("""
+            import asyncio
+            import threading
+
+            async def sync_two_ways(tasks, barrier):
+                await asyncio.gather(*tasks)
+                barrier.wait()
+        """)
+        ```
+        Assert `sum(1 for e in all_effects if e.type == SideEffectType.WaitGroupOp) == 2`.
+        (WaitGroupOp has no once-per-function guard — each qualifying call
+        emits independently. Contrast with RecoverBehavior which emits at
+        most once.)
 
 - [ ] 7.4 [P] Append new test functions for `UnsafeMutation`:
       - `test_unsafe_mutation_ptr_subscript` — detect on `write_ptr_subscript`;
