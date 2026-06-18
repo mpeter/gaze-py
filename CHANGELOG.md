@@ -46,6 +46,16 @@ All notable changes to gaze-py are documented here.
   analyze` retains `--include-unexported` defaulting to off; only the
   quality pipeline changes.
 
+- Spec: `openspec/changes/quality-include-private/`
+
+### Added
+- `gazepy report`: AI-powered narrative reports via HTTP adapters
+  (Ollama, Google Vertex AI). Configure your provider in `.gaze.yaml`
+  under the `ai:` block or via `GAZEPY_AI_*` environment variables.
+  Without a configured provider, emits the raw analysis JSON to stdout.
+- `gazepy report --tests`: optional quality enrichment for
+  GazeCRAP, quadrant, and gap hint data in the report payload.
+
 ### Removed
 - `gazepy report --ai` flag — provider is now config-driven (`.gaze.yaml`
   `ai:` section or `GAZEPY_AI_*` env vars). **Migration**: replace
@@ -53,6 +63,18 @@ All notable changes to gaze-py are documented here.
   `ai: {provider: ollama, model: llama3.2:3b}`
 - `gazepy report --ai-timeout` flag — replaced by `ai.timeout` in `.gaze.yaml`
   or `GAZEPY_AI_TIMEOUT` env var.
+
+### Removed
+- `--ai` and `--ai-timeout` CLI flags from `gazepy report`. These
+  flags have been replaced by the `.gaze.yaml` `ai:` configuration
+  block and `GAZEPY_AI_*` environment variable overrides.
+
+  **Migration**: remove `--ai <provider>` and `--ai-timeout <n>` from
+  any scripts or agent configs. Instead, add an `ai:` section to your
+  `.gaze.yaml` (or set `GAZEPY_AI_PROVIDER` / `GAZEPY_AI_TIMEOUT`).
+  See the README `## AI Reports` section for the full reference.
+
+  - Spec: `openspec/changes/ai-http-adapters/`
 
 ### Fixed
 - `--max-gaze-crapload` now enforced in `crap`, `self-check`, and

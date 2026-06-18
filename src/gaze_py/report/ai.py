@@ -1,201 +1,685 @@
-"""Subprocess-based AI adapters for gazepy report.
+"""HTTP-based AI synthesizer implementations for gazepy report.
 
-Provides call_ai() which dispatches to one of three subprocess
-adapters: opencode, ollama, or claude CLI. No Python SDK
-dependencies — each adapter shells out to an external binary.
+Defines the Synthesizer Protocol and three concrete implementations:
+- NoopSynthesizer: test double, exported for use in tests
+- OllamaSynthesizer: calls Ollama /api/generate via HTTP
+- VertexSynthesizer: calls Vertex AI rawPredict via HTTP with gcloud auth
 
-The _subprocess_run parameter is injectable for testing.
+All HTTP calls use urllib.request (stdlib). No subprocess for synthesis.
+The _http_open, _gcloud, _clock, and _sleep parameters are injectable
+for testing — they MUST NOT be used in production code paths.
+
+Design decisions:
+- D1: Direct HTTP over subprocess for synthesis (no process startup overhead)
+- D2: Synthesizer Protocol (structural subtyping) over ABC — AP-007 deviation,
+  pre-approved for this change. Allows test doubles without inheritance.
+- D3: gcloud CLI for Vertex auth (no google-auth SDK dependency)
+- D10: timeout is per-request, not total-operation
 """
 
 from __future__ import annotations
 
+import json
+import random
+import re
 import shutil
 import subprocess
-from typing import Any, cast
+import time
+import urllib.error
+import urllib.request
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any, Protocol, runtime_checkable
 
-import click
+
+@runtime_checkable
+class Synthesizer(Protocol):
+    """Protocol for AI text synthesizers.
+
+    Implementations MUST document their I/O behavior in their class docstring.
+    available() MAY perform I/O; callers MUST NOT assume it is O(1).
+
+    This Protocol is used instead of ABC (AP-007 deviation, pre-approved for
+    this change) because test doubles must be constructible without inheriting
+    from a base class — mirrors Dewey's Go interface pattern.
+    """
+
+    def synthesize(self, prompt: str) -> str:
+        """Generate a text response for the given prompt.
+
+        Args:
+            prompt: The input prompt to synthesize a response for.
+
+        Returns:
+            The synthesized response text.
+
+        Raises:
+            click.ClickException: On provider error, timeout, or malformed response.
+        """
+        ...
+
+    def available(self) -> bool:
+        """Check whether this synthesizer is available for use.
+
+        MAY perform I/O (e.g., HTTP call to check model presence).
+        Callers MUST NOT assume this is O(1).
+
+        Returns:
+            True if the synthesizer is ready to accept synthesize() calls.
+        """
+        ...
+
+    def model_id(self) -> str:
+        """Return the model identifier used by this synthesizer.
+
+        Returns:
+            The model identifier string.
+        """
+        ...
 
 
-def call_ai(
-    prompt: str,
-    payload: str,
-    *,
-    provider: str,
-    model: str | None = None,
-    timeout: int = 120,
-    _subprocess_run: Any = subprocess.run,
-) -> str:
-    """Call an AI provider via subprocess and return the response.
+class NoopSynthesizer:
+    """Test double synthesizer that returns a fixed response or raises a fixed error.
+
+    Exported from production code (not test-only) so that callers can construct
+    a no-op synthesizer without importing test infrastructure.
+
+    I/O behavior: None. All methods are pure and O(1).
 
     Args:
-        prompt: System/instruction prompt (from gaze-reporter.md).
-        payload: Analysis JSON to interpret.
-        provider: One of "opencode", "ollama", "claude".
-        model: Provider-specific model identifier. Required for
-            ollama. Optional for opencode (uses configured default)
-            and claude (uses API default).
-        timeout: Subprocess timeout in seconds.
-        _subprocess_run: Injection point for testing (default:
-            subprocess.run).
+        response: The string to return from synthesize(). Default: "".
+        err: If set, synthesize() raises this exception directly. Default: None.
+        avail: The value returned by available(). Default: True.
+        model: The value returned by model_id(). Default: "noop".
+    """
+
+    def __init__(
+        self,
+        response: str = "",
+        err: Exception | None = None,
+        avail: bool = True,
+        model: str = "noop",
+    ) -> None:
+        self.response = response
+        self.err = err
+        self.avail = avail
+        self.model = model
+
+    def synthesize(self, prompt: str) -> str:  # noqa: ARG002
+        """Return the fixed response or raise the fixed error.
+
+        Args:
+            prompt: Ignored.
+
+        Returns:
+            self.response if self.err is None.
+
+        Raises:
+            Exception: self.err if it was set at construction time.
+        """
+        if self.err is not None:
+            raise self.err
+        return self.response
+
+    def available(self) -> bool:
+        """Return the fixed availability value.
+
+        Returns:
+            self.avail as set at construction time.
+        """
+        return self.avail
+
+    def model_id(self) -> str:
+        """Return the fixed model identifier.
+
+        Returns:
+            self.model as set at construction time.
+        """
+        return self.model
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+_AVAIL_TIMEOUT = 5  # hardcoded per spec: available() uses 5s, not self.timeout
+
+
+def _make_json_request(
+    url: str,
+    body: dict[str, Any],
+    *,
+    method: str = "POST",
+    token: str | None = None,
+    timeout: int,
+    _http_open: Any,
+) -> tuple[int, bytes, Any]:
+    """Send a JSON HTTP request and return (status, body_bytes, response_obj).
+
+    Args:
+        url: The full URL to request.
+        body: Request body to serialize as JSON.
+        method: HTTP method. Default: "POST".
+        token: Bearer token for Authorization header. Default: None.
+        timeout: Request timeout in seconds.
+        _http_open: Injectable HTTP client (default: urllib.request.urlopen).
 
     Returns:
-        AI response text.
+        Tuple of (HTTP status code, raw response body bytes, response object).
 
     Raises:
-        click.ClickException: Provider binary not found, subprocess
-            failed, or timed out.
+        urllib.error.URLError: On connection or timeout errors.
     """
-    match provider:
-        case "opencode":
-            return _call_opencode(prompt, payload, model, timeout, _subprocess_run)
-        case "ollama":
-            return _call_ollama(prompt, payload, model, timeout, _subprocess_run)
-        case "claude":
-            return _call_claude(prompt, payload, model, timeout, _subprocess_run)
-        case _:
+    data = json.dumps(body).encode()
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with _http_open(req, timeout=timeout) as resp:
+        status: int = resp.status
+        body_bytes: bytes = resp.read()
+        return status, body_bytes, resp
+
+
+# ---------------------------------------------------------------------------
+# OllamaSynthesizer
+# ---------------------------------------------------------------------------
+
+
+class OllamaSynthesizer:
+    """Synthesizer that calls Ollama's HTTP API directly.
+
+    I/O behavior:
+    - synthesize(): POST to {base_url}/api/generate with self.timeout seconds.
+    - available(): GET {base_url}/api/tags with a hardcoded 5-second timeout.
+      Returns False on any error (URLError, non-200, malformed JSON, missing
+      'models' key). Does NOT cache the result.
+
+    Args:
+        base_url: Ollama server base URL. Default: "http://localhost:11434".
+        model: Ollama model name (required, keyword-only).
+        timeout: HTTP timeout in seconds for synthesize(). Default: 120.
+        _http_open: Injectable HTTP client for testing. Default:
+            urllib.request.urlopen. MUST NOT be used in production code.
+    """
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        *,
+        model: str,
+        timeout: int = 120,
+        _http_open: Any = urllib.request.urlopen,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+        self._timeout = timeout
+        self._http_open = _http_open
+
+    def synthesize(self, prompt: str) -> str:
+        """Generate text by calling Ollama /api/generate.
+
+        Args:
+            prompt: The input prompt.
+
+        Returns:
+            The 'response' field from Ollama, stripped of whitespace.
+
+        Raises:
+            click.ClickException: On non-200 status, URLError/timeout,
+                malformed JSON, or missing 'response' key.
+        """
+        import click
+
+        url = f"{self._base_url}/api/generate"
+        body = {"model": self._model, "prompt": prompt, "stream": False}
+        try:
+            status, body_bytes, _resp = _make_json_request(
+                url,
+                body,
+                timeout=self._timeout,
+                _http_open=self._http_open,
+            )
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, TimeoutError) or "timed out" in str(exc.reason).lower():
+                raise click.ClickException(
+                    f"Ollama request timed out after {self._timeout}s per request; "
+                    "try reducing ai.timeout in .gaze.yaml"
+                ) from exc
+            raise click.ClickException(f"Ollama request failed: {exc.reason}") from exc
+
+        if status != 200:
             raise click.ClickException(
-                f"Unknown AI provider: {provider!r}. Supported: opencode, ollama, claude."
+                f"Ollama returned HTTP {status}; check that the model is pulled "
+                f"and Ollama is running at {self._base_url}"
             )
 
+        try:
+            data = json.loads(body_bytes)
+        except json.JSONDecodeError as exc:
+            raise click.ClickException(
+                "unexpected response format from Ollama: response is not valid JSON"
+            ) from exc
 
-def _call_opencode(
-    prompt: str,
-    payload: str,
-    model: str | None,
-    timeout: int,
-    _subprocess_run: Any,
-) -> str:
-    """Call opencode run with the combined prompt and payload.
+        if "response" not in data:
+            raise click.ClickException(
+                "unexpected response format from Ollama: missing 'response' key"
+            )
 
-    Uses subprocess list form (never shell=True) per D4.
-    Passes prompt+payload as a single positional argument.
+        return str(data["response"]).strip()
+
+    def available(self) -> bool:
+        """Check whether Ollama is running and the configured model is pulled.
+
+        Calls GET {base_url}/api/tags with a hardcoded 5-second timeout.
+        Returns False on any error — does not raise.
+
+        Returns:
+            True if Ollama is reachable and the model name appears in /api/tags.
+        """
+        url = f"{self._base_url}/api/tags"
+        req = urllib.request.Request(url, method="GET")
+        try:
+            with self._http_open(req, timeout=_AVAIL_TIMEOUT) as resp:
+                if resp.status != 200:
+                    return False
+                body_bytes: bytes = resp.read()
+        except urllib.error.URLError:
+            return False
+
+        try:
+            data = json.loads(body_bytes)
+        except json.JSONDecodeError:
+            return False
+
+        models = data.get("models")
+        if not isinstance(models, list):
+            return False
+
+        return any(isinstance(m, dict) and m.get("name") == self._model for m in models)
+
+    def model_id(self) -> str:
+        """Return the configured Ollama model name.
+
+        Returns:
+            The model identifier string.
+        """
+        return self._model
+
+
+# ---------------------------------------------------------------------------
+# VertexSynthesizer
+# ---------------------------------------------------------------------------
+
+# Allowed characters in project, region, model fields (security: SC-004)
+_FIELD_RE = re.compile(r"^[a-zA-Z0-9\-._:]+$")
+
+_VERTEX_MAX_RETRIES = 5  # 1 original + 5 retries = 6 total attempts
+_BACKOFF_BASE = 1.0  # seconds
+_BACKOFF_MAX = 60.0  # seconds
+_BACKOFF_JITTER = 0.25  # ±25%
+
+
+def _validate_vertex_field(value: str, field_name: str) -> None:
+    """Validate a VertexSynthesizer field against the allowed character set.
 
     Args:
-        prompt: System/instruction prompt.
-        payload: Analysis JSON to interpret.
-        model: Model identifier, or None to use opencode's configured default.
-        timeout: Subprocess timeout in seconds.
-        _subprocess_run: Injection point for testing.
+        value: The field value to validate.
+        field_name: Human-readable field name for error messages.
+
+    Raises:
+        click.ClickException: If value contains characters outside
+            [a-zA-Z0-9\\-._:].
+    """
+    import click
+
+    if not _FIELD_RE.match(value):
+        raise click.ClickException(
+            f"Invalid {field_name!r}: contains characters not allowed in Vertex AI "
+            f"endpoint construction. Allowed: alphanumeric, hyphens, dots, underscores, colons."
+        )
+
+
+def _parse_iso8601_epoch(ts: str) -> float:
+    """Parse an ISO 8601 timestamp string to a UTC epoch float.
+
+    Args:
+        ts: ISO 8601 timestamp string (e.g. "2024-01-01T12:00:00Z" or with offset).
 
     Returns:
-        opencode response text (stdout, stripped).
+        UTC epoch as a float (seconds since 1970-01-01T00:00:00Z).
 
     Raises:
-        click.ClickException: Binary not found, timed out, or non-zero exit.
+        ValueError: If the string cannot be parsed as ISO 8601.
     """
-    if shutil.which("opencode") is None:
-        raise click.ClickException(
-            "opencode binary not found. Install it with: npm install -g opencode-ai"
-        )
-
-    combined = f"{prompt}\n\n{payload}"
-    cmd: list[str] = ["opencode", "run"]
-    if model is not None:
-        cmd += ["--model", model]
-    # opencode run takes `message` as a positional array argument (not stdin).
-    # `opencode run --help` confirms: "message  message to send [array]".
-    # Unlike ollama, opencode does not read from stdin, so we pass the combined
-    # prompt+payload as a single positional argument. This is the correct
-    # invocation pattern for the opencode CLI.
-    cmd.append(combined)
-
-    try:
-        result = _subprocess_run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise click.ClickException(
-            f"opencode timed out after {timeout}s — try --ai-timeout with a larger value"
-        ) from exc
-
-    if result.returncode != 0:
-        raise click.ClickException(f"opencode failed (exit {result.returncode}): {result.stderr}")
-
-    return cast(str, result.stdout).strip()
+    # Python 3.11+ fromisoformat handles Z suffix and offsets
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.timestamp()
 
 
-def _call_ollama(
-    prompt: str,
-    payload: str,
-    model: str | None,
-    timeout: int,
-    _subprocess_run: Any,
-) -> str:
-    """Call ollama run with prompt+payload via stdin.
+class VertexSynthesizer:
+    """Synthesizer that calls Vertex AI rawPredict with Anthropic Messages format.
 
-    Uses subprocess list form (never shell=True) per D4.
-    Model is required for ollama — raises ClickException when None.
+    I/O behavior:
+    - synthesize(): invokes gcloud for token (cached), then POST to Vertex
+      rawPredict endpoint. Retries up to 5 times on HTTP 429 with exponential
+      backoff (base 1s, max 60s, ±25% jitter). Respects Retry-After header.
+      On HTTP 401, invalidates token cache and retries once.
+    - available(): checks shutil.which("gcloud") and non-empty project/region.
+      No API call is made.
+
+    Token cache: in-process only, per-instance. Valid when
+    _clock() < expiry_epoch - 60 (conservative TTL to avoid clock-skew races).
 
     Args:
-        prompt: System/instruction prompt.
-        payload: Analysis JSON to interpret.
-        model: Model identifier (required for ollama).
-        timeout: Subprocess timeout in seconds.
-        _subprocess_run: Injection point for testing.
-
-    Returns:
-        ollama response text (stdout, stripped).
-
-    Raises:
-        click.ClickException: model is None, binary not found, timed out,
-            or non-zero exit.
-    """
-    if model is None:
-        raise click.ClickException(
-            "ollama requires a model name. Pass --model <model> (e.g. --model llama3)."
-        )
-
-    if shutil.which("ollama") is None:
-        raise click.ClickException("ollama binary not found. Install it from: https://ollama.com")
-
-    combined = f"{prompt}\n\n{payload}"
-    cmd = ["ollama", "run", model]
-
-    try:
-        result = _subprocess_run(
-            cmd,
-            input=combined,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise click.ClickException(
-            f"ollama timed out after {timeout}s — try --ai-timeout with a larger value"
-        ) from exc
-
-    if result.returncode != 0:
-        raise click.ClickException(f"ollama failed (exit {result.returncode}): {result.stderr}")
-
-    return cast(str, result.stdout).strip()
-
-
-def _call_claude(
-    _prompt: str,
-    _payload: str,
-    _model: str | None,
-    _timeout: int,
-    _subprocess_run: Any,
-) -> str:
-    """Raise ClickException — claude adapter is deferred to Change 4B.
-
-    The Anthropic CLI's invocation interface is not yet stable enough to
-    specify correctly. No binary check is performed; the error is raised
-    immediately.
-
-    Args:
-        _prompt: Unused (deferred).
-        _payload: Unused (deferred).
-        _model: Unused (deferred).
-        _timeout: Unused (deferred).
-        _subprocess_run: Unused (deferred).
+        project: GCP project ID (required).
+        region: GCP region (required).
+        model: Anthropic model name on Vertex (required).
+        timeout: Per-request HTTP timeout in seconds. Default: 120.
+        _http_open: Injectable HTTP client for testing. Default:
+            urllib.request.urlopen. MUST NOT be used in production code.
+        _gcloud: Injectable subprocess runner for testing. Default:
+            subprocess.run. MUST NOT be used in production code.
+        _clock: Injectable clock for TTL comparison. Default: time.time.
+            MUST NOT be used in production code.
+        _sleep: Injectable sleep for retry backoff. Default: time.sleep.
+            MUST NOT be used in production code.
 
     Raises:
-        click.ClickException: Always — adapter not yet implemented.
+        click.ClickException: If project, region, or model contain invalid
+            characters (validated at construction time).
     """
-    raise click.ClickException(
-        "claude adapter is available in Change 4B. Use --ai opencode or --ai ollama."
-    )
+
+    def __init__(
+        self,
+        project: str,
+        region: str,
+        model: str,
+        *,
+        timeout: int = 120,
+        _http_open: Any = urllib.request.urlopen,
+        _gcloud: Any = subprocess.run,
+        _clock: Callable[[], float] = time.time,
+        _sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        _validate_vertex_field(project, "project")
+        _validate_vertex_field(region, "region")
+        _validate_vertex_field(model, "model")
+
+        self._project = project
+        self._region = region
+        self._model = model
+        self._timeout = timeout
+        self._http_open = _http_open
+        self._gcloud = _gcloud
+        self._clock = _clock
+        self._sleep = _sleep
+
+        # Token cache: (token_str, expiry_epoch_float) or None
+        self._cached_token: tuple[str, float] | None = None
+
+    def _endpoint_url(self) -> str:
+        """Build the Vertex AI rawPredict endpoint URL.
+
+        Returns:
+            The full rawPredict URL for this project/region/model.
+        """
+        return (
+            f"https://{self._region}-aiplatform.googleapis.com/v1"
+            f"/projects/{self._project}/locations/{self._region}"
+            f"/publishers/anthropic/models/{self._model}:rawPredict"
+        )
+
+    def _fetch_token(self) -> str:
+        """Fetch a fresh access token via gcloud CLI.
+
+        Invokes gcloud using list form (never shell=True) per security requirement.
+        Caches the token with its expiry.
+
+        Returns:
+            The access token string.
+
+        Raises:
+            click.ClickException: If gcloud is not on PATH, exits non-zero,
+                or returns malformed JSON.
+        """
+        import click
+
+        if shutil.which("gcloud") is None:
+            raise click.ClickException(
+                "vertex provider requires gcloud CLI. "
+                "Install: https://cloud.google.com/sdk/docs/install "
+                "and run: gcloud auth application-default login"
+            )
+
+        try:
+            result = self._gcloud(
+                ["gcloud", "auth", "print-access-token", "--format=json"],
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise click.ClickException(
+                "vertex provider requires gcloud CLI. "
+                "Install: https://cloud.google.com/sdk/docs/install "
+                "and run: gcloud auth application-default login"
+            ) from exc
+
+        if result.returncode != 0:
+            raise click.ClickException(
+                f"gcloud auth print-access-token failed (exit {result.returncode}): "
+                f"{result.stderr}\n"
+                "Run: gcloud auth application-default login"
+            )
+
+        try:
+            token_data = json.loads(result.stdout)
+            token: str = token_data["token"]
+            expiry_epoch = _parse_iso8601_epoch(token_data["token_expiry"])
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            raise click.ClickException(
+                f"unexpected response format from gcloud auth print-access-token: {exc}"
+            ) from exc
+
+        self._cached_token = (token, expiry_epoch)
+        return token
+
+    def _get_token(self) -> str:
+        """Return a valid access token, using cache when possible.
+
+        Cache is valid when _clock() < expiry_epoch - 60 (conservative TTL).
+
+        Returns:
+            A valid access token string.
+
+        Raises:
+            click.ClickException: Propagated from _fetch_token().
+        """
+        if self._cached_token is not None:
+            token, expiry_epoch = self._cached_token
+            if self._clock() < expiry_epoch - 60:
+                return token
+        return self._fetch_token()
+
+    def _invalidate_token(self) -> None:
+        """Invalidate the cached token (called on HTTP 401)."""
+        self._cached_token = None
+
+    def _compute_backoff(self, attempt: int) -> float:
+        """Compute exponential backoff with ±25% jitter.
+
+        Args:
+            attempt: Zero-based retry attempt index (0 = first retry).
+
+        Returns:
+            Sleep duration in seconds, clamped to [0, _BACKOFF_MAX].
+        """
+        base: float = min(_BACKOFF_BASE * float(2**attempt), _BACKOFF_MAX)
+        jitter: float = base * _BACKOFF_JITTER
+        return base + random.uniform(-jitter, jitter)
+
+    def _do_request(self, token: str, prompt: str) -> tuple[int, bytes, Any]:
+        """Send one rawPredict HTTP request.
+
+        Args:
+            token: Bearer token for Authorization header.
+            prompt: The input prompt.
+
+        Returns:
+            Tuple of (HTTP status code, raw response body bytes, response object).
+
+        Raises:
+            urllib.error.URLError: On connection or timeout errors.
+        """
+        url = self._endpoint_url()
+        body: dict[str, Any] = {
+            "anthropic_version": "vertex-2023-10-16",
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        return _make_json_request(
+            url,
+            body,
+            token=token,
+            timeout=self._timeout,
+            _http_open=self._http_open,
+        )
+
+    def _sleep_for_429(self, resp_obj: Any, retry_count: int) -> None:
+        """Sleep the appropriate duration for a 429 response.
+
+        Respects the Retry-After header (integer seconds) when present.
+        Falls back to jitter-based exponential backoff otherwise.
+
+        Args:
+            resp_obj: The HTTP response object (must support .getheader()).
+            retry_count: Zero-based retry attempt index.
+        """
+        retry_after_header: str | None = resp_obj.getheader("Retry-After")
+        if retry_after_header is not None:
+            try:
+                sleep_secs = float(int(retry_after_header))
+            except ValueError:
+                sleep_secs = self._compute_backoff(retry_count)
+        else:
+            sleep_secs = self._compute_backoff(retry_count)
+        self._sleep(sleep_secs)
+
+    def _parse_vertex_response(self, body_bytes: bytes) -> str:
+        """Parse a successful Vertex AI rawPredict response body.
+
+        Args:
+            body_bytes: Raw HTTP response body bytes.
+
+        Returns:
+            content[0].text from the Anthropic Messages response.
+
+        Raises:
+            click.ClickException: On malformed JSON or missing content.
+        """
+        import click
+
+        try:
+            data = json.loads(body_bytes)
+        except json.JSONDecodeError as exc:
+            raise click.ClickException(
+                "unexpected response format from Vertex AI: response is not valid JSON"
+            ) from exc
+
+        content = data.get("content")
+        if not isinstance(content, list) or len(content) == 0:
+            raise click.ClickException(
+                "unexpected response format from Vertex AI: missing or empty 'content'"
+            )
+
+        first = content[0]
+        if not isinstance(first, dict) or first.get("type") != "text" or "text" not in first:
+            raise click.ClickException(
+                "unexpected response format from Vertex AI: content[0].text is absent"
+            )
+
+        return str(first["text"])
+
+    def synthesize(self, prompt: str) -> str:
+        """Generate text by calling Vertex AI rawPredict.
+
+        Fetches/caches a gcloud access token, then POSTs to the Vertex
+        rawPredict endpoint. Retries up to 5 times on HTTP 429 with
+        exponential backoff. On HTTP 401, invalidates the token cache and
+        retries once. Non-429 4xx/5xx errors raise immediately.
+
+        Args:
+            prompt: The input prompt.
+
+        Returns:
+            content[0].text from the Anthropic Messages response.
+
+        Raises:
+            click.ClickException: On gcloud failure, HTTP error, malformed
+                JSON, missing content, or 429 exhaustion.
+        """
+        import click
+
+        token = self._get_token()
+        retry_count = 0
+        _401_retried = False
+
+        while True:
+            try:
+                status, body_bytes, resp_obj = self._do_request(token, prompt)
+            except urllib.error.URLError as exc:
+                if isinstance(exc.reason, TimeoutError) or "timed out" in str(exc.reason).lower():
+                    raise click.ClickException(
+                        f"Vertex AI request timed out after {self._timeout}s per request; "
+                        "try reducing ai.timeout in .gaze.yaml"
+                    ) from exc
+                raise click.ClickException(f"Vertex AI request failed: {exc.reason}") from exc
+
+            if status == 200:
+                return self._parse_vertex_response(body_bytes)
+
+            if status == 401:
+                if _401_retried:
+                    raise click.ClickException(
+                        "Vertex AI authentication failed after token refresh. "
+                        "Run: gcloud auth application-default login"
+                    )
+                self._invalidate_token()
+                token = self._get_token()
+                _401_retried = True
+                continue
+
+            if status == 429:
+                if retry_count >= _VERTEX_MAX_RETRIES:
+                    raise click.ClickException(
+                        f"Vertex AI rate limited after {_VERTEX_MAX_RETRIES} retries. "
+                        "Try again later or reduce request frequency."
+                    )
+                self._sleep_for_429(resp_obj, retry_count)
+                retry_count += 1
+                continue
+
+            # Non-429 4xx/5xx: raise immediately with status + body excerpt
+            body_excerpt = body_bytes[:512].decode(errors="replace")
+            raise click.ClickException(f"Vertex AI returned HTTP {status}: {body_excerpt}")
+
+    def available(self) -> bool:
+        """Check whether Vertex AI is available for use.
+
+        Checks that gcloud is on PATH and that project and region are non-empty.
+        Does NOT make a Vertex API call — trusts the factory has validated fields.
+
+        Returns:
+            True if gcloud is on PATH and project/region are non-empty.
+        """
+        return shutil.which("gcloud") is not None and bool(self._project) and bool(self._region)
+
+    def model_id(self) -> str:
+        """Return the configured Vertex AI model name.
+
+        Returns:
+            The model identifier string.
+        """
+        return self._model

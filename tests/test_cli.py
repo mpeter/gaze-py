@@ -1,4 +1,4 @@
-"""Tests for the CLI — analyze, crap, and quality subcommands.
+"""Tests for the CLI — analyze, crap, quality, and report subcommands.
 
 Uses click.testing.CliRunner for isolation. No real file system writes
 are performed except reading existing testdata fixtures or using tmp_path.
@@ -18,12 +18,14 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import click
 import pytest
 from click.testing import CliRunner
 
 from gaze_py.cli.main import _resolve_line_coverage, cli
+from gaze_py.report.ai import NoopSynthesizer
 
 # Path to the testdata directory (relative to this test file)
 _TESTDATA = Path(__file__).parent / "testdata" / "analysis"
@@ -223,15 +225,179 @@ def test_analyze_single_file_exits_zero() -> None:
 
 
 # ---------------------------------------------------------------------------
-# gazepy report (unchanged — task 5 will stub it; keep existing tests passing)
+# gazepy report — flag removal assertions (4.4)
+# ---------------------------------------------------------------------------
+
+
+def test_report_ai_flag_rejected() -> None:
+    """gazepy report --ai <provider> exits 2 (flag removed in ai-http-adapters).
+
+    Scenario: --ai flag rejected (spec §gazepy-report-command).
+    """
+    runner = CliRunner()
+    result = runner.invoke(cli, ["report", "--ai", "ollama"])
+    assert result.exit_code == 2
+    assert "No such option" in result.output or "No such option" in (result.stderr or "")
+
+
+def test_report_ai_timeout_flag_rejected() -> None:
+    """gazepy report --ai-timeout <n> exits 2 (flag removed in ai-http-adapters).
+
+    Scenario: --ai-timeout flag rejected (spec §gazepy-report-command).
+    """
+    runner = CliRunner()
+    result = runner.invoke(cli, ["report", "--ai-timeout", "60"])
+    assert result.exit_code == 2
+    assert "No such option" in result.output or "No such option" in (result.stderr or "")
+
+
+# ---------------------------------------------------------------------------
+# gazepy report — prompt-only mode (no provider configured) (4.4)
+# ---------------------------------------------------------------------------
+
+
+def test_report_prompt_only_no_provider(tmp_path: Path) -> None:
+    """gazepy report exits 0 and emits JSON when no AI provider is configured.
+
+    Scenario: No provider configured (spec §report command prompt-only mode).
+    Patches new_synthesizer_from_config to return None (no provider).
+    """
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    runner = CliRunner()
+    with patch(
+        "gaze_py.report.provider.new_synthesizer_from_config",
+        return_value=None,
+    ):
+        result = runner.invoke(
+            cli,
+            ["report", str(_TESTDATA), f"--coverprofile={cov_file}"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = _parse_json(result.stdout)
+    assert "functions" in data
+    assert "Tip:" in (result.stderr or result.output)
+    assert ".gaze.yaml" in (result.stderr or result.output)
+
+
+# ---------------------------------------------------------------------------
+# gazepy report — config-driven AI flow (4.4)
+# ---------------------------------------------------------------------------
+
+
+def test_report_config_driven_flow(tmp_path: Path) -> None:
+    """gazepy report synthesizes via config-driven provider when available.
+
+    Scenario: Provider from config (spec §gazepy-report-command).
+    Patches new_synthesizer_from_config to return NoopSynthesizer(avail=True).
+    """
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    noop = NoopSynthesizer(response="AI narrative output", avail=True)
+    runner = CliRunner()
+    with patch(
+        "gaze_py.report.provider.new_synthesizer_from_config",
+        return_value=noop,
+    ):
+        result = runner.invoke(
+            cli,
+            ["report", str(_TESTDATA), f"--coverprofile={cov_file}"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "AI narrative output" in result.output
+
+
+def test_report_model_override(tmp_path: Path) -> None:
+    """gazepy report --model <m> passes the model override to read_ai_config.
+
+    Scenario: Model CLI override (spec §gazepy-report-command).
+    Verifies that read_ai_config is called with the cli_model argument.
+    """
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    noop = NoopSynthesizer(response="model override output", avail=True)
+    runner = CliRunner()
+    with (
+        patch(
+            "gaze_py.report.provider.new_synthesizer_from_config",
+            return_value=noop,
+        ),
+        patch(
+            "gaze_py.report.config.read_ai_config",
+            wraps=lambda cfg, cli_model: __import__(
+                "gaze_py.report.provider", fromlist=["ProviderConfig"]
+            ).ProviderConfig(model=cli_model or ""),
+        ) as mock_read,
+    ):
+        result = runner.invoke(
+            cli,
+            ["report", str(_TESTDATA), "--model", "gemma3:4b", f"--coverprofile={cov_file}"],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_read.assert_called_once()
+    _call_args = mock_read.call_args
+    assert _call_args[0][1] == "gemma3:4b" or _call_args[1].get("cli_model") == "gemma3:4b"
+
+
+# ---------------------------------------------------------------------------
+# gazepy report — unavailable provider fallback (4.4)
+# ---------------------------------------------------------------------------
+
+
+def test_report_unavailable_provider_fallback(tmp_path: Path) -> None:
+    """gazepy report falls back to prompt-only when provider is unavailable.
+
+    Scenario: Provider configured but unavailable (spec §report command
+    prompt-only mode). Patches new_synthesizer_from_config to return a
+    NoopSynthesizer with avail=False.
+    """
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    noop = NoopSynthesizer(avail=False, model="llama3.2:3b")
+    runner = CliRunner()
+    with (
+        patch(
+            "gaze_py.report.provider.new_synthesizer_from_config",
+            return_value=noop,
+        ),
+        patch(
+            "gaze_py.report.config.read_ai_config",
+            return_value=__import__(
+                "gaze_py.report.provider", fromlist=["ProviderConfig"]
+            ).ProviderConfig(provider="ollama", model="llama3.2:3b"),
+        ),
+    ):
+        result = runner.invoke(
+            cli,
+            ["report", str(_TESTDATA), f"--coverprofile={cov_file}"],
+        )
+
+    assert result.exit_code == 0, result.output
+    combined = (result.stderr or "") + result.output
+    assert "Warning:" in combined
+    assert "not available" in combined
+    assert "falling back to prompt-only mode" in combined
+    data = _parse_json(result.output)
+    assert "functions" in data
+
+
+# ---------------------------------------------------------------------------
+# gazepy report — basic invocation (existing tests, updated docstrings)
 # ---------------------------------------------------------------------------
 
 
 def test_report_json_exits_zero(tmp_path: Path) -> None:
-    """gazepy report PATH --format=json exits 0 and emits JSON.
+    """gazepy report PATH --format=json exits 0 and emits JSON (prompt-only mode).
 
-    The report command is now implemented. Without --ai it emits the JSON
-    payload to stdout and exits 0. Uses --coverprofile to skip pytest subprocess.
+    No AI provider is configured, so the command emits the JSON payload to
+    stdout and exits 0. Uses --coverprofile to skip pytest subprocess.
     """
     cov_file = tmp_path / "cov.json"
     cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
@@ -247,10 +413,10 @@ def test_report_json_exits_zero(tmp_path: Path) -> None:
 
 
 def test_report_text_exits_zero(tmp_path: Path) -> None:
-    """gazepy report PATH --format=text exits 0 (JSON-only mode ignores --format).
+    """gazepy report PATH --format=text exits 0 (prompt-only mode ignores --format).
 
-    Without --ai the report command emits JSON regardless of --format and
-    exits 0. Uses --coverprofile to skip pytest subprocess.
+    No AI provider is configured, so the command emits JSON regardless of
+    --format and exits 0. Uses --coverprofile to skip pytest subprocess.
     """
     cov_file = tmp_path / "cov.json"
     cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
@@ -1073,10 +1239,10 @@ def test_report_stub_mentions_crap_migration() -> None:
 
 
 def test_report_stub_accepts_ai_flag(tmp_path: Path) -> None:
-    """report --ai claude /path exits 1 (claude adapter deferred to Change 4B).
+    """report --ai <provider> exits 2 — flag removed in ai-http-adapters change.
 
-    Uses --coverprofile to skip pytest subprocess. The claude adapter raises
-    ClickException immediately without checking the binary.
+    The --ai flag was removed; Click returns exit 2 with "No such option".
+    Scenario: --ai flag rejected (spec §gazepy-report-command).
     """
     cov_file = tmp_path / "cov.json"
     cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
@@ -1088,7 +1254,7 @@ def test_report_stub_accepts_ai_flag(tmp_path: Path) -> None:
         cli,
         ["report", "--ai", "claude", str(src_dir), f"--coverprofile={cov_file}"],
     )
-    assert result.exit_code == 1, f"Expected 1, got {result.exit_code}"
+    assert result.exit_code == 2, f"Expected 2, got {result.exit_code}"
 
 
 def test_report_stub_old_two_positional_signature(tmp_path: Path) -> None:
@@ -2132,7 +2298,7 @@ def test_max_gaze_crapload_help_text_updated() -> None:
 
 
 def test_report_no_ai_emits_json(tmp_path: Path) -> None:
-    """gazepy report without --ai exits 0, stdout is valid JSON, stderr has Tip.
+    """gazepy report (no provider configured) exits 0, stdout is JSON, stderr has Tip.
 
     Uses --coverprofile with an empty files dict to skip the pytest subprocess
     (same pattern as other crap/report integration tests).
@@ -2153,37 +2319,36 @@ def test_report_no_ai_emits_json(tmp_path: Path) -> None:
     data = json.loads(result.stdout)
     assert "functions" in data, f"'functions' not in JSON: {list(data.keys())}"
     assert "summary" in data, f"'summary' not in JSON: {list(data.keys())}"
-    # stderr must contain the Tip.
-    assert "Tip: pass --ai opencode" in (result.stderr or ""), (
-        f"Expected Tip in stderr, got: {result.stderr!r}"
-    )
+    # stderr must contain the Tip about configuring a provider.
+    tip_text = (result.stderr or "") + result.output
+    assert "Tip:" in tip_text, f"Expected Tip in output, got: {result.stderr!r}"
+    assert ".gaze.yaml" in tip_text, f"Expected .gaze.yaml in Tip, got: {result.stderr!r}"
 
 
 def test_report_with_ai_calls_subprocess(tmp_path: Path) -> None:
-    """gazepy report --ai opencode exits 0 and stdout equals the mocked AI response.
+    """gazepy report exits 0 and stdout equals the mocked AI response.
 
-    The report command lazily imports call_ai from gaze_py.report.ai inside
-    the function body. We patch at the source module so the lazy import
-    picks up the mock.
+    The report command uses new_synthesizer_from_config to obtain a Synthesizer.
+    We patch at the provider module so the factory returns a NoopSynthesizer.
 
     Uses --coverprofile with an empty files dict to skip the pytest subprocess.
     """
-    from unittest.mock import patch
-
     cov_file = tmp_path / "cov.json"
     cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
 
+    noop = NoopSynthesizer(response="narrative text", avail=True)
     runner = CliRunner()
-    # Patch at the source module — the lazy import in report() resolves to
-    # gaze_py.report.ai.call_ai, so patching there intercepts the call.
-    with patch("gaze_py.report.ai.call_ai", return_value="narrative text"):
+    with patch(
+        "gaze_py.report.provider.new_synthesizer_from_config",
+        return_value=noop,
+    ):
         result = runner.invoke(
             cli,
-            ["report", str(_QUALITY_SRC), "--ai", "opencode", f"--coverprofile={cov_file}"],
+            ["report", str(_QUALITY_SRC), f"--coverprofile={cov_file}"],
         )
 
     assert result.exit_code == 0, f"exit={result.exit_code} stderr={result.stderr!r}"
-    assert result.stdout.strip() == "narrative text"
+    assert "narrative text" in result.stdout
 
 
 def test_load_report_prompt_uses_local_override(tmp_path: Path) -> None:
@@ -2296,33 +2461,28 @@ def test_report_max_gaze_crapload_gate(tmp_path: Path) -> None:
 
 
 def test_report_format_warning_with_ai(tmp_path: Path) -> None:
-    """report --format=json --ai emits a warning that --format is ignored in AI mode.
+    """report --ai flag is rejected with exit 2 (flag removed in ai-http-adapters).
 
-    When --ai is provided alongside --format=json (non-default), the report
-    command must emit a warning to stderr before calling the AI provider.
-    The warning text is: "Warning: --format is ignored in AI mode; output is
-    always plain text."
+    The --ai flag was removed; --format is still accepted. Verifies that
+    passing --ai returns exit 2 with "No such option" from Click.
+
+    Scenario: --ai flag rejected (spec §gazepy-report-command).
     """
-    from unittest.mock import patch
-
     cov_file = tmp_path / "cov.json"
     cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
 
     runner = CliRunner()
-    with patch("gaze_py.report.ai.call_ai", return_value="narrative text"):
-        result = runner.invoke(
-            cli,
-            [
-                "report",
-                str(_QUALITY_SRC),
-                "--ai",
-                "opencode",
-                "--format=json",
-                f"--coverprofile={cov_file}",
-            ],
-        )
-
-    assert result.exit_code == 0, f"exit={result.exit_code} stderr={result.stderr!r}"
-    assert "--format is ignored in AI mode" in (result.stderr or ""), (
-        f"Expected --format warning in stderr, got: {result.stderr!r}"
+    result = runner.invoke(
+        cli,
+        [
+            "report",
+            str(_QUALITY_SRC),
+            "--ai",
+            "opencode",
+            "--format=json",
+            f"--coverprofile={cov_file}",
+        ],
     )
+
+    assert result.exit_code == 2, f"Expected 2, got {result.exit_code}"
+    assert "No such option" in result.output or "No such option" in (result.stderr or "")

@@ -7,7 +7,7 @@ Provides subcommands:
   runs pytest as a subprocess to collect coverage data automatically.
 - quality <path>: Assess contract coverage and GazeCRAP via the O1 pipeline.
 - docscan [path]: Scan project .md files and emit doc entries (O3 implemented).
-- report [path]: Stub — migration guidance to 'gazepy crap'.
+- report [path]: Generate analysis report; AI via .gaze.yaml ai: section.
 - schema: Emit the JSON schema for AnalysisResult output.
 - self-check: Run CRAP analysis on gaze-py's own source.
 - init: Scaffold .opencode agent + command assets into the current project.
@@ -850,17 +850,10 @@ def docscan(
 @cli.command()
 @click.argument("path", type=click.Path(exists=False), required=False)
 @click.option(
-    "--ai",
-    "ai_provider",
-    type=str,
-    default=None,
-    help="AI provider for report generation (requires O1+O2).",
-)
-@click.option(
     "--model",
     type=str,
     default=None,
-    help="AI model to use for report generation.",
+    help="AI model override (takes precedence over ai.model in .gaze.yaml).",
 )
 @click.option(
     "--format",
@@ -905,16 +898,8 @@ def docscan(
     default=None,
     help="Test directory or file. Auto-discovered if omitted.",
 )
-@click.option(
-    "--ai-timeout",
-    "ai_timeout",
-    type=int,
-    default=None,
-    help="Timeout in seconds for AI provider calls.",
-)
 def report(
     path: str | None,
-    ai_provider: str | None,
     model: str | None,
     output_format: str,
     coverprofile: str | None,
@@ -922,12 +907,17 @@ def report(
     max_gaze_crapload: int,
     min_contract_coverage: float | None,
     tests_path: str | None,
-    ai_timeout: int | None,
 ) -> None:
     """Generate an analysis report for PATH.
 
-    Without --ai, emits the JSON payload to stdout. With --ai, calls the
-    specified provider subprocess and returns a narrative report.
+    The AI provider is selected via the ``ai:`` section of ``.gaze.yaml`` or
+    ``GAZEPY_AI_*`` environment variables. Use ``--model`` to override the
+    model for a single invocation.
+
+    When no provider is configured, emits the JSON analysis payload to stdout
+    (prompt-only mode). When a provider is configured but unavailable, falls
+    back to prompt-only mode with a warning on stderr. Exit code is 0 in both
+    cases.
 
     PATH may be a single .py file or a directory. Directories are scanned
     recursively for all .py files.
@@ -953,37 +943,44 @@ def report(
     result = _run_crap(src, coverage_data, config=config)
     _enrich_with_quality(result, src, tests_path, coverage_data, config=config)
 
-    # JSON-only mode: emit payload first, then enforce gates (HIGH-1 fix:
-    # gates must fire AFTER output so the payload is always written before exit).
-    if ai_provider is None:
+    # Lazy imports — avoids loading report.config / report.provider on every
+    # invocation. Mirrors the pattern used by _load_report_prompt().
+    from gaze_py.report.config import read_ai_config
+    from gaze_py.report.provider import new_synthesizer_from_config
+
+    cfg = read_ai_config(config, model)
+    synth = new_synthesizer_from_config(cfg)
+
+    # Prompt-only mode: no provider configured.
+    if synth is None:
         click.echo(_assemble_report_payload(result))
-        click.echo("Tip: pass --ai opencode to get a narrative report.", err=True)
+        click.echo(
+            "Tip: configure an AI provider in .gaze.yaml (ai: section) "
+            "or set GAZEPY_AI_MODEL env var",
+            err=True,
+        )
         _enforce_crap_gates(result, max_crapload=max_crapload, max_gaze_crapload=max_gaze_crapload)
         _enforce_min_contract_coverage_from_result(result, min_contract_coverage)
         return
 
-    # AI mode: warn if --format was explicitly set (non-default).
-    if output_format != "text":
+    # Prompt-only fallback: provider configured but not available.
+    if not synth.available():
+        provider_name = cfg.provider if cfg.provider else "ollama"
         click.echo(
-            "Warning: --format is ignored in AI mode; output is always plain text.",
+            f"Warning: {provider_name} provider configured but not available "
+            f"({synth.model_id()} not found) — falling back to prompt-only mode",
             err=True,
         )
+        click.echo(_assemble_report_payload(result))
+        _enforce_crap_gates(result, max_crapload=max_crapload, max_gaze_crapload=max_gaze_crapload)
+        _enforce_min_contract_coverage_from_result(result, min_contract_coverage)
+        return
 
-    # Lazy import — avoids loading ai.py on every report invocation without --ai.
-    from gaze_py.report.ai import call_ai
-
-    payload = _assemble_report_payload(result)
-    prompt = _load_report_prompt(Path.cwd())
-    effective_timeout = ai_timeout if ai_timeout is not None else 120
-    response = call_ai(
-        prompt,
-        payload,
-        provider=ai_provider,
-        model=model,
-        timeout=effective_timeout,
-    )
+    # AI mode: synthesize and emit the narrative report.
+    prompt = _load_report_prompt(Path.cwd()) + "\n\n" + _assemble_report_payload(result)
+    response = synth.synthesize(prompt)
     click.echo(response)
-    # Gates fire after output in AI mode too (HIGH-1 fix: payload always written first).
+    # Gates fire after output (HIGH-1 fix: payload always written before exit).
     _enforce_crap_gates(result, max_crapload=max_crapload, max_gaze_crapload=max_gaze_crapload)
     _enforce_min_contract_coverage_from_result(result, min_contract_coverage)
 

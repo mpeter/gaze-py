@@ -47,6 +47,18 @@ class GazeConfig:
             returned. Default: [] (no filter — all files included).
         doc_scan_timeout: Maximum seconds to spend scanning documents.
             Must be > 0. Default: 30.0.
+        ai_provider: AI provider name (e.g. "ollama", "vertex"). Empty
+            string means not configured. Default: "".
+        ai_model: AI model identifier (e.g. "llama3.2:3b"). Empty string
+            means not configured. Default: "".
+        ai_endpoint: Custom endpoint URL for the AI provider. Empty string
+            means use the provider default. Default: "".
+        ai_project: GCP project for Vertex AI. Empty string means not
+            configured. Default: "".
+        ai_region: GCP region for Vertex AI. Empty string means not
+            configured. Default: "".
+        ai_timeout: Maximum seconds to wait for an AI response. Must be
+            > 0. Default: 120.
     """
 
     contractual_threshold: int = 80
@@ -65,6 +77,12 @@ class GazeConfig:
     )
     doc_scan_include: list[str] = field(default_factory=list)
     doc_scan_timeout: float = 30.0
+    ai_provider: str = ""
+    ai_model: str = ""
+    ai_endpoint: str = ""
+    ai_project: str = ""
+    ai_region: str = ""
+    ai_timeout: int = 120
 
 
 def load_config_explicit(config_path: Path) -> GazeConfig:
@@ -254,8 +272,39 @@ def _build_config(raw: dict[str, object], path: Path) -> GazeConfig:
     if "timeout" in doc_scan:
         cfg.doc_scan_timeout = _to_float(doc_scan["timeout"], "doc_scan.timeout", path)
 
+    _apply_ai_block(cfg, raw, path)
+
     _validate(cfg, path)
     return cfg
+
+
+def _apply_ai_block(cfg: GazeConfig, raw: dict[str, object], path: Path) -> None:
+    """Populate ai_* fields on cfg from the raw YAML ``ai:`` block.
+
+    Unknown keys inside the block are silently ignored for forward-compatibility.
+
+    Args:
+        cfg: GazeConfig to mutate in-place.
+        raw: Top-level parsed YAML dict.
+        path: Config file path (used in error messages).
+
+    Raises:
+        GazeConfigError: When ``ai.timeout`` cannot be coerced to int.
+    """
+    ai_raw = raw.get("ai", {})
+    ai: dict[str, object] = ai_raw if isinstance(ai_raw, dict) else {}
+    if "provider" in ai:
+        cfg.ai_provider = str(ai["provider"])
+    if "model" in ai:
+        cfg.ai_model = str(ai["model"])
+    if "endpoint" in ai:
+        cfg.ai_endpoint = str(ai["endpoint"])
+    if "project" in ai:
+        cfg.ai_project = str(ai["project"])
+    if "region" in ai:
+        cfg.ai_region = str(ai["region"])
+    if "timeout" in ai:
+        cfg.ai_timeout = _to_int(ai["timeout"], "ai.timeout", path)
 
 
 def _validate(cfg: GazeConfig, path: Path) -> None:
@@ -286,3 +335,5 @@ def _validate(cfg: GazeConfig, path: Path) -> None:
         raise GazeConfigError(
             f"doc_scan.timeout must be positive, got {cfg.doc_scan_timeout} in {path}"
         )
+    if cfg.ai_timeout <= 0:
+        raise GazeConfigError(f"ai.timeout must be > 0, got {cfg.ai_timeout} in {path}")

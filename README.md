@@ -115,6 +115,48 @@ Each function in the output includes:
 The summary section includes `recommended_actions` — up to 20 functions sorted by
 priority (add_tests → decompose_and_test → decompose) that exceed the CRAP threshold.
 
+## AI Reports
+
+`gazepy report` can pass the analysis JSON to a local or cloud AI provider to generate
+a narrative interpretation. Configure your provider in `.gaze.yaml`:
+
+```yaml
+ai:
+  provider: ollama       # or: vertex
+  model: llama3.2:3b     # any Ollama model, or a Vertex Claude model ID
+  endpoint: http://localhost:11434   # Ollama only; ignored for Vertex
+  timeout: 120           # seconds per HTTP request (default: 120)
+```
+
+For Google Vertex AI (Claude models):
+```yaml
+ai:
+  provider: vertex
+  model: claude-sonnet-4-6
+  project: my-gcp-project
+  region: us-east5
+```
+
+**Environment variable overrides** (higher precedence than config file):
+
+| Variable | Description |
+|---|---|
+| `GAZEPY_AI_PROVIDER` | Provider name (`ollama` or `vertex`) |
+| `GAZEPY_AI_MODEL` | Model ID (setting only this implies `ollama`) |
+| `GAZEPY_AI_ENDPOINT` | Ollama base URL (default: `http://localhost:11434`) |
+| `GAZEPY_AI_PROJECT` | GCP project ID (Vertex only) |
+| `GAZEPY_AI_REGION` | GCP region (Vertex only) |
+| `GAZEPY_AI_TIMEOUT` | HTTP timeout in seconds |
+
+**Prerequisites**:
+- Ollama: install from [ollama.com](https://ollama.com) and pull your model (`ollama pull llama3.2:3b`)
+- Vertex: install the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) and run `gcloud auth application-default login`
+
+**If no provider is configured**, `gazepy report` emits the raw analysis JSON to stdout and a tip to stderr.
+
+**Migration from `--ai` flag**: the `--ai` and `--ai-timeout` flags have been removed.
+Configure your provider in `.gaze.yaml` instead (see above).
+
 ## Releasing
 
 ### Releasing a new version
