@@ -283,3 +283,144 @@ class TestExceptionChaining:
 
         with pytest.raises(ValueError):
             load_config(tmp_path)
+
+
+# Default ai field values — named constants to satisfy PLR2004.
+_DEFAULT_AI_PROVIDER = ""
+_DEFAULT_AI_MODEL = ""
+_DEFAULT_AI_ENDPOINT = ""
+_DEFAULT_AI_PROJECT = ""
+_DEFAULT_AI_REGION = ""
+_DEFAULT_AI_TIMEOUT = 120
+
+
+class TestAiFields:
+    """Tests for ai_* flat fields on GazeConfig (Section 1 of ai-http-adapters)."""
+
+    def test_ai_section_parsed(self, tmp_path: Path) -> None:
+        """ai: block fields are read from .gaze.yaml into flat ai_* fields."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text(
+            "ai:\n"
+            "  provider: ollama\n"
+            "  model: llama3.2:3b\n"
+            "  endpoint: http://myhost:11434\n"
+            "  project: my-proj\n"
+            "  region: us-east5\n"
+            "  timeout: 60\n"
+        )
+        cfg = load_config(tmp_path)
+
+        assert cfg.ai_provider == "ollama"
+        assert cfg.ai_model == "llama3.2:3b"
+        assert cfg.ai_endpoint == "http://myhost:11434"
+        assert cfg.ai_project == "my-proj"
+        assert cfg.ai_region == "us-east5"
+        assert cfg.ai_timeout == 60  # noqa: PLR2004
+
+    def test_missing_ai_section_uses_defaults(self, tmp_path: Path) -> None:
+        """When .gaze.yaml has no ai: key, all ai_* fields use defaults."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("scoring:\n  crap_threshold: 10.0\n")
+        cfg = load_config(tmp_path)
+
+        assert cfg.ai_provider == _DEFAULT_AI_PROVIDER
+        assert cfg.ai_model == _DEFAULT_AI_MODEL
+        assert cfg.ai_endpoint == _DEFAULT_AI_ENDPOINT
+        assert cfg.ai_project == _DEFAULT_AI_PROJECT
+        assert cfg.ai_region == _DEFAULT_AI_REGION
+        assert cfg.ai_timeout == _DEFAULT_AI_TIMEOUT
+
+    def test_default_gazeconfig_has_ai_defaults(self) -> None:
+        """GazeConfig() constructed with no arguments has correct ai_* defaults."""
+        cfg = GazeConfig()
+
+        assert cfg.ai_provider == _DEFAULT_AI_PROVIDER
+        assert cfg.ai_model == _DEFAULT_AI_MODEL
+        assert cfg.ai_endpoint == _DEFAULT_AI_ENDPOINT
+        assert cfg.ai_project == _DEFAULT_AI_PROJECT
+        assert cfg.ai_region == _DEFAULT_AI_REGION
+        assert cfg.ai_timeout == _DEFAULT_AI_TIMEOUT
+
+    def test_ai_timeout_zero_raises(self, tmp_path: Path) -> None:
+        """ai.timeout=0 raises GazeConfigError with the required message format."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("ai:\n  timeout: 0\n")
+
+        with pytest.raises(GazeConfigError, match=r"ai\.timeout must be > 0, got 0"):
+            load_config(tmp_path)
+
+    def test_ai_timeout_negative_raises(self, tmp_path: Path) -> None:
+        """ai.timeout=-1 raises GazeConfigError with the required message format."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("ai:\n  timeout: -1\n")
+
+        with pytest.raises(GazeConfigError, match=r"ai\.timeout must be > 0, got -1"):
+            load_config(tmp_path)
+
+    def test_ai_timeout_error_contains_path(self, tmp_path: Path) -> None:
+        """GazeConfigError for ai.timeout includes the config file path."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("ai:\n  timeout: 0\n")
+
+        with pytest.raises(GazeConfigError) as exc_info:
+            load_config(tmp_path)
+
+        assert str(config_file) in str(exc_info.value)
+
+    def test_ai_timeout_float_coerced_to_int(self, tmp_path: Path) -> None:
+        """ai.timeout as a float (e.g. 120.5) is truncated to int via _to_int."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("ai:\n  timeout: 120.5\n")
+        cfg = load_config(tmp_path)
+
+        assert cfg.ai_timeout == 120  # noqa: PLR2004
+        assert isinstance(cfg.ai_timeout, int)
+
+    def test_ai_unknown_keys_ignored(self, tmp_path: Path) -> None:
+        """Unknown keys inside ai: are silently ignored; no error is raised."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text(
+            "ai:\n"
+            "  provider: ollama\n"
+            "  model: llama3.2:3b\n"
+            "  stream: true\n"
+            "  future_key: some_value\n"
+        )
+        cfg = load_config(tmp_path)
+
+        assert cfg.ai_provider == "ollama"
+        assert cfg.ai_model == "llama3.2:3b"
+
+    def test_ai_partial_fields_use_defaults_for_missing(self, tmp_path: Path) -> None:
+        """Only specified ai: keys are set; unspecified ones keep defaults."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("ai:\n  provider: vertex\n  model: claude-sonnet-4-6\n")
+        cfg = load_config(tmp_path)
+
+        assert cfg.ai_provider == "vertex"
+        assert cfg.ai_model == "claude-sonnet-4-6"
+        assert cfg.ai_endpoint == _DEFAULT_AI_ENDPOINT
+        assert cfg.ai_project == _DEFAULT_AI_PROJECT
+        assert cfg.ai_region == _DEFAULT_AI_REGION
+        assert cfg.ai_timeout == _DEFAULT_AI_TIMEOUT
+
+    def test_ai_section_coexists_with_other_sections(self, tmp_path: Path) -> None:
+        """ai: fields are parsed correctly alongside classification: and scoring:."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text(
+            "classification:\n"
+            "  thresholds:\n"
+            "    contractual: 90\n"
+            "scoring:\n"
+            "  crap_threshold: 20.0\n"
+            "ai:\n"
+            "  provider: ollama\n"
+            "  timeout: 30\n"
+        )
+        cfg = load_config(tmp_path)
+
+        assert cfg.contractual_threshold == 90  # noqa: PLR2004
+        assert cfg.crap_threshold == 20.0  # noqa: PLR2004
+        assert cfg.ai_provider == "ollama"
+        assert cfg.ai_timeout == 30  # noqa: PLR2004
