@@ -18,7 +18,7 @@ This closes deferred item D.3 from `openspec/changes/002-deferred-capabilities`.
 
 - `p3p4-recover-behavior`: Detect `RecoverBehavior` — `try/except` blocks
   where the `except` clause performs recovery (assigns a fallback, returns
-  early, or calls a recovery function) rather than re-raising.
+  early, or suppresses silently) rather than re-raising.
 - `p3p4-wait-group-op`: Detect `WaitGroupOp` — calls to `asyncio.gather`,
   `asyncio.wait`, `asyncio.TaskGroup`, `concurrent.futures.wait`,
   `threading.Barrier.wait`, that synchronize on a group of concurrent tasks.

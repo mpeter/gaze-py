@@ -58,17 +58,27 @@ yet. The emit-at-most-once guard uses a `break` inside the handler loop (not a
 flag): once `self._add(RecoverBehavior)` is called, `break` exits the handler
 loop. Since `visit_Try` (and `visit_TryStar`) can be called multiple times per
 function (one per try block), the guard is implemented by checking
-`self._effects` for an existing `RecoverBehavior` at the top of `visit_Try`:
+`self._effects` for an existing `RecoverBehavior` at the top of the shared
+helper `_handle_try_node`:
 
 ```python
-def visit_Try(self, node: ast.Try) -> None:
+def _handle_try_node(self, node: ast.Try | ast.TryStar) -> None:
     if not any(e.type == SideEffectType.RecoverBehavior for e in self._effects):
         for handler in node.handlers:
             if self._is_recovery_handler(handler):
                 self._add(SideEffectType.RecoverBehavior, handler, "...")
                 break
     self.generic_visit(node)
+
+def visit_Try(self, node: ast.Try) -> None:      # noqa: N802
+    self._handle_try_node(node)
+
+def visit_TryStar(self, node: ast.TryStar) -> None:  # noqa: N802
+    self._handle_try_node(node)
 ```
+
+Both `ast.Try` and `ast.TryStar` expose `.handlers: list[ast.ExceptHandler]`,
+so the shared helper handles both without duplication (DRY).
 
 Note: emitting on the `handler` node (not the `try` node) points the location
 to the `except:` clause, which is more actionable.
