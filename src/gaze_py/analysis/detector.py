@@ -90,6 +90,27 @@ _GOROUTINE_SPAWN_CALLS: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# Qualified names for WaitGroupOp detection (asyncio module only).
+# concurrent.futures.wait is detected via name heuristic below
+# (obj_name == "futures") when imported as: import concurrent.futures as futures.
+# threading.Barrier.wait is detected via name heuristic (obj_name in {"barrier",...}).
+_WAIT_GROUP_CALLS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("asyncio", "gather"),
+        ("asyncio", "wait"),
+    }
+)
+
+# ctypes pointer variable name substrings/prefixes for UnsafeMutation detection.
+# Substring match: "ptr" matches "ptrdiff", "ptr_buf"; "buf" matches "buffer",
+# "bufio"; "mem" matches "membuffer"; "raw" matches "rawdata".
+# "p_" matches ctypes naming convention: p_value, p_buf, p_data.
+# False-positive risk is acceptable for P4 ("may detect") per EC-001.
+_CTYPES_PTR_NAMES: frozenset[str] = frozenset({"ptr", "buf", "mem", "raw", "p_"})
+
+# AtomicOp (P3) and SyncPoolOp (P4) are permanently closed — no Python equivalent.
+# See taxonomy/effects.py for rationale. EC-001/EC-005.
+
 # Qualified names for ProcessExit detection (function calls only — no overlap with Panic)
 _PROCESS_EXIT_CALLS: frozenset[tuple[str, str]] = frozenset(
     {
@@ -533,6 +554,35 @@ class _FunctionVisitor(ast.NodeVisitor):
                     f"Function mutates module-level global '{target.id}'",
                 )
 
+        # UnsafeMutation: ctypes pointer subscript assignment (ptr[0] = ...)
+        # Two independent checks — subscript and .contents are not mutually exclusive.
+        for target in targets:
+            if (
+                isinstance(target, ast.Subscript)
+                and isinstance(target.value, ast.Name)
+                and any(p in target.value.id for p in _CTYPES_PTR_NAMES)
+            ):
+                self._add(
+                    SideEffectType.UnsafeMutation,
+                    node,
+                    f"Function writes to raw memory via {target.value.id}[...] = ...",
+                )
+                break
+
+        # UnsafeMutation: ctypes .contents attribute assignment (ptr.contents = ...)
+        for target in targets:
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "contents"
+                and isinstance(target.value, ast.Name)
+            ):
+                self._add(
+                    SideEffectType.UnsafeMutation,
+                    node,
+                    f"Function writes to raw memory via {target.value.id}.contents",
+                )
+                break
+
         self.generic_visit(node)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
@@ -693,7 +743,7 @@ class _FunctionVisitor(ast.NodeVisitor):
 
         return False
 
-    def _handle_goroutine_process_time(
+    def _handle_goroutine_process_time(  # noqa: PLR0911
         self, obj_name: str | None, method: str, node: ast.Call
     ) -> bool:
         """Detect goroutine spawn, process exit, and time dependency effects.
@@ -731,6 +781,37 @@ class _FunctionVisitor(ast.NodeVisitor):
                 )
                 self.generic_visit(node)
                 return True
+
+        # WaitGroupOp: asyncio.gather, asyncio.wait
+        if obj_name is not None and (obj_name, method) in _WAIT_GROUP_CALLS:
+            self._add(
+                SideEffectType.WaitGroupOp,
+                node,
+                f"Function synchronizes on a group of tasks via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # WaitGroupOp: threading.Barrier.wait (name heuristic)
+        if method == "wait" and obj_name in {"barrier", "barriers"}:
+            self._add(
+                SideEffectType.WaitGroupOp,
+                node,
+                f"Function waits on a threading.Barrier via {obj_name}.wait()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # WaitGroupOp: concurrent.futures.wait (requires alias import:
+        #   import concurrent.futures as futures)
+        if method == "wait" and obj_name == "futures":
+            self._add(
+                SideEffectType.WaitGroupOp,
+                node,
+                "Function waits on a concurrent.futures result set via futures.wait()",
+            )
+            self.generic_visit(node)
+            return True
 
         # ProcessExit: sys.exit, os._exit, os.abort
         if obj_name is not None and (obj_name, method) in _PROCESS_EXIT_CALLS:
@@ -1060,6 +1141,125 @@ class _FunctionVisitor(ast.NodeVisitor):
                     )
 
         self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802
+        """Detect WaitGroupOp from 'async with asyncio.TaskGroup()' pattern.
+
+        Uses break after first match (only one TaskGroup pattern here).
+        Unlike visit_With which has two patterns with no break,
+        this method breaks after finding the first TaskGroup context.
+
+        Known gap: 'async with lock:' patterns are not detected as MutexOp.
+        Alias limitation: only detects asyncio.TaskGroup(), not aio.TaskGroup().
+        """
+        for item in node.items:
+            ctx = item.context_expr
+            if (
+                isinstance(ctx, ast.Call)
+                and isinstance(ctx.func, ast.Attribute)
+                and isinstance(ctx.func.value, ast.Name)
+                and ctx.func.value.id == "asyncio"
+                and ctx.func.attr == "TaskGroup"
+            ):
+                self._add(
+                    SideEffectType.WaitGroupOp,
+                    node,
+                    "Function synchronizes tasks via async with asyncio.TaskGroup()",
+                )
+                break
+        self.generic_visit(node)
+
+    # ------------------------------------------------------------------
+    # Try/Except and Try/Except* — RecoverBehavior
+    # ------------------------------------------------------------------
+
+    def _handle_try_node(self, node: ast.Try | ast.TryStar) -> None:
+        """Shared RecoverBehavior detection for try/except and except* nodes.
+
+        Emits at most one RecoverBehavior per function (checks self._effects).
+        Calls generic_visit(node) so visit_Raise fires on re-raise statements
+        inside handlers — RecoverBehavior and ErrorReturn are not mutually
+        exclusive.
+
+        Only top-level statements in each handler body are inspected for
+        transform-and-re-raise exclusion (not nested inside if/for/with).
+
+        Args:
+            node: An ast.Try or ast.TryStar node to inspect.
+        """
+        # self._effects is bounded by distinct effect types per function (≤38);
+        # O(n) scan is safe. Do not replace with a flag — see design.md D1.
+        if not any(e.type == SideEffectType.RecoverBehavior for e in self._effects):
+            for handler in node.handlers:
+                if self._is_recovery_handler(handler):
+                    self._add(
+                        SideEffectType.RecoverBehavior,
+                        handler,
+                        self._recover_description(handler),
+                    )
+                    break
+        self.generic_visit(node)
+
+    def visit_Try(self, node: ast.Try) -> None:  # noqa: N802
+        """Detect RecoverBehavior from try/except blocks."""
+        self._handle_try_node(node)
+
+    def visit_TryStar(self, node: ast.TryStar) -> None:  # noqa: N802
+        """Detect RecoverBehavior from except* (Python 3.11+) blocks."""
+        self._handle_try_node(node)
+
+    def _is_recovery_handler(self, handler: ast.ExceptHandler) -> bool:
+        """Return True if this except clause performs recovery, not re-raise.
+
+        Rules (checked in order):
+        1. Empty body → False (defensive; Python disallows empty except bodies)
+        2. Single bare raise (no args) → False (pure re-raise)
+        3. Any top-level statement in body is raise with non-None exc → False
+           (unconditional transform-and-re-raise).
+           NOTE: only inspects handler.body directly (not nested blocks),
+           so a guarded `if debug: raise RuntimeError()` does NOT trigger
+           this rule — the guarded raise is inside an ast.If, not top-level.
+        4. Body contains ast.Return, ast.Assign, ast.AugAssign, or ast.Pass
+           → True (recovery action present)
+        5. Otherwise → False
+
+        Args:
+            handler: The ast.ExceptHandler node to inspect.
+
+        Returns:
+            True if the handler body contains a recovery action. False if it
+            re-raises unconditionally.
+        """
+        body = handler.body
+        if not body:
+            return False  # defensive; unreachable in valid Python
+        # Rule 2: single bare raise (re-raise)
+        if len(body) == 1 and isinstance(body[0], ast.Raise) and body[0].exc is None:
+            return False
+        # Rule 3: unconditional transform-and-re-raise (top-level only)
+        for stmt in body:
+            if isinstance(stmt, ast.Raise) and stmt.exc is not None:
+                return False
+        # Rule 4: recovery action
+        for stmt in body:
+            if isinstance(stmt, (ast.Return, ast.Assign, ast.AugAssign, ast.Pass)):
+                return True
+        return False
+
+    def _recover_description(self, handler: ast.ExceptHandler) -> str:
+        """Return a description string for RecoverBehavior.
+
+        Distinguishes bare-pass suppression from active recovery.
+
+        Args:
+            handler: The qualifying ast.ExceptHandler node.
+
+        Returns:
+            Human-readable description of the recovery pattern.
+        """
+        if len(handler.body) == 1 and isinstance(handler.body[0], ast.Pass):
+            return "Function silently suppresses an exception (bare except: pass)"
+        return "Function catches an exception and returns a fallback or assigns a default value"
 
     # ------------------------------------------------------------------
     # Try/Finally — DeferredReturnMutation
