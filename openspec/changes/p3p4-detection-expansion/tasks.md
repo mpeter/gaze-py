@@ -18,7 +18,7 @@ Before implementing any task, read:
 
 ## 1. Taxonomy formal-close comments
 
-- [ ] 1.1 In `src/gaze_py/taxonomy/effects.py`, add inline comments adjacent
+- [x] 1.1 In `src/gaze_py/taxonomy/effects.py`, add inline comments adjacent
       to the two permanently-closed enum members in `SideEffectType`:
 
       Adjacent to `AtomicOp`:
@@ -42,7 +42,7 @@ Before implementing any task, read:
 
 ## 2. New constants in detector.py
 
-- [ ] 2.1 In `src/gaze_py/analysis/detector.py`, add after the existing
+- [x] 2.1 In `src/gaze_py/analysis/detector.py`, add after the existing
       `_GOROUTINE_SPAWN_CALLS` constant block:
 
       ```python
@@ -69,7 +69,7 @@ Before implementing any task, read:
 
 ## 3. RecoverBehavior detection (visit_Try + visit_TryStar)
 
-- [ ] 3.1 In `src/gaze_py/analysis/detector.py`, add a private
+- [x] 3.1 In `src/gaze_py/analysis/detector.py`, add a private
       `_handle_try_node` helper to `FunctionVisitor`, then add thin
       `visit_Try` and `visit_TryStar` delegates immediately after
       `visit_With`. This avoids duplicating the detection body across
@@ -121,7 +121,7 @@ Before implementing any task, read:
       which is defined in task 3.3 below. Implement tasks 3.1 through 3.3 as a
       unit before running tests — the methods form a single cohesive group.
 
-- [ ] 3.2 Add the helper `_is_recovery_handler` to `FunctionVisitor`:
+- [x] 3.2 Add the helper `_is_recovery_handler` to `FunctionVisitor`:
 
       ```python
       def _is_recovery_handler(self, handler: ast.ExceptHandler) -> bool:
@@ -163,7 +163,7 @@ Before implementing any task, read:
           return False
       ```
 
-- [ ] 3.3 Add `_recover_description` helper to `FunctionVisitor` to emit
+- [x] 3.3 Add `_recover_description` helper to `FunctionVisitor` to emit
       distinct descriptions for suppression vs. recovery:
 
       ```python
@@ -191,7 +191,7 @@ Before implementing any task, read:
 
 ## 4. WaitGroupOp detection
 
-- [ ] 4.1 In `_handle_goroutine_process_time`, add after the existing
+- [x] 4.1 In `_handle_goroutine_process_time`, add after the existing
       `GoroutineSpawn` detection block. The function signature needs
       `# noqa: PLR0911` because it will have 8 return points (5 existing +
       3 new; consistent with `_handle_lib_attr_call` and
@@ -241,7 +241,7 @@ Before implementing any task, read:
           return True
       ```
 
-- [ ] 4.2 Add `visit_AsyncWith` to `FunctionVisitor` after `visit_With` to
+- [x] 4.2 Add `visit_AsyncWith` to `FunctionVisitor` after `visit_With` to
       detect `async with asyncio.TaskGroup() as tg:`:
 
       ```python
@@ -275,7 +275,7 @@ Before implementing any task, read:
 
 ## 5. UnsafeMutation detection
 
-- [ ] 5.1 Extend `visit_Assign` in `FunctionVisitor` to check for ctypes
+- [x] 5.1 Extend `visit_Assign` in `FunctionVisitor` to check for ctypes
       pointer write patterns. **Target: `FunctionVisitor.visit_Assign` at
       approximately line 503** (docstring: "Detect ReceiverMutation,
       PointerArgMutation, GlobalMutation, EnvVarMutation") — NOT the
@@ -323,7 +323,7 @@ Before implementing any task, read:
 All fixture files MUST have `# ruff: noqa` as the first line (CR-002
 convention for AST-only fixtures with intentionally undefined names).
 
-- [ ] 6.1 [P] Create `tests/testdata/analysis/recover_behavior.py`:
+- [x] 6.1 [P] Create `tests/testdata/analysis/recover_behavior.py`:
 
       ```python
       # ruff: noqa
@@ -384,7 +384,7 @@ convention for AST-only fixtures with intentionally undefined names).
               raise RuntimeError("bad value") from e
       ```
 
-- [ ] 6.2 [P] Create `tests/testdata/analysis/wait_group_op.py`:
+- [x] 6.2 [P] Create `tests/testdata/analysis/wait_group_op.py`:
 
       ```python
       # ruff: noqa
@@ -433,7 +433,7 @@ convention for AST-only fixtures with intentionally undefined names).
           pass  # sync 'with asyncio.TaskGroup()' is not valid Python; no fixture needed
       ```
 
-- [ ] 6.3 [P] Create `tests/testdata/analysis/unsafe_mutation.py`:
+- [x] 6.3 [P] Create `tests/testdata/analysis/unsafe_mutation.py`:
 
       ```python
       # ruff: noqa
@@ -471,7 +471,7 @@ convention for AST-only fixtures with intentionally undefined names).
 All tests use `FileDetector.detect(FIXTURES / "<file>.py", root=ROOT)` unless
 noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
 
-- [ ] 7.1 [P] In `tests/test_detector.py`, split the existing
+- [x] 7.1 [P] In `tests/test_detector.py`, split the existing
       `test_noop_types_not_detected` parametrized test:
       - Remove `"WaitGroupOp"`, `"RecoverBehavior"`, `"UnsafeMutation"` from
         the parametrize list (these are now actively detected)
@@ -497,7 +497,7 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
         Assert no effect of type `SideEffectType.AtomicOp` and (separately)
         `SideEffectType.SyncPoolOp`.
 
-- [ ] 7.2 [P] Append new test functions for `RecoverBehavior`:
+- [x] 7.2 [P] Append new test functions for `RecoverBehavior`:
       - `test_recover_behavior_assignment_in_handler` — detect on
         `parse_int_with_fallback` from `recover_behavior.py`; assert
         `sum(1 for e in all_effects if e.type == SideEffectType.RecoverBehavior) == 1`
@@ -533,7 +533,7 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
         ```
         Assert exactly one `RecoverBehavior` effect on function `f`.
 
-- [ ] 7.3 [P] Append new test functions for `WaitGroupOp`:
+- [x] 7.3 [P] Append new test functions for `WaitGroupOp`:
       - `test_wait_group_op_asyncio_gather` — detect on `gather_tasks`;
         assert `WaitGroupOp` present
       - `test_wait_group_op_asyncio_gather_bare_call` — inline source:
@@ -581,7 +581,7 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
         emits independently. Contrast with RecoverBehavior which emits at
         most once.)
 
-- [ ] 7.4 [P] Append new test functions for `UnsafeMutation`:
+- [x] 7.4 [P] Append new test functions for `UnsafeMutation`:
       - `test_unsafe_mutation_ptr_subscript` — detect on `write_ptr_subscript`;
         assert `sum(1 for e in all_effects if e.type == SideEffectType.UnsafeMutation) == 1`
       - `test_unsafe_mutation_buf_subscript` — detect on `write_buf_subscript`;
@@ -606,17 +606,17 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
 
 ## 8. 002-deferred-capabilities update
 
-- [ ] 8.1 In `openspec/changes/002-deferred-capabilities/tasks.md`, append
+- [x] 8.1 In `openspec/changes/002-deferred-capabilities/tasks.md`, append
       `— SHIPPED 0.5.2 (WaitGroupOp + RecoverBehavior implemented; UnsafeMutation implemented; AtomicOp/SyncPoolOp permanently closed — D.3 fully resolved)`
       to the D.3 description line. Per the tracking-doc convention, do NOT
       check the box — append the `— SHIPPED` annotation inline.
 
 ## 9. Version bump + CHANGELOG
 
-- [ ] 9.1 Bump version `0.5.1` → `0.5.2` in `pyproject.toml` and
+- [x] 9.1 Bump version `0.5.1` → `0.5.2` in `pyproject.toml` and
       `src/gaze_py/__init__.py`.
 
-- [ ] 9.2 Add CHANGELOG entry under `## [Unreleased]`. The spec reference goes
+- [x] 9.2 Add CHANGELOG entry under `## [Unreleased]`. The spec reference goes
       in a `### Specs` bullet — NOT inside the code block — consistent with
       existing CHANGELOG entries:
 
@@ -649,9 +649,11 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
 
 ## 10. CI gate
 
-- [ ] 10.1 [P] `uv run ruff check .`
-- [ ] 10.2 [P] `uv run ruff format --check .`
-- [ ] 10.3 [P] `uv run mypy --strict src/`
-- [ ] 10.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+- [x] 10.1 [P] `uv run ruff check .`
+- [x] 10.2 [P] `uv run ruff format --check .`
+- [x] 10.3 [P] `uv run mypy --strict src/`
+- [x] 10.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
 
 <!-- spec-review: passed -->
+
+<!-- code-review: passed -->
