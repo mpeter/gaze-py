@@ -48,8 +48,10 @@ Can be implemented in any order after 001 lands.
 - [ ] D.1 O3 — Document scanning signal (`src/gaze_py/classify/signals/docscan.py`) — SHIPPED 0.4.0
 - [ ] D.2 O7 full — Add `doc_scan.exclude` and `doc_scan.timeout` to
       `.gaze.yaml` config [BLOCKED: D.1] — SHIPPED 0.4.0
-- [ ] D.3 Revisit P3/P4 no-equivalent types — close SyncPoolOp/UnsafeMutation/
-      AtomicOp permanently; evaluate WaitGroupOp and RecoverBehavior
+- [ ] D.3 Revisit P3/P4 no-equivalent types — ~~close SyncPoolOp/UnsafeMutation/AtomicOp
+      permanently; evaluate WaitGroupOp and RecoverBehavior~~ → implement
+      RecoverBehavior + WaitGroupOp + UnsafeMutation; permanently close
+      AtomicOp + SyncPoolOp — SHIPPED 0.5.2 (WaitGroupOp + RecoverBehavior implemented; UnsafeMutation implemented; AtomicOp/SyncPoolOp permanently closed — D.3 fully resolved)
 
 ### Group E — Output & Presentation (independent)
 

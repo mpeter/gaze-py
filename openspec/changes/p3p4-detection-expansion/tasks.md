@@ -93,6 +93,8 @@ Before implementing any task, read:
           Args:
               node: An ast.Try or ast.TryStar node to inspect.
           """
+          # self._effects is bounded by distinct effect types per function (≤38);
+          # O(n) scan is safe. Do not replace with a flag — see design.md D1.
           if not any(
               e.type == SideEffectType.RecoverBehavior for e in self._effects
           ):
@@ -115,7 +117,11 @@ Before implementing any task, read:
           self._handle_try_node(node)
       ```
 
-- [ ] 3.3 Add the helper `_is_recovery_handler` to `FunctionVisitor`:
+      **Sequencing note**: `_handle_try_node` calls `self._recover_description(handler)`
+      which is defined in task 3.3 below. Implement tasks 3.1 through 3.3 as a
+      unit before running tests — the methods form a single cohesive group.
+
+- [ ] 3.2 Add the helper `_is_recovery_handler` to `FunctionVisitor`:
 
       ```python
       def _is_recovery_handler(self, handler: ast.ExceptHandler) -> bool:
@@ -157,7 +163,7 @@ Before implementing any task, read:
           return False
       ```
 
-- [ ] 3.4 Add `_recover_description` helper to `FunctionVisitor` to emit
+- [ ] 3.3 Add `_recover_description` helper to `FunctionVisitor` to emit
       distinct descriptions for suppression vs. recovery:
 
       ```python
@@ -187,8 +193,9 @@ Before implementing any task, read:
 
 - [ ] 4.1 In `_handle_goroutine_process_time`, add after the existing
       `GoroutineSpawn` detection block. The function signature needs
-      `# noqa: PLR0911` because it will have 7 return points (consistent with
-      `_handle_lib_attr_call` and `_handle_param_attr_call`):
+      `# noqa: PLR0911` because it will have 8 return points (5 existing +
+      3 new; consistent with `_handle_lib_attr_call` and
+      `_handle_param_attr_call`):
 
       Update the function signature line from:
       ```python
@@ -269,9 +276,16 @@ Before implementing any task, read:
 ## 5. UnsafeMutation detection
 
 - [ ] 5.1 Extend `visit_Assign` in `FunctionVisitor` to check for ctypes
-      pointer write patterns. Add TWO INDEPENDENT `if` blocks (not `if/else`)
-      at the end of `visit_Assign`, AFTER the existing `if/elif` chain and
-      BEFORE `self.generic_visit(node)`:
+      pointer write patterns. **Target: `FunctionVisitor.visit_Assign` at
+      approximately line 503** (docstring: "Detect ReceiverMutation,
+      PointerArgMutation, GlobalMutation, EnvVarMutation") — NOT the
+      `_ClosureCaptureVisitor.visit_Assign` at approximately line 1290
+      (docstring: "Detect ClosureCaptureMutation"). There are two
+      `visit_Assign` methods in the file; make sure to edit the correct one.
+
+      Add TWO INDEPENDENT `if` blocks (not `if/else`) at the end of
+      `FunctionVisitor.visit_Assign`, AFTER the `GlobalMutation` for-loop
+      and BEFORE `self.generic_visit(node)`:
 
       ```python
       # UnsafeMutation: ctypes pointer subscript assignment (ptr[0] = ...)
@@ -465,6 +479,11 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
       - Rename the test to `test_permanently_closed_types_never_emitted` with
         docstring `"EC-001/EC-005: AtomicOp and SyncPoolOp have no Python
         equivalent and are permanently closed."`
+      - Update the comment block immediately above the test (currently reads:
+        `# EC-005: No-op coverage — WaitGroupOp, AtomicOp, RecoverBehavior,`
+        `# UnsafeMutation, SyncPoolOp never detected`) to:
+        `# EC-001/EC-005: Permanently closed types — AtomicOp and SyncPoolOp`
+        `# have no Python equivalent and are never detected.`
       - Use a richer synthetic fixture (inline source via `tmp_path`) instead
         of `pure_function.py` to test against plausible atomic-like patterns:
         ```python
@@ -533,6 +552,18 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
         assert `WaitGroupOp` present
       - `test_wait_group_op_barrier_wait` — detect on `barrier_sync`;
         assert `WaitGroupOp` present
+      - `test_wait_group_op_not_emitted_for_async_with_lock` — confirms
+        `visit_AsyncWith` does not fire on a non-TaskGroup async context
+        manager. Inline source:
+        ```python
+        source = textwrap.dedent("""
+            async def f(lock):
+                async with lock:
+                    pass
+        """)
+        ```
+        Assert no `WaitGroupOp` in effects. (Verifies the
+        `ctx.func.attr == "TaskGroup"` guard in `visit_AsyncWith`.)
       - `test_wait_group_op_multiple_emissions` — inline source with two
         qualifying WaitGroupOp calls in the same function:
         ```python
@@ -585,7 +616,10 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
 - [ ] 9.1 Bump version `0.5.1` → `0.5.2` in `pyproject.toml` and
       `src/gaze_py/__init__.py`.
 
-- [ ] 9.2 Add CHANGELOG entry under `## [Unreleased]`:
+- [ ] 9.2 Add CHANGELOG entry under `## [Unreleased]`. The spec reference goes
+      in a `### Specs` bullet — NOT inside the code block — consistent with
+      existing CHANGELOG entries:
+
       ```
       ### Added
       - `RecoverBehavior` (P3) detection: `try/except` blocks that suppress or
@@ -604,8 +638,14 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
         Python equivalent. Both remain in the taxonomy (EC-001 compatibility).
         Closure is documented in `taxonomy/effects.py` comments.
 
-      - Spec: `openspec/changes/p3p4-detection-expansion/`
+      ### Specs
+      - `openspec/changes/p3p4-detection-expansion/`
       ```
+
+      Also verify that all prior `[Unreleased]` content is intentionally
+      bundled into `0.5.2` — the section currently contains multiple
+      significant unreleased features (AI report, gap_hints, quality pipeline
+      changes) that will be included in the same tag.
 
 ## 10. CI gate
 
