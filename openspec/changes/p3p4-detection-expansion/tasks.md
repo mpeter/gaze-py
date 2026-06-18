@@ -507,6 +507,19 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
         - `suppress_error` has exactly 1 `RecoverBehavior`
         - `reraise_is_not_recovery` has 0 `RecoverBehavior`
         - `transform_reraise_is_not_recovery` has 0 `RecoverBehavior`
+      - `test_recover_behavior_except_star` — confirms `visit_TryStar`
+        dispatch path fires. Inline source (Python 3.11+ syntax — the
+        project minimum is 3.11, so no skip needed):
+        ```python
+        source = textwrap.dedent("""
+            def f(value):
+                try:
+                    return int(value)
+                except* ValueError:
+                    return None
+        """)
+        ```
+        Assert exactly one `RecoverBehavior` effect on function `f`.
 
 - [ ] 7.3 [P] Append new test functions for `WaitGroupOp`:
       - `test_wait_group_op_asyncio_gather` — detect on `gather_tasks`;
@@ -554,7 +567,7 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
 ## 8. 002-deferred-capabilities update
 
 - [ ] 8.1 In `openspec/changes/002-deferred-capabilities/tasks.md`, append
-      `— SHIPPED 0.5.2 (UnsafeMutation implemented; AtomicOp/SyncPoolOp permanently closed)`
+      `— SHIPPED 0.5.2 (WaitGroupOp + RecoverBehavior implemented; UnsafeMutation implemented; AtomicOp/SyncPoolOp permanently closed — D.3 fully resolved)`
       to the D.3 description line. Per the tracking-doc convention, do NOT
       check the box — append the `— SHIPPED` annotation inline.
 
