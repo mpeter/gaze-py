@@ -73,6 +73,11 @@ class SideEffectType(enum.StrEnum):
     EnvVarMutation = "EnvVarMutation"
     MutexOp = "MutexOp"
     WaitGroupOp = "WaitGroupOp"
+    # PERMANENTLY CLOSED — no Python equivalent.
+    # Python has no atomic primitive. threading.local is thread-local
+    # storage, not an atomic read-modify-write. ctypes atomics are
+    # indistinguishable from general ctypes calls (already CgoCall).
+    # Remains in taxonomy for porting contract compatibility (EC-001).
     AtomicOp = "AtomicOp"
     TimeDependency = "TimeDependency"
     ProcessExit = "ProcessExit"
@@ -83,6 +88,10 @@ class SideEffectType(enum.StrEnum):
     UnsafeMutation = "UnsafeMutation"
     CgoCall = "CgoCall"
     FinalizerRegistration = "FinalizerRegistration"
+    # PERMANENTLY CLOSED — no Python equivalent.
+    # Go's sync.Pool has no Python equivalent. Object reuse pools
+    # in Python are application-level; no stdlib type matches the
+    # semantics. Remains in taxonomy for porting contract compatibility.
     SyncPoolOp = "SyncPoolOp"
     ClosureCaptureMutation = "ClosureCaptureMutation"
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gaze-py"
-version = "0.5.1"
+version = "0.5.2"
 description = "Python-native GazeCRAP analysis engine"
 readme = "README.md"
 license = { text = "Apache-2.0" }

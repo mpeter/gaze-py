@@ -653,3 +653,5 @@ noted as inline (using `tmp_path` with `textwrap.dedent` source strings).
 - [ ] 10.2 [P] `uv run ruff format --check .`
 - [ ] 10.3 [P] `uv run mypy --strict src/`
 - [ ] 10.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+
+<!-- spec-review: passed -->

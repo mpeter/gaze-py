@@ -5,6 +5,26 @@ All notable changes to gaze-py are documented here.
 ## [Unreleased]
 
 ### Added
+- `RecoverBehavior` (P3) detection: `try/except` blocks that suppress or
+  recover from exceptions (return fallback, assign default, bare `pass`).
+  Also handles Python 3.11+ `except*` blocks. Re-raise and
+  transform-and-re-raise patterns are not flagged.
+- `WaitGroupOp` (P3) detection: `asyncio.gather`, `asyncio.wait`,
+  `async with asyncio.TaskGroup()`, `futures.wait(...)` (via alias import),
+  and `threading.Barrier.wait` patterns.
+- `UnsafeMutation` (P4) detection: ctypes pointer subscript writes
+  (`ptr[0] = ...`, `buf[0] = ...`, `p_data[0] = ...`) and `.contents`
+  attribute writes (`mem.contents = ...`).
+
+### Fixed
+- `AtomicOp` (P3) and `SyncPoolOp` (P4) formally closed as having no
+  Python equivalent. Both remain in the taxonomy (EC-001 compatibility).
+  Closure is documented in `taxonomy/effects.py` comments.
+
+### Specs
+- `openspec/changes/p3p4-detection-expansion/`
+
+### Added
 - `gazepy report`: AI-powered narrative reports via direct HTTP REST calls to
   Ollama (`/api/generate`) or Vertex AI (`rawPredict`, Anthropic Messages format).
   Configure in `.gaze.yaml` `ai:` section or via `GAZEPY_AI_*` env vars.

@@ -7,6 +7,7 @@ The detector is imported from gaze_py.analysis.detector.
 from __future__ import annotations
 
 import re
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -380,23 +381,27 @@ def test_append_is_slice_mutation_not_pointer_arg() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# EC-005: No-op coverage — WaitGroupOp, AtomicOp, RecoverBehavior,
-#         UnsafeMutation, SyncPoolOp never detected
-# ---------------------------------------------------------------------------
+# EC-001/EC-005: Permanently closed types — AtomicOp and SyncPoolOp
+#         have no Python equivalent and are never detected.
 
 
 @pytest.mark.parametrize(
     "noop_type",
-    ["WaitGroupOp", "AtomicOp", "RecoverBehavior", "UnsafeMutation", "SyncPoolOp"],
+    ["AtomicOp", "SyncPoolOp"],
 )
-def test_noop_types_not_detected(noop_type: str) -> None:
-    """EC-005: No-op types are never detected (even on pure_function.py)."""
-    targets = FileDetector.detect(FIXTURES / "pure_function.py", root=ROOT)
+def test_permanently_closed_types_never_emitted(noop_type: str, tmp_path: Path) -> None:
+    """EC-001/EC-005: AtomicOp and SyncPoolOp have no Python equivalent — permanently closed."""
+    source = textwrap.dedent("""
+        import threading
+        def f():
+            x = threading.local()
+            x.value = 42
+    """)
+    path = tmp_path / "atomic_like.py"
+    path.write_text(source)
+    targets = FileDetector.detect(path, root=tmp_path)
     all_effects = [e for t in targets for e in t.effects]
-    assert not any(e.type == SideEffectType(noop_type) for e in all_effects), (
-        f"No-op type {noop_type} should never be detected"
-    )
+    assert not any(e.type == SideEffectType(noop_type) for e in all_effects)
 
 
 # ---------------------------------------------------------------------------
@@ -812,3 +817,242 @@ def test_caller_count_reflects_callers_map_value() -> None:
     assert matched[0].caller_count == 5, (  # noqa: PLR2004
         f"Expected caller_count=5, got {matched[0].caller_count}"
     )
+
+
+# ---------------------------------------------------------------------------
+# RecoverBehavior (P3) — visit_Try / visit_TryStar
+# ---------------------------------------------------------------------------
+
+
+def test_recover_behavior_assignment_in_handler() -> None:
+    """RecoverBehavior: assignment in except → detected."""
+    targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "parse_int_with_fallback")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
+    assert count == 1
+
+
+def test_recover_behavior_bare_pass() -> None:
+    """RecoverBehavior: bare pass in except → detected (suppression)."""
+    targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "suppress_error")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
+    assert count == 1
+
+
+def test_recover_behavior_return_only_in_handler() -> None:
+    """RecoverBehavior: return-only handler → detected."""
+    targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "return_none_on_error")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
+    assert count == 1
+
+
+def test_recover_behavior_not_emitted_for_reraise() -> None:
+    """RecoverBehavior: bare re-raise → NOT detected."""
+    targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "reraise_is_not_recovery")
+    assert not any(e.type == SideEffectType.RecoverBehavior for e in fn.effects)
+
+
+def test_recover_behavior_not_emitted_for_transform_reraise() -> None:
+    """RecoverBehavior: transform-and-reraise → NOT detected."""
+    targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "transform_reraise_is_not_recovery")
+    assert not any(e.type == SideEffectType.RecoverBehavior for e in fn.effects)
+
+
+def test_recover_behavior_emitted_once_per_function() -> None:
+    """RecoverBehavior: two qualifying try blocks → exactly ONE emission."""
+    targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "double_try_recovers_once")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
+    assert count == 1
+
+
+def test_recover_behavior_flag_resets_between_functions() -> None:
+    """RecoverBehavior: per-function isolation — full file detection."""
+    targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
+    by_name = {t.name: t for t in targets}
+    rb = SideEffectType.RecoverBehavior
+    assert sum(1 for e in by_name["parse_int_with_fallback"].effects if e.type == rb) == 1
+    assert sum(1 for e in by_name["suppress_error"].effects if e.type == rb) == 1
+    assert sum(1 for e in by_name["reraise_is_not_recovery"].effects if e.type == rb) == 0
+    assert sum(1 for e in by_name["transform_reraise_is_not_recovery"].effects if e.type == rb) == 0
+
+
+def test_recover_behavior_except_star(tmp_path: Path) -> None:
+    """RecoverBehavior: visit_TryStar fires on except* (Python 3.11+)."""
+    source = textwrap.dedent("""
+        def f(value):
+            try:
+                return int(value)
+            except* ValueError:
+                return None
+    """)
+    path = tmp_path / "except_star.py"
+    path.write_text(source)
+    targets = FileDetector.detect(path, root=tmp_path)
+    fn = next(t for t in targets if t.name == "f")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
+    assert count == 1
+
+
+# ---------------------------------------------------------------------------
+# WaitGroupOp (P3) — asyncio / threading.Barrier / concurrent.futures
+# ---------------------------------------------------------------------------
+
+
+def test_wait_group_op_asyncio_gather() -> None:
+    """WaitGroupOp: asyncio.gather → detected."""
+    targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "gather_tasks")
+    assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
+
+
+def test_wait_group_op_asyncio_gather_bare_call(tmp_path: Path) -> None:
+    """WaitGroupOp: asyncio.gather without await → detected (fires on ast.Call)."""
+    source = textwrap.dedent("""
+        import asyncio
+        def f(t1, t2):
+            asyncio.gather(t1, t2)
+    """)
+    path = tmp_path / "gather_bare.py"
+    path.write_text(source)
+    targets = FileDetector.detect(path, root=tmp_path)
+    fn = next(t for t in targets if t.name == "f")
+    assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
+
+
+def test_wait_group_op_asyncio_wait() -> None:
+    """WaitGroupOp: asyncio.wait → detected."""
+    targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "wait_tasks")
+    assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
+
+
+def test_wait_group_op_task_group() -> None:
+    """WaitGroupOp: async with asyncio.TaskGroup() → detected."""
+    targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "task_group_sync")
+    assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
+
+
+def test_wait_group_op_not_emitted_for_sync_with(tmp_path: Path) -> None:
+    """WaitGroupOp: plain with lock: → NOT detected (only MutexOp)."""
+    source = textwrap.dedent("""
+        def f(lock):
+            with lock:
+                pass
+    """)
+    path = tmp_path / "sync_with.py"
+    path.write_text(source)
+    targets = FileDetector.detect(path, root=tmp_path)
+    fn = next(t for t in targets if t.name == "f")
+    assert not any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
+
+
+def test_wait_group_op_not_emitted_for_async_with_lock(tmp_path: Path) -> None:
+    """WaitGroupOp: async with lock: (non-TaskGroup) → NOT detected."""
+    source = textwrap.dedent("""
+        async def f(lock):
+            async with lock:
+                pass
+    """)
+    path = tmp_path / "async_with_lock.py"
+    path.write_text(source)
+    targets = FileDetector.detect(path, root=tmp_path)
+    fn = next(t for t in targets if t.name == "f")
+    assert not any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
+
+
+def test_wait_group_op_futures_wait() -> None:
+    """WaitGroupOp: futures.wait() via alias import → detected."""
+    targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "futures_wait")
+    assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
+
+
+def test_wait_group_op_barrier_wait() -> None:
+    """WaitGroupOp: threading.Barrier.wait() → detected."""
+    targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "barrier_sync")
+    assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
+
+
+def test_wait_group_op_multiple_emissions(tmp_path: Path) -> None:
+    """WaitGroupOp: two qualifying calls in same function → 2 emissions."""
+    source = textwrap.dedent("""
+        import asyncio
+        import threading
+
+        async def sync_two_ways(tasks, barrier):
+            await asyncio.gather(*tasks)
+            barrier.wait()
+    """)
+    path = tmp_path / "multi_wait.py"
+    path.write_text(source)
+    targets = FileDetector.detect(path, root=tmp_path)
+    fn = next(t for t in targets if t.name == "sync_two_ways")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.WaitGroupOp)
+    assert count == 2
+
+
+# ---------------------------------------------------------------------------
+# UnsafeMutation (P4) — ctypes pointer writes
+# ---------------------------------------------------------------------------
+
+
+def test_unsafe_mutation_ptr_subscript() -> None:
+    """UnsafeMutation: ptr[0] = ... → detected."""
+    targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "write_ptr_subscript")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
+    assert count == 1
+
+
+def test_unsafe_mutation_buf_subscript() -> None:
+    """UnsafeMutation: buf[0] = ... → detected."""
+    targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "write_buf_subscript")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
+    assert count == 1
+
+
+def test_unsafe_mutation_p_name_subscript() -> None:
+    """UnsafeMutation: p_data[0] = ... → detected (validates 'p_' in _CTYPES_PTR_NAMES)."""
+    targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "write_p_name_subscript")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
+    assert count == 1
+
+
+def test_unsafe_mutation_contents_attr() -> None:
+    """UnsafeMutation: mem.contents = ... → detected."""
+    targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "write_contents")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
+    assert count == 1
+
+
+def test_unsafe_mutation_not_emitted_for_list_write() -> None:
+    """UnsafeMutation: items[0] = ... (list) → NOT detected."""
+    targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
+    fn = next(t for t in targets if t.name == "safe_list_write")
+    assert not any(e.type == SideEffectType.UnsafeMutation for e in fn.effects)
+
+
+def test_unsafe_mutation_both_patterns_independent(tmp_path: Path) -> None:
+    """UnsafeMutation: ptr subscript + .contents in same function → 2 emissions."""
+    source = textwrap.dedent("""
+        import ctypes
+        def f(ptr, mem):
+            ptr[0] = 0xFF
+            mem.contents = ctypes.c_int(0)
+    """)
+    path = tmp_path / "unsafe_both.py"
+    path.write_text(source)
+    targets = FileDetector.detect(path, root=tmp_path)
+    fn = next(t for t in targets if t.name == "f")
+    count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
+    assert count == 2
