@@ -110,6 +110,8 @@ def new_synthesizer_from_config(cfg: ProviderConfig) -> Synthesizer | None:
     # Rule 2: Ollama (explicit or implicit via model-only).
     if cfg.provider in (_EMPTY, "ollama"):
         base_url = cfg.endpoint if cfg.endpoint else _OLLAMA_DEFAULT_URL
+        # Fix 6: use keyword-only args (CS-017) — OllamaSynthesizer.__init__ now
+        # requires all args after self to be keyword-only.
         return OllamaSynthesizer(
             base_url=base_url,
             model=cfg.model,
@@ -119,6 +121,8 @@ def new_synthesizer_from_config(cfg: ProviderConfig) -> Synthesizer | None:
     # Rule 3: Vertex — validate required fields and character safety.
     if cfg.provider == "vertex":
         _validate_vertex_config(cfg)
+        # Fix 6: use keyword-only args (CS-017) — VertexSynthesizer.__init__ now
+        # requires all args after self to be keyword-only.
         return VertexSynthesizer(
             project=cfg.project,
             region=cfg.region,

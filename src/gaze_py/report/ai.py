@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import random
-import re
 import shutil
 import subprocess
 import time
@@ -30,6 +29,8 @@ import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
+
+import click
 
 
 @runtime_checkable
@@ -205,8 +206,8 @@ class OllamaSynthesizer:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
         *,
+        base_url: str = "http://localhost:11434",
         model: str,
         timeout: int = 120,
         _http_open: Any = urllib.request.urlopen,
@@ -229,8 +230,6 @@ class OllamaSynthesizer:
             click.ClickException: On non-200 status, URLError/timeout,
                 malformed JSON, or missing 'response' key.
         """
-        import click
-
         url = f"{self._base_url}/api/generate"
         body = {"model": self._model, "prompt": prompt, "stream": False}
         try:
@@ -311,33 +310,10 @@ class OllamaSynthesizer:
 # VertexSynthesizer
 # ---------------------------------------------------------------------------
 
-# Allowed characters in project, region, model fields (security: SC-004)
-_FIELD_RE = re.compile(r"^[a-zA-Z0-9\-._:]+$")
-
 _VERTEX_MAX_RETRIES = 5  # 1 original + 5 retries = 6 total attempts
 _BACKOFF_BASE = 1.0  # seconds
 _BACKOFF_MAX = 60.0  # seconds
 _BACKOFF_JITTER = 0.25  # ±25%
-
-
-def _validate_vertex_field(value: str, field_name: str) -> None:
-    """Validate a VertexSynthesizer field against the allowed character set.
-
-    Args:
-        value: The field value to validate.
-        field_name: Human-readable field name for error messages.
-
-    Raises:
-        click.ClickException: If value contains characters outside
-            [a-zA-Z0-9\\-._:].
-    """
-    import click
-
-    if not _FIELD_RE.match(value):
-        raise click.ClickException(
-            f"Invalid {field_name!r}: contains characters not allowed in Vertex AI "
-            f"endpoint construction. Allowed: alphanumeric, hyphens, dots, underscores, colons."
-        )
 
 
 def _parse_iso8601_epoch(ts: str) -> float:
@@ -387,27 +363,26 @@ class VertexSynthesizer:
         _sleep: Injectable sleep for retry backoff. Default: time.sleep.
             MUST NOT be used in production code.
 
-    Raises:
-        click.ClickException: If project, region, or model contain invalid
-            characters (validated at construction time).
+    Note:
+        Field validation (character safety, non-empty) is performed by the
+        factory (``new_synthesizer_from_config``) before construction.
+        The constructor trusts the factory and does not re-validate. (Fix 4: DRY)
     """
 
     def __init__(
         self,
+        *,
         project: str,
         region: str,
         model: str,
-        *,
         timeout: int = 120,
         _http_open: Any = urllib.request.urlopen,
         _gcloud: Any = subprocess.run,
         _clock: Callable[[], float] = time.time,
         _sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        _validate_vertex_field(project, "project")
-        _validate_vertex_field(region, "region")
-        _validate_vertex_field(model, "model")
-
+        # Validation is performed by the factory (new_synthesizer_from_config)
+        # before construction. The constructor trusts the factory. (Fix 4: DRY)
         self._project = project
         self._region = region
         self._model = model
@@ -445,8 +420,6 @@ class VertexSynthesizer:
             click.ClickException: If gcloud is not on PATH, exits non-zero,
                 or returns malformed JSON.
         """
-        import click
-
         if shutil.which("gcloud") is None:
             raise click.ClickException(
                 "vertex provider requires gcloud CLI. "
@@ -468,19 +441,27 @@ class VertexSynthesizer:
             ) from exc
 
         if result.returncode != 0:
+            # Fix 1: truncate stderr to first non-empty line to avoid embedding
+            # multi-kilobyte error blobs in the exception message.
+            stderr_summary = (
+                result.stderr.splitlines()[0] if result.stderr.strip() else "(no details)"
+            )
             raise click.ClickException(
                 f"gcloud auth print-access-token failed (exit {result.returncode}): "
-                f"{result.stderr}\n"
+                f"{stderr_summary}\n"
                 "Run: gcloud auth application-default login"
-            )
+            ) from None
 
         try:
             token_data = json.loads(result.stdout)
             token: str = token_data["token"]
             expiry_epoch = _parse_iso8601_epoch(token_data["token_expiry"])
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            # Fix 10: don't embed exc in the message — it may contain raw token data.
             raise click.ClickException(
-                f"unexpected response format from gcloud auth print-access-token: {exc}"
+                "unexpected response format from gcloud auth print-access-token: "
+                "expected JSON with 'token' and 'token_expiry' fields. "
+                "Run: gcloud components update"
             ) from exc
 
         self._cached_token = (token, expiry_epoch)
@@ -514,11 +495,14 @@ class VertexSynthesizer:
             attempt: Zero-based retry attempt index (0 = first retry).
 
         Returns:
-            Sleep duration in seconds, clamped to [0, _BACKOFF_MAX].
+            Sleep duration in seconds. The base is clamped to _BACKOFF_MAX
+            (60s), then ±25% jitter is applied. The returned value may be
+            slightly below the base (due to negative jitter) but is floored
+            to 0.0 by the caller (_sleep_for_429 via max(0.0, ...)).
         """
         base: float = min(_BACKOFF_BASE * float(2**attempt), _BACKOFF_MAX)
         jitter: float = base * _BACKOFF_JITTER
-        return base + random.uniform(-jitter, jitter)
+        return max(0.0, base + random.uniform(-jitter, jitter))
 
     def _do_request(self, token: str, prompt: str) -> tuple[int, bytes, Any]:
         """Send one rawPredict HTTP request.
@@ -560,7 +544,9 @@ class VertexSynthesizer:
         retry_after_header: str | None = resp_obj.getheader("Retry-After")
         if retry_after_header is not None:
             try:
-                sleep_secs = float(int(retry_after_header))
+                # Fix 2: cap Retry-After to _BACKOFF_MAX and floor to 0 to prevent
+                # unbounded sleeps from a hostile or misconfigured server.
+                sleep_secs = max(0.0, min(float(int(retry_after_header)), _BACKOFF_MAX))
             except ValueError:
                 sleep_secs = self._compute_backoff(retry_count)
         else:
@@ -579,8 +565,6 @@ class VertexSynthesizer:
         Raises:
             click.ClickException: On malformed JSON or missing content.
         """
-        import click
-
         try:
             data = json.loads(body_bytes)
         except json.JSONDecodeError as exc:
@@ -620,8 +604,6 @@ class VertexSynthesizer:
             click.ClickException: On gcloud failure, HTTP error, malformed
                 JSON, missing content, or 429 exhaustion.
         """
-        import click
-
         token = self._get_token()
         retry_count = 0
         _401_retried = False
@@ -661,9 +643,15 @@ class VertexSynthesizer:
                 retry_count += 1
                 continue
 
-            # Non-429 4xx/5xx: raise immediately with status + body excerpt
-            body_excerpt = body_bytes[:512].decode(errors="replace")
-            raise click.ClickException(f"Vertex AI returned HTTP {status}: {body_excerpt}")
+            # Non-429 4xx/5xx: raise immediately.
+            # Fix 9: try to extract error.message from JSON for a cleaner message.
+            try:
+                err_data = json.loads(body_bytes)
+                err_msg = err_data.get("error", {}).get("message", "")
+                detail = f": {err_msg}" if err_msg else ""
+            except (json.JSONDecodeError, AttributeError):
+                detail = ""
+            raise click.ClickException(f"Vertex AI returned HTTP {status}{detail}")
 
     def available(self) -> bool:
         """Check whether Vertex AI is available for use.
