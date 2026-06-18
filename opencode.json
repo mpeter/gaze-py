@@ -2,13 +2,8 @@
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "dewey": {
-      "type": "local",
-      "command": [
-        "dewey",
-        "serve",
-        "--vault",
-        "."
-      ],
+      "type": "remote",
+      "url": "http://127.0.0.1:3333/mcp",
       "enabled": true
     },
     "replicator": {
