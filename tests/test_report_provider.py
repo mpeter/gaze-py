@@ -724,6 +724,32 @@ class TestReadAiConfigTimeoutInvalidValue:
         with pytest.raises(click.ClickException):
             read_ai_config(gaze_config, cli_model=None)
 
+    def test_timeout_zero_raises_click_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Fix 3: GAZEPY_AI_TIMEOUT=0 raises ClickException (must be positive)."""
+        monkeypatch.setenv("GAZEPY_AI_TIMEOUT", "0")
+        monkeypatch.delenv("GAZEPY_AI_PROVIDER", raising=False)
+        monkeypatch.delenv("GAZEPY_AI_MODEL", raising=False)
+        monkeypatch.delenv("GAZEPY_AI_ENDPOINT", raising=False)
+        monkeypatch.delenv("GAZEPY_AI_PROJECT", raising=False)
+        monkeypatch.delenv("GAZEPY_AI_REGION", raising=False)
+
+        gaze_config = GazeConfig()
+        with pytest.raises(click.ClickException, match="GAZEPY_AI_TIMEOUT"):
+            read_ai_config(gaze_config, cli_model=None)
+
+    def test_timeout_negative_raises_click_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Fix 3: GAZEPY_AI_TIMEOUT=-1 raises ClickException (must be positive)."""
+        monkeypatch.setenv("GAZEPY_AI_TIMEOUT", "-1")
+        monkeypatch.delenv("GAZEPY_AI_PROVIDER", raising=False)
+        monkeypatch.delenv("GAZEPY_AI_MODEL", raising=False)
+        monkeypatch.delenv("GAZEPY_AI_ENDPOINT", raising=False)
+        monkeypatch.delenv("GAZEPY_AI_PROJECT", raising=False)
+        monkeypatch.delenv("GAZEPY_AI_REGION", raising=False)
+
+        gaze_config = GazeConfig()
+        with pytest.raises(click.ClickException, match="GAZEPY_AI_TIMEOUT"):
+            read_ai_config(gaze_config, cli_model=None)
+
     def test_invalid_timeout_message_mentions_env_var(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

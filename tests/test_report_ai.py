@@ -204,6 +204,7 @@ class TestOllamaSynthesizerSynthesize:
         """synthesize() returns the 'response' field stripped of whitespace."""
         body = json.dumps({"response": "  text  ", "done": True}).encode()
         http_open = _make_http_open(200, body)
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         result = synth.synthesize("prompt")
         assert result == "text"
@@ -212,6 +213,7 @@ class TestOllamaSynthesizerSynthesize:
         """synthesize() raises ClickException containing the status code on non-200."""
         body = b'{"error": "not found"}'
         http_open = _make_http_open(404, body)
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         with pytest.raises(click.ClickException) as exc_info:
             synth.synthesize("prompt")
@@ -225,6 +227,7 @@ class TestOllamaSynthesizerSynthesize:
         def _raise_timeout(*args: Any, **kwargs: Any) -> Any:
             raise urllib.error.URLError(reason=TimeoutError("timed out"))
 
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=_raise_timeout)
         with pytest.raises(click.ClickException) as exc_info:
             synth.synthesize("prompt")
@@ -235,6 +238,7 @@ class TestOllamaSynthesizerSynthesize:
     def test_malformed_json_raises_unexpected_response_format(self) -> None:
         """synthesize() raises ClickException mentioning 'unexpected response format'."""
         http_open = _make_http_open(200, b"not json at all")
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         with pytest.raises(click.ClickException) as exc_info:
             synth.synthesize("prompt")
@@ -244,6 +248,7 @@ class TestOllamaSynthesizerSynthesize:
         """synthesize() raises ClickException when 'response' key is absent."""
         body = json.dumps({"done": True}).encode()
         http_open = _make_http_open(200, body)
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         with pytest.raises(click.ClickException) as exc_info:
             synth.synthesize("prompt")
@@ -255,6 +260,7 @@ class TestOllamaSynthesizerSynthesize:
         def _raise_url_error(*args: Any, **kwargs: Any) -> Any:
             raise urllib.error.URLError(reason="Connection refused")
 
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=_raise_url_error)
         with pytest.raises(click.ClickException):
             synth.synthesize("prompt")
@@ -272,6 +278,7 @@ class TestOllamaSynthesizerAvailable:
         """available() returns True when model name is in /api/tags response."""
         body = json.dumps({"models": [{"name": "llama3"}]}).encode()
         http_open = _make_http_open(200, body)
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         result = synth.available()
         assert result is True
@@ -280,6 +287,7 @@ class TestOllamaSynthesizerAvailable:
         """available() calls _http_open with timeout=5 (hardcoded, not self.timeout)."""
         body = json.dumps({"models": [{"name": "llama3"}]}).encode()
         http_open = _make_http_open(200, body)
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", timeout=120, _http_open=http_open)
         synth.available()
         call_kwargs = http_open.call_args
@@ -293,6 +301,7 @@ class TestOllamaSynthesizerAvailable:
         def _raise_url_error(*args: Any, **kwargs: Any) -> Any:
             raise urllib.error.URLError(reason="Connection refused")
 
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=_raise_url_error)
         result = synth.available()
         assert result is False
@@ -301,6 +310,7 @@ class TestOllamaSynthesizerAvailable:
         """available() returns False when model is absent from /api/tags."""
         body = json.dumps({"models": [{"name": "other-model"}]}).encode()
         http_open = _make_http_open(200, body)
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         result = synth.available()
         assert result is False
@@ -308,6 +318,7 @@ class TestOllamaSynthesizerAvailable:
     def test_malformed_json_returns_false(self) -> None:
         """available() returns False when /api/tags returns malformed JSON."""
         http_open = _make_http_open(200, b"not json")
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         result = synth.available()
         assert result is False
@@ -316,6 +327,7 @@ class TestOllamaSynthesizerAvailable:
         """available() returns False when /api/tags JSON lacks 'models' key."""
         body = json.dumps({"other": []}).encode()
         http_open = _make_http_open(200, body)
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         result = synth.available()
         assert result is False
@@ -323,6 +335,7 @@ class TestOllamaSynthesizerAvailable:
     def test_non_200_tags_response_returns_false(self) -> None:
         """available() returns False when /api/tags returns non-200 status."""
         http_open = _make_http_open(503, b"service unavailable")
+        # Fix 6: keyword-only args (CS-017)
         synth = OllamaSynthesizer(model="llama3", _http_open=http_open)
         result = synth.available()
         assert result is False
@@ -343,25 +356,47 @@ class TestVertexSynthesizerValidation:
     """Tests for VertexSynthesizer field validation at construction time."""
 
     def test_path_traversal_slash_in_project_raises(self) -> None:
-        """VertexSynthesizer raises ClickException when project contains '/'."""
+        """VertexSynthesizer raises ClickException when project contains '/'.
+
+        Note: validation is now done by the factory (new_synthesizer_from_config),
+        not by VertexSynthesizer.__init__. These tests exercise the factory path
+        via provider.py's _validate_vertex_config. Direct construction with bad
+        fields no longer raises — only the factory does.
+        """
+        from gaze_py.report.provider import ProviderConfig, new_synthesizer_from_config
+
+        cfg = ProviderConfig(
+            provider="vertex", project="my/../project", region="us-central1", model="claude-3"
+        )
         with pytest.raises(click.ClickException) as exc_info:
-            VertexSynthesizer(project="my/../project", region="us-central1", model="claude-3")
+            new_synthesizer_from_config(cfg)
         assert "project" in exc_info.value.format_message()
 
     def test_slash_in_project_raises(self) -> None:
         """VertexSynthesizer raises ClickException when project contains '/'."""
+        from gaze_py.report.provider import ProviderConfig, new_synthesizer_from_config
+
+        cfg = ProviderConfig(
+            provider="vertex", project="proj/../../etc", region="us-central1", model="claude-3"
+        )
         with pytest.raises(click.ClickException) as exc_info:
-            VertexSynthesizer(project="proj/../../etc", region="us-central1", model="claude-3")
+            new_synthesizer_from_config(cfg)
         assert "project" in exc_info.value.format_message()
 
     def test_invalid_model_name_raises(self) -> None:
         """VertexSynthesizer raises ClickException when model contains invalid characters."""
+        from gaze_py.report.provider import ProviderConfig, new_synthesizer_from_config
+
+        cfg = ProviderConfig(
+            provider="vertex", project="my-project", region="us-central1", model="claude@3!"
+        )
         with pytest.raises(click.ClickException) as exc_info:
-            VertexSynthesizer(project="my-project", region="us-central1", model="claude@3!")
+            new_synthesizer_from_config(cfg)
         assert "model" in exc_info.value.format_message()
 
     def test_valid_fields_do_not_raise(self) -> None:
         """VertexSynthesizer accepts valid alphanumeric/hyphen/dot/underscore/colon fields."""
+        # Fix 6: keyword-only args (CS-017)
         synth = VertexSynthesizer(
             project="my-project-123",
             region="us-central1",
@@ -426,7 +461,12 @@ class TestVertexSynthesizerSynthesize:
         assert "https://cloud.google.com/sdk/docs/install" in msg
 
     def test_gcloud_auth_failure_raises_with_stderr_and_tip(self) -> None:
-        """synthesize() raises ClickException with stderr and gcloud auth tip."""
+        """synthesize() raises ClickException with first stderr line and gcloud auth tip.
+
+        Fix 1: error message now contains only the first non-empty line of stderr,
+        not the full blob. The fixture uses a single-line stderr so the assertion
+        still holds — the first line IS the full stderr in this case.
+        """
         body = json.dumps({"content": [{"type": "text", "text": "x"}]}).encode()
         http_open = _make_http_open(200, body)
         gcloud = MagicMock(
@@ -434,6 +474,7 @@ class TestVertexSynthesizerSynthesize:
                 args=[], returncode=1, stdout="", stderr="auth error details"
             )
         )
+        # Fix 6: keyword-only args (CS-017)
         synth = VertexSynthesizer(
             project="my-project",
             region="us-central1",
@@ -445,6 +486,8 @@ class TestVertexSynthesizerSynthesize:
             synth.synthesize("prompt")
         msg = exc_info.value.format_message()
         assert "gcloud auth print-access-token" in msg
+        # Fix 1: assert against the first line of stderr (not the full blob).
+        # The fixture has a single-line stderr so "auth error details" is the first line.
         assert "auth error details" in msg
         assert "gcloud auth application-default login" in msg
 
@@ -477,7 +520,13 @@ class TestVertexSynthesizerSynthesize:
         assert gcloud.call_count == 2
 
     def test_non_429_http_error_raises_with_status_and_body(self) -> None:
-        """synthesize() raises ClickException with status code and body on non-429 4xx/5xx."""
+        """synthesize() raises ClickException with status code on non-429 4xx/5xx.
+
+        Fix 9: the error message now extracts error.message from JSON when available.
+        When the body is not valid JSON, only the status code is included.
+        When the body IS valid JSON with error.message, that message is appended.
+        """
+        # Case 1: non-JSON body — only status code in message.
         body = b"bad request details"
         http_open = _make_http_open(400, body)
         synth = self._make_synth(http_open)
@@ -485,7 +534,16 @@ class TestVertexSynthesizerSynthesize:
             synth.synthesize("prompt")
         msg = exc_info.value.format_message()
         assert "400" in msg
-        assert "bad request details" in msg
+
+        # Case 2: JSON body with error.message — message is extracted and appended.
+        json_body = b'{"error": {"message": "quota exceeded", "code": 400}}'
+        http_open2 = _make_http_open(400, json_body)
+        synth2 = self._make_synth(http_open2)
+        with pytest.raises(click.ClickException) as exc_info2:
+            synth2.synthesize("prompt")
+        msg2 = exc_info2.value.format_message()
+        assert "400" in msg2
+        assert "quota exceeded" in msg2
 
     def test_malformed_json_raises_unexpected_response_format(self) -> None:
         """synthesize() raises ClickException mentioning 'unexpected response format'."""
@@ -675,6 +733,27 @@ class TestVertexSynthesizerRetry:
         # Should be jitter-based (0.75–1.25 for first retry)
         assert 0.75 <= sleep_val <= 1.25
 
+    def test_retry_after_exceeds_backoff_max_is_clamped(self) -> None:
+        """synthesize() clamps Retry-After values > _BACKOFF_MAX (60s) to _BACKOFF_MAX.
+
+        Fix 2: a hostile server sending Retry-After: 9999 must not cause an
+        unbounded sleep. The value is clamped to _BACKOFF_MAX (60.0s).
+        """
+        from gaze_py.report.ai import _BACKOFF_MAX
+
+        http_open = _make_http_open_sequence(
+            [
+                _make_vertex_429(retry_after="9999"),
+                _make_vertex_200(),
+            ]
+        )
+        sleep = MagicMock()
+        synth = self._make_synth(http_open, sleep=sleep)
+        synth.synthesize("prompt")
+        sleep_val = sleep.call_args.args[0]
+        # Fix 2: Retry-After: 9999 must be clamped to _BACKOFF_MAX (60.0).
+        assert sleep_val == _BACKOFF_MAX
+
 
 # ---------------------------------------------------------------------------
 # VertexSynthesizer — 401 mid-flight token refresh
@@ -707,6 +786,7 @@ class TestVertexSynthesizer401:
         warm_body = json.dumps({"content": [{"type": "text", "text": "warm"}]}).encode()
         warm_open = _make_http_open(200, warm_body)
         warm_gcloud = _make_gcloud_ok()
+        # Fix 6: keyword-only args (CS-017)
         warm_synth = VertexSynthesizer(
             project="my-project",
             region="us-central1",
@@ -717,9 +797,12 @@ class TestVertexSynthesizer401:
             _sleep=lambda _: None,
         )
         warm_synth.synthesize("warm-up")
+        # CR-004: _cached_token is accessed directly because no public API exists
+        # to pre-warm the cache without consuming a _gcloud call counted in assertions.
         cached = warm_synth._cached_token  # noqa: SLF001
 
         # Build the real test synth with the test doubles and inject the cached token
+        # Fix 6: keyword-only args (CS-017)
         synth = VertexSynthesizer(
             project="my-project",
             region="us-central1",
@@ -729,6 +812,8 @@ class TestVertexSynthesizer401:
             _clock=lambda: 0.0,
             _sleep=lambda _: None,
         )
+        # CR-004: _cached_token is accessed directly because no public API exists
+        # to pre-warm the cache without consuming a _gcloud call counted in assertions.
         synth._cached_token = cached  # noqa: SLF001
         return synth
 

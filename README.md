@@ -157,6 +157,21 @@ ai:
 **Migration from `--ai` flag**: the `--ai` and `--ai-timeout` flags have been removed.
 Configure your provider in `.gaze.yaml` instead (see above).
 
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `gcloud auth print-access-token failed (exit 1)` | Not authenticated | Run `gcloud auth application-default login` |
+| `vertex provider requires gcloud CLI` | gcloud not on PATH | Install the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) |
+| `unexpected response format from gcloud auth print-access-token` | Outdated gcloud | Run `gcloud components update` |
+| `Ollama request timed out after Ns` | Model is slow or timeout too short | Increase `ai.timeout` in `.gaze.yaml` (e.g. `timeout: 300`) |
+| `Ollama request failed: Connection refused` | Ollama not running | Start Ollama: `ollama serve` |
+| `Ollama returned HTTP 404` | Model not pulled | Pull the model: `ollama pull llama3.2:3b` |
+| `Vertex AI rate limited after 5 retries` | API quota exceeded | Wait and retry, or reduce request frequency |
+| `Vertex AI returned HTTP 401` after token refresh | Credentials expired | Run `gcloud auth application-default login` again |
+| `Warning: ollama provider configured but not available` | Model not pulled or Ollama not running | Pull the model or start Ollama; report falls back to prompt-only mode |
+| `Invalid value for GAZEPY_AI_TIMEOUT` | Non-integer or non-positive timeout | Set `GAZEPY_AI_TIMEOUT` to a positive integer (e.g. `120`) |
+
 ## Releasing
 
 ### Releasing a new version

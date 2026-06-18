@@ -266,6 +266,9 @@ def test_report_prompt_only_no_provider(tmp_path: Path) -> None:
     cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
 
     runner = CliRunner()
+    # Patch at gaze_py.report.provider (not gaze_py.cli.main) because report()
+    # imports new_synthesizer_from_config lazily inside the function body.
+    # If that import is ever hoisted to module level, update this patch target.
     with patch(
         "gaze_py.report.provider.new_synthesizer_from_config",
         return_value=None,
@@ -278,8 +281,9 @@ def test_report_prompt_only_no_provider(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     data = _parse_json(result.stdout)
     assert "functions" in data
-    assert "Tip:" in (result.stderr or result.output)
-    assert ".gaze.yaml" in (result.stderr or result.output)
+    # Fix 13: assert against result.stderr directly (tip goes to stderr, not stdout).
+    assert "Tip:" in result.stderr
+    assert ".gaze.yaml" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +302,9 @@ def test_report_config_driven_flow(tmp_path: Path) -> None:
 
     noop = NoopSynthesizer(response="AI narrative output", avail=True)
     runner = CliRunner()
+    # Patch at gaze_py.report.provider (not gaze_py.cli.main) because report()
+    # imports new_synthesizer_from_config lazily inside the function body.
+    # If that import is ever hoisted to module level, update this patch target.
     with patch(
         "gaze_py.report.provider.new_synthesizer_from_config",
         return_value=noop,
@@ -323,6 +330,9 @@ def test_report_model_override(tmp_path: Path) -> None:
     noop = NoopSynthesizer(response="model override output", avail=True)
     runner = CliRunner()
     with (
+        # Patch at gaze_py.report.provider (not gaze_py.cli.main) because report()
+        # imports new_synthesizer_from_config lazily inside the function body.
+        # If that import is ever hoisted to module level, update this patch target.
         patch(
             "gaze_py.report.provider.new_synthesizer_from_config",
             return_value=noop,
@@ -363,6 +373,9 @@ def test_report_unavailable_provider_fallback(tmp_path: Path) -> None:
     noop = NoopSynthesizer(avail=False, model="llama3.2:3b")
     runner = CliRunner()
     with (
+        # Patch at gaze_py.report.provider (not gaze_py.cli.main) because report()
+        # imports new_synthesizer_from_config lazily inside the function body.
+        # If that import is ever hoisted to module level, update this patch target.
         patch(
             "gaze_py.report.provider.new_synthesizer_from_config",
             return_value=noop,
@@ -2325,7 +2338,7 @@ def test_report_no_ai_emits_json(tmp_path: Path) -> None:
     assert ".gaze.yaml" in tip_text, f"Expected .gaze.yaml in Tip, got: {result.stderr!r}"
 
 
-def test_report_with_ai_calls_subprocess(tmp_path: Path) -> None:
+def test_report_config_driven_flow_synthesizes_via_factory(tmp_path: Path) -> None:
     """gazepy report exits 0 and stdout equals the mocked AI response.
 
     The report command uses new_synthesizer_from_config to obtain a Synthesizer.
@@ -2338,6 +2351,9 @@ def test_report_with_ai_calls_subprocess(tmp_path: Path) -> None:
 
     noop = NoopSynthesizer(response="narrative text", avail=True)
     runner = CliRunner()
+    # Patch at gaze_py.report.provider (not gaze_py.cli.main) because report()
+    # imports new_synthesizer_from_config lazily inside the function body.
+    # If that import is ever hoisted to module level, update this patch target.
     with patch(
         "gaze_py.report.provider.new_synthesizer_from_config",
         return_value=noop,

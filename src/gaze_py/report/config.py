@@ -137,21 +137,30 @@ def _apply_env_vars(cfg: ProviderConfig) -> None:
 
 
 def _parse_timeout_env(raw: str) -> int:
-    """Parse ``GAZEPY_AI_TIMEOUT`` as an integer.
+    """Parse ``GAZEPY_AI_TIMEOUT`` as a positive integer.
 
     Args:
         raw: Raw string value of the ``GAZEPY_AI_TIMEOUT`` env var.
 
     Returns:
-        Integer timeout value.
+        Integer timeout value (must be > 0).
 
     Raises:
-        click.ClickException: When *raw* cannot be parsed as an integer.
+        click.ClickException: When *raw* cannot be parsed as an integer,
+            or when the parsed value is not positive.
     """
     try:
-        return int(raw)
-    except ValueError:
+        value = int(raw)
+    except ValueError as exc:
+        # Fix 5: chain from exc (not from None) so the original parse error
+        # is preserved in the exception chain for debugging.
         raise click.ClickException(
             f"Invalid value for {_ENV_TIMEOUT}: {raw!r} is not an integer. "
             f"Set {_ENV_TIMEOUT} to a positive integer (e.g. 120)."
-        ) from None
+        ) from exc
+    # Fix 3: reject zero and negative values — timeout must be > 0.
+    if value <= 0:
+        raise click.ClickException(
+            f"Invalid value for {_ENV_TIMEOUT}: {value!r} must be a positive integer."
+        )
+    return value
