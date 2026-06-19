@@ -1,174 +1,331 @@
+# Design: python-native-detection
+
 ## Context
 
-`src/gaze_py/analysis/detector.py` is a 1678-line AST visitor implementing a
-two-phase detection pipeline. Phase 1 is a module-level pass for `SentinelError`.
-Phase 2 iterates all `ast.FunctionDef` / `ast.AsyncFunctionDef` nodes and runs
-`_FunctionVisitor` on each, collecting `SideEffect` objects.
+Five Python-native side-effect patterns have valid EC-005 mappings to existing
+types but are not yet detected. All are in the existing `FunctionVisitor`
+dispatch pipeline — additions slot cleanly into existing constants and visitor
+methods.
 
-The visitor dispatches through a chain of focused helpers:
-- `visit_Call` → `_handle_stream_writes` → `_handle_pathlib_attr_call` → `_handle_lib_attr_call` → `_handle_param_attr_call` → `_handle_name_call`
-- `visit_With` — sync context manager detection
-- `visit_AsyncWith` — currently only detects `asyncio.TaskGroup()`
-- `FileDetector.detect()` — Phase 2 loop; constructs `FunctionTarget` per function
-
-The existing `_GOROUTINE_SPAWN_CALLS` frozenset drives GoroutineSpawn detection
-in `_handle_goroutine_process_time`. The sync `visit_With` uses an inline exact-set
-`{"connection", "conn", "session", "tx", "transaction"}` for DatabaseTransaction;
-the async-mutex spec requires substring/word-part matching and adds `db` to the set.
-
-All linting rules (`ruff check`, `mypy --strict`) must continue to pass.
-Helper methods exceeding ruff's CC limit carry `# noqa: PLR0911`.
+Current state:
+- `_GOROUTINE_SPAWN_CALLS` has 3 entries: `threading.Thread`,
+  `asyncio.create_task`, `multiprocessing.Process`
+- `_handle_name_call` handles: `print`, `setattr`, `open` (write modes),
+  and callback invocation
+- `visit_AsyncWith` handles: `asyncio.TaskGroup` (WaitGroupOp only);
+  known gap comment at line 1152 for `async with lock:`
+- `visit_FunctionDef` / `visit_AsyncFunctionDef` detect nesting depth only —
+  no decorator inspection
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Detect all six Python-native patterns specified in `openspec/changes/python-native-detection/specs/`
-- Align sync `visit_With` and new `visit_AsyncWith` param detection to a shared `_is_db_context()` helper
-- Add one fixture file and targeted tests per new capability; keep test count proportional to spec scenarios
-- Archive `return-none-annotation` change (decision already implemented)
-- Pass `ruff check`, `ruff format --check`, `mypy --strict`, `pytest --cov-fail-under=85`
+- Detect `subprocess.Popen/run/call/check_output` as `GoroutineSpawn` (P2)
+- Detect `async with param:` lock patterns as `MutexOp` (P3)
+- Detect `atexit.register()` as `GlobalMutation` (P1)
+- Detect `warnings.warn()` as both `LogWrite` (P2) and `GlobalMutation` (P1)
+- Detect `@functools.lru_cache` / `@functools.cache` decorated functions as
+  `GlobalMutation` (P1) — annotated at definition site
 
 **Non-Goals:**
-- Alias-aware detection (e.g., `import subprocess as sp; sp.run()`) — name-based heuristics only
-- Detecting `@lru_cache` at call sites of the decorated function (definition site only, per spec)
-- Changes to CLI, JSON schema, or report output
-- Modifying existing tests for patterns already covered
+- New taxonomy types (EC-001 is fixed)
+- Detecting lru_cache *call sites* (the effect is the decoration, not each call)
+- Signal, sys.settrace, threading.local — these remain deferred/closed
+- socket or network write detection (no existing NetworkWrite type)
+- Any change to existing detection paths
 
 ## Decisions
 
-### D1: subprocess detection via `_GOROUTINE_SPAWN_CALLS` extension
+### D1: subprocess → GoroutineSpawn via `_GOROUTINE_SPAWN_CALLS` extension
 
-Extend the existing `_GOROUTINE_SPAWN_CALLS` frozenset with five `("subprocess", method)` tuples.
-`_handle_goroutine_process_time` already performs set-membership routing for this frozenset —
-no new conditional logic is needed.
+Add `("subprocess", "Popen")`, `("subprocess", "run")`, `("subprocess", "call")`,
+`("subprocess", "check_output")`, `("subprocess", "check_call")` to
+`_GOROUTINE_SPAWN_CALLS`.
 
-**Alternative**: Add a dedicated `_handle_subprocess_call` helper. Rejected — unnecessary
-indirection; the frozenset extension is the established pattern for new GoroutineSpawn sources
-(see `("threading", "Thread")`, `("asyncio", "create_task")`, `("multiprocessing", "Process")`).
+Also add `("concurrent.futures", "ThreadPoolExecutor")` and
+`("concurrent.futures", "ProcessPoolExecutor")` — these create worker pools
+that execute tasks concurrently, fitting GoroutineSpawn semantics.
 
-### D2: `_is_db_context(name)` shared helper (module-level function)
+**Rationale**: EC-005 maps GoroutineSpawn to "spawning a concurrent task."
+Subprocess creates an OS process that executes concurrently. Gemini verdict:
+MAPS_TO_GOROUTINE_SPAWN — "implementation detail that it's heavier; it still
+fits 'spawning a concurrent task.'" Precedent: `multiprocessing.Process`
+already maps to GoroutineSpawn.
 
-Extract a `_is_db_context(name: str) -> bool` module-level function that uses:
-1. Word-part split on `_`: check if any part is in `{"conn", "connection", "session", "tx", "transaction", "db"}`
-2. Substring check on the full name for the longer keywords `{"conn", "connection", "session", "transaction"}` — handles camelCase compound words like `dbConnection`
+**Note on `subprocess.run` / `check_output` blocking**: `subprocess.run()` is
+synchronous by default (blocks until child exits). However, it *does* spawn a
+concurrent process — the concurrency is just not exploited without
+`subprocess.Popen` + non-blocking patterns. The GoroutineSpawn type captures
+the spawning intent, not the caller's blocking behavior. This is consistent
+with how `multiprocessing.Process(target=f).start()` vs `Process(target=f)`
+(without .start()) are not distinguished in the taxonomy.
 
-This replaces the inline exact-match set in `visit_With` and drives the new `visit_AsyncWith` param detection.
+### D2: async with param → MutexOp via `visit_AsyncWith` extension; align sync `visit_With`
 
-**Why word-part split + substring, not pure substring?**
-Pure substring on `"tx"` would match `"ctx"` (Click context param, extremely common in Python).
-Word-part split on `_` safely handles `db_conn` (`["db", "conn"]` → `"db"` matches) while
-excluding `ctx` (`["ctx"]` → no match). The substring check for longer keywords (`conn`, etc.)
-covers unsplit camelCase without the false-positive risk.
+Extend `visit_AsyncWith` to also check for param-based `async with` patterns,
+mirroring the existing `visit_With` logic. Both methods will share a new
+module-level helper `_is_db_context(name: str) -> bool`.
 
-**Why not word-boundary regex?** Adds a `re` import and runtime cost for something that can be
-expressed as a two-step pure-string check. The heuristic is intentionally simple.
+**Heuristic alignment (Option B)**: The existing `visit_With` uses an inline
+exact-set `{"connection", "conn", "session", "tx", "transaction"}`. The async
+spec requires substring matching (`db_conn` → DatabaseTransaction because it
+*contains* `conn`). Rather than having two different heuristics, both sync and
+async detection will use the same `_is_db_context` helper.
 
-**Updating `visit_With`**: Replace the inline `if ctx.id in {"connection", "conn", "session", "tx", "transaction"}:` guard with `if _is_db_context(ctx.id):`. All existing fixture param names (`connection`, `conn`, `lock`) classify identically under the new heuristic — no existing tests break.
-
-### D3: `atexit.register` and `warnings.warn` in `_handle_lib_attr_call`
-
-Add two guarded branches after the existing `weakref.finalize` check:
+**`_is_db_context` implementation** — word-part split on `_` plus substring
+for compound words:
 
 ```python
+def _is_db_context(name: str) -> bool:
+    """Return True if the parameter name suggests a database connection context."""
+    parts = set(name.lower().split("_"))
+    if parts & {"conn", "connection", "session", "tx", "transaction", "db"}:
+        return True
+    # Substring check for camelCase or unsplit compound words (e.g. dbConnection)
+    for kw in ("conn", "connection", "session", "transaction"):
+        if kw in name.lower():
+            return True
+    return False
+```
+
+Word-part split on `_` avoids the `ctx`-contains-`tx` false positive that pure
+substring matching would produce (`ctx` → parts `["ctx"]` → no match). The
+substring check for the four longer keywords catches camelCase compounds.
+Verified: `ctx → False`, `db_conn → True`, `context → False`, `session_id → True`.
+
+**`visit_AsyncWith`** will use `_is_db_context` in place of the inline set.
+**`visit_With`** will replace its inline `if ctx.id in {"connection", ...}:` guard
+with `if _is_db_context(ctx.id):`. All existing fixture param names (`connection`,
+`conn`, `lock`) classify identically — no existing tests break.
+
+This closes the known gap documented at line 1152.
+
+**Alternative considered**: Detect `async with asyncio.Lock()` or
+`async with asyncio.Semaphore()` by type name. Rejected — gaze-py is AST-only
+with no type inference; we cannot know the type of the context manager expression
+without executing the code. The parameter-name heuristic is consistent with
+`visit_With` and is the correct AST-only approach.
+
+### D3: atexit.register() → GlobalMutation via `_handle_lib_attr_call`
+
+Detect `atexit.register(func)` in `_handle_lib_attr_call` (where `obj_name ==
+"atexit"` and `method == "register"`). Emit `GlobalMutation`.
+
+```python
+# atexit.register() — mutates interpreter shutdown handler list (GlobalMutation)
 if obj_name == "atexit" and method == "register":
-    self._add(SideEffectType.GlobalMutation, node, "...")
+    self._add(
+        SideEffectType.GlobalMutation,
+        node,
+        "Function registers a shutdown callback via atexit.register()",
+    )
     self.generic_visit(node)
     return True
+```
 
+**Rationale**: Gemini verdict: GLOBAL_MUTATION — "modifies a list of handler
+functions maintained as global state by the Python interpreter." Not
+FinalizerRegistration (wrong trigger: shutdown not GC). Not CallbackInvocation
+(registers, does not invoke).
+
+**Placement**: Add after the `FinalizerRegistration` (`weakref.finalize`) block
+in `_handle_lib_attr_call`, before the `CgoCall` block.
+
+### D4: warnings.warn() → LogWrite + GlobalMutation (two effects)
+
+Detect `warnings.warn(...)` and emit **two effects** from a single call node:
+
+```python
+# warnings.warn() — structured warning emission (LogWrite) +
+# __warningregistry__ mutation (GlobalMutation)
 if obj_name == "warnings" and method == "warn":
-    self._add(SideEffectType.LogWrite, node, "...")
-    self._add(SideEffectType.GlobalMutation, node, "...")
+    self._add(
+        SideEffectType.LogWrite,
+        node,
+        "Function emits a warning via warnings.warn() (structured dev-facing output)",
+    )
+    self._add(
+        SideEffectType.GlobalMutation,
+        node,
+        "Function mutates __warningregistry__ in the calling module via warnings.warn()",
+    )
     self.generic_visit(node)
     return True
 ```
 
-`warnings.warn` is the only detection site that emits two effects from a single node.
-Both `_add()` calls fire before `return True`. Each effect gets a distinct ID because
-`_effect_id` incorporates `effect_type` in its hash payload (EC-003).
+**Rationale**: Gemini verdict: LOG_WRITE + GLOBAL_MUTATION — "two distinct,
+simultaneous side effects." LogWrite because warnings are a structured,
+filterable developer-facing channel (not raw stderr). GlobalMutation because
+`__warningregistry__` is always written as deduplication state in the calling
+module's globals.
 
-`_handle_lib_attr_call` already carries `# noqa: PLR0911` — no CC concern.
+**Emitting two effects from one call**: This is not novel — the existing
+`GlobalMutation` detection from `_check_env_var_mutation` can fire alongside
+other effects. The `_add()` method appends; it does not short-circuit. The
+`return True` short-circuits the *dispatch chain* (preventing other handlers
+from also firing), not the `_add` calls within this block.
 
-### D4: `@lru_cache`/`@cache` decorator detection in `FileDetector.detect()`
+**Placement**: In `_handle_lib_attr_call`, after the `LogWrite` (`_LOG_NAMES`)
+block.
 
-The spec requires attribution at definition site, not call sites. The per-function loop
-in `FileDetector.detect()` has direct access to `fn_node.decorator_list`. Inspect it
-after the visitor runs and before constructing `FunctionTarget`:
+### D5: @lru_cache / @functools.cache → GlobalMutation via decorator detection
 
+Detect `@lru_cache` or `@cache` (from `functools`) on `FunctionDef` and
+`AsyncFunctionDef` nodes. Emit `GlobalMutation` on the *function definition*,
+not on call sites.
+
+**Why at definition, not call site**: The decoration creates the persistent
+cache state. Every subsequent call to the decorated function inherits this
+effect. Annotating the function definition is the correct point — it is where
+the "write to global-like state" begins. This is analogous to how gaze-py
+detects `GlobalMutation` at assignment sites (`x = value`), not at read sites.
+
+**Detection location**: A new private helper `_detect_lru_cache_decorator`
+called from `_collect_function_effects` (the per-function orchestration method)
+before the main visitor pass, or directly in a post-processing step. Simpler
+option: check `fn_node.decorator_list` in `FileDetector.detect()` before
+calling `FunctionVisitor`.
+
+**Actual simplest option**: Add detection inside the existing
+`FunctionVisitor.__init__` or at the top of `visit_FunctionDef` by inspecting
+the parent function node's decorators. Since `FunctionVisitor` is instantiated
+*per function* by `FileDetector`, the function node is available.
+
+Specifically, in `FileDetector.detect()` (or the per-function processing loop),
+after creating a `FunctionVisitor` for a function, check the function node's
+`decorator_list` for `lru_cache` or `cache` names, and if found, call
+`self._add(SideEffectType.GlobalMutation, fn_node, "Function has an lru_cache/cache decorator — memoization state is globally shared")` on the visitor before running it.
+
+**AST pattern for decorator detection**:
 ```python
-for dec in fn_node.decorator_list:
-    if _is_cache_decorator(dec):
-        effects.append(_make_effect(
-            rel_path=rel_path,
-            fn_name=fn_name,
-            effect_type=SideEffectType.GlobalMutation,
-            node=fn_node,
-            description="Function definition is memoized via @lru_cache/@cache ...",
-        ))
-        break  # one GlobalMutation per function, regardless of stacked decorators
+_LRU_CACHE_DECORATORS: frozenset[str] = frozenset({"lru_cache", "cache"})
+
+def _has_lru_cache_decorator(fn_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    for dec in fn_node.decorator_list:
+        # @lru_cache or @cache (bare name)
+        if isinstance(dec, ast.Name) and dec.id in _LRU_CACHE_DECORATORS:
+            return True
+        # @lru_cache(...) or @cache() (call form)
+        if (
+            isinstance(dec, ast.Call)
+            and isinstance(dec.func, ast.Name)
+            and dec.func.id in _LRU_CACHE_DECORATORS
+        ):
+            return True
+        # @functools.lru_cache or @functools.cache (attribute form)
+        if (
+            isinstance(dec, ast.Attribute)
+            and isinstance(dec.value, ast.Name)
+            and dec.value.id == "functools"
+            and dec.attr in _LRU_CACHE_DECORATORS
+        ):
+            return True
+        # @functools.lru_cache(...) (attribute call form)
+        if (
+            isinstance(dec, ast.Call)
+            and isinstance(dec.func, ast.Attribute)
+            and isinstance(dec.func.value, ast.Name)
+            and dec.func.value.id == "functools"
+            and dec.func.attr in _LRU_CACHE_DECORATORS
+        ):
+            return True
+    return False
 ```
 
-`_is_cache_decorator(node)` is a module-level helper that matches all six decorator forms:
-- `ast.Name` with `id in {"lru_cache", "cache"}`
-- `ast.Call` whose `func` is an `ast.Name` with `id in {"lru_cache", "cache"}`
-- `ast.Attribute` with `attr in {"lru_cache", "cache"}` and `value.id == "functools"`
-- `ast.Call` whose `func` is the above `ast.Attribute`
+**Placement**: Add `_LRU_CACHE_DECORATORS` constant to the constants section.
+Add `_has_lru_cache_decorator` as a module-level function (not a method —
+it does not need `self`). Call it from `FileDetector.detect()` in the
+per-function loop, before or after constructing the `FunctionVisitor`.
 
-`break` after the first match: stacking `@lru_cache` twice is a misuse, not a reason to emit two effects.
+## Module Structure
 
-**Why not in `_FunctionVisitor`?** The visitor runs inside the function body. Decorator nodes are
-on the `FunctionDef` node itself, not in the body. The Phase 2 loop already has `fn_node` — the
-right place to inspect decorators is there, not inside the body visitor.
-
-### D5: `visit_AsyncWith` extended with param-based detection
-
-`visit_AsyncWith` currently has a single loop checking for `asyncio.TaskGroup()`. Add a
-second loop that mirrors `visit_With` for param-based context managers:
-
-```python
-for item in node.items:
-    ctx = item.context_expr
-    if isinstance(ctx, ast.Name) and ctx.id in self._params:
-        if _is_db_context(ctx.id):
-            self._add(SideEffectType.DatabaseTransaction, node, f"...")
-        else:
-            self._add(SideEffectType.MutexOp, node, f"...")
+```
+src/gaze_py/analysis/detector.py       # main: constants + 5 new detection blocks
+tests/test_detector.py                 # new test cases appended
+tests/testdata/analysis/               # new fixture files:
+  python_native.py                     # all 5 patterns in one fixture
 ```
 
-This runs independently of the TaskGroup loop — the guards are mutually exclusive
-(`ast.Call` for TaskGroup vs `ast.Name in self._params` for params).
+## AST Pattern Reference
+
+### GoroutineSpawn — subprocess
+
+```python
+import subprocess
+subprocess.Popen(["ls"])          # ← GoroutineSpawn
+subprocess.run(["ls"])            # ← GoroutineSpawn
+subprocess.call(["ls"])           # ← GoroutineSpawn
+subprocess.check_output(["ls"])   # ← GoroutineSpawn
+subprocess.check_call(["ls"])     # ← GoroutineSpawn
+```
+
+### MutexOp — async with param
+
+```python
+async def f(lock):
+    async with lock:       # ← MutexOp (param name heuristic)
+        pass
+
+async def g(conn):
+    async with conn:       # ← DatabaseTransaction (connection name heuristic)
+        pass
+
+async def h():
+    async with asyncio.TaskGroup() as tg:  # ← WaitGroupOp (existing)
+        pass
+```
+
+### GlobalMutation — atexit
+
+```python
+import atexit
+atexit.register(cleanup)   # ← GlobalMutation
+```
+
+### LogWrite + GlobalMutation — warnings
+
+```python
+import warnings
+warnings.warn("deprecated")        # ← LogWrite + GlobalMutation
+warnings.warn("msg", DeprecationWarning)  # ← LogWrite + GlobalMutation
+```
+
+### GlobalMutation — lru_cache decorator
+
+```python
+from functools import lru_cache, cache
+
+@lru_cache          # ← GlobalMutation on the function definition
+def compute(x): ...
+
+@lru_cache(maxsize=128)   # ← GlobalMutation
+def fetch(url): ...
+
+@cache              # ← GlobalMutation
+def memoized(n): ...
+
+@functools.lru_cache        # ← GlobalMutation
+def qualified(x): ...
+```
 
 ## Risks / Trade-offs
 
-**`_is_db_context` false positives on `db_lock`**: A parameter named `db_lock` would classify
-as `DatabaseTransaction` (contains word-part `db`) rather than `MutexOp`. This is a
-heuristic limitation — the spec accepts it as "may detect" behaviour for compound names.
-Mitigation: document the heuristic and its scope in the function docstring.
+**[Risk] subprocess.run() is blocking — "spawning" is arguable** →
+Mitigation: EC-005 maps GoroutineSpawn to spawning intent, not caller behavior.
+The process is concurrent regardless of whether the caller blocks. Documented
+in D1. Gemini confirms MAPS_TO_GOROUTINE_SPAWN.
 
-**`warnings.warn` dual-effect ID collision**: Both effects share the same AST node.
-`_effect_id` includes `effect_type` in its hash, so IDs are distinct by construction
-(EC-003). No mitigation needed — verified by the dual-effect test.
+**[Risk] warnings.warn() two-effect model may surprise callers** →
+Mitigation: the two effects are independently correct and both actionable.
+The LogWrite is the primary effect; the GlobalMutation is secondary. The
+taxonomy supports multiple effects per call site — no code change needed
+to the effect model.
 
-**`_handle_lib_attr_call` CC growth**: Adding two branches increases CC. The method
-already carries `# noqa: PLR0911`. If CC becomes a concern in future, the two new
-branches can be extracted into `_handle_stdlib_mutation_call`. Deferred — current CC
-remains within the project's review convention.
+**[Risk] lru_cache decorator detection at definition site may feel indirect** →
+Mitigation: this is the correct granularity — the cache is created at
+decoration time, not call time. Documented in D5. The description string
+makes the semantics explicit.
 
-**`break` in lru_cache decorator loop**: Prevents double-emission for stacked decorators.
-Edge case: if a function has `@lru_cache` from `functools` and `@cache` from another
-source, only the first match fires. Acceptable — this scenario is a usage error.
-
-## Migration Plan
-
-No schema or API changes. All changes are internal to the detector.
-
-1. Create branch `opsx/python-native-detection` from `main`
-2. Implement all detector changes in a single commit (constants → helpers → visit methods → FileDetector loop)
-3. Add fixture files and tests in a second commit
-4. Archive `return-none-annotation` as a third commit
-5. Run full CI gate (`ruff`, `mypy`, `pytest --cov-fail-under=85`) before PR
-6. PR targets `main`; no migration or rollback needed (additive detection only)
-
-## Open Questions
-
-None — all design decisions resolved during planning. The heuristic alignment
-(Option B) was confirmed by the user before proposal creation.
+**[Risk] `_has_lru_cache_decorator` adds a new module-level function** →
+Mitigation: consistent with `_collect_return_names_excluding_finally` and
+`_extract_open_mode` which are already module-level helpers in `detector.py`.
