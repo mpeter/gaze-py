@@ -54,3 +54,11 @@ it.
   module (i.e., `obj_name != "subprocess"`)
 - **THEN** no `GoroutineSpawn` effect is produced by this detection path
   (other paths such as threading/asyncio may still fire independently)
+
+#### Known limitation: concurrent.futures chained-attribute calls
+`concurrent.futures.ThreadPoolExecutor(...)` and `ProcessPoolExecutor(...)`
+are NOT detected when called via chained attribute access. The `obj_name`
+extraction only handles simple `ast.Name` receivers; `concurrent.futures`
+yields `obj_name = None` and cannot match. Detection via alias import
+(`import concurrent.futures as futures; futures.ThreadPoolExecutor()`) is
+also out of scope for this change. Deferred.
