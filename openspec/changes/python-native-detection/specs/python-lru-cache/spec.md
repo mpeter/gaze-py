@@ -13,7 +13,6 @@ decorated with any of the following decorators:
 | `@functools.lru_cache` | attribute access, no call |
 | `@functools.lru_cache(maxsize=N)` | attribute access, called with arguments |
 | `@functools.cache` | attribute access, no call |
-| `@functools.cache(...)` | attribute access, called with arguments |
 
 **Detection site**: The effect is annotated at the **function definition site**
 (decoration time), not at call sites. The `SideEffect` location points to the

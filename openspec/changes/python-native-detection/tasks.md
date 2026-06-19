@@ -807,26 +807,6 @@ Before implementing any task, read:
           assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
-      def test_functools_cache_call_form_is_global_mutation(tmp_path: Path) -> None:
-          """@functools.cache() (qualified call form) → GlobalMutation.
-
-          Note: functools.cache() with zero arguments is valid Python (it's a
-          no-argument call). The _has_lru_cache_decorator helper's fourth branch
-          handles ast.Call(func=ast.Attribute(value='functools', attr='cache')).
-          """
-          source = textwrap.dedent("""
-              import functools
-              @functools.cache()
-              def f(x: int) -> int:
-                  return x * x
-          """)
-          path = tmp_path / "qualified_cache_call_form.py"
-          path.write_text(source)
-          targets = FileDetector.detect(path, root=tmp_path)
-          fn = next(t for t in targets if t.name == "f")
-          assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
-
-
       def test_lru_cache_effect_on_definition_not_call_site(tmp_path: Path) -> None:
           """@lru_cache effect attributed to decorated fn, NOT to its callers."""
           source = textwrap.dedent("""

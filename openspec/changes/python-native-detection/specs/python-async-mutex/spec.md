@@ -19,7 +19,8 @@ name does NOT match the connection name heuristic → `MutexOp` (P3).
 The connection name heuristic (which routes to DatabaseTransaction instead)
 is implemented by `_is_db_context(name)`: word-part split on `_`, matching
 `conn`, `connection`, `tx`, `transaction`, `db` as word parts, plus substring
-match for `conn`, `connection`, `transaction` to cover camelCase.
+match for `connection`, `transaction` to cover camelCase compound words.
+(`conn` is word-part only — substring would match `reconnect`, `connector`.)
 
 `session` is **excluded** from the word-part set: `session_id` (a common
 HTTP/user session identifier) would otherwise be a false positive.
@@ -53,8 +54,9 @@ name matches the connection name heuristic → `DatabaseTransaction` (P2).
 
 The connection name heuristic uses `_is_db_context(name)` — same as the MutexOp
 heuristic above. Word-part matches: `conn`, `connection`, `tx`, `transaction`,
-`db`. Substring matches: `conn`, `connection`, `transaction`. `session` is
-excluded (see note above). `db` is word-part only (not substring).
+`db`. Substring matches: `connection`, `transaction` (`conn` is word-part only
+— substring would match `reconnect`/`connector`). `session` is excluded (see note
+above). `db` is word-part only (not substring).
 
 ##### Scenario: async with conn parameter produces DatabaseTransaction
 - **WHEN** a function has parameter `conn` and uses `async with conn:`

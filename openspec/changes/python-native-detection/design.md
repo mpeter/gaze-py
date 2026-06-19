@@ -359,9 +359,9 @@ def qualified_call(x): ...
 
 @functools.cache            # ← GlobalMutation (qualified bare)
 def qualified_cache(x): ...
-
-@functools.cache()          # ← GlobalMutation (qualified call — zero args)
-def qualified_cache_call(x): ...
+# Note: @functools.cache() (call form) is NOT valid Python — functools.cache is
+# not a decorator factory. The four-pattern helper detects it in AST (valid AST)
+# but do not write tests using @functools.cache() as a fixture decorator.
 ```
 
 ## Risks / Trade-offs
