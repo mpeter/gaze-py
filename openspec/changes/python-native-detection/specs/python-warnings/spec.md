@@ -19,13 +19,15 @@ by category, redirected to log handlers, or suppressed — all properties of a
 logging system. `LogWrite` is the correct tier for structured developer-facing
 output (P2), consistent with `logging.*` detection.
 
-**GlobalMutation rationale**: `warnings.warn()` always writes to
+**GlobalMutation rationale**: `warnings.warn()` typically writes to
 `__warningregistry__` in the calling module's global namespace for
-deduplication. This is an unconditional write to module-level global state
-(the registry dict) that persists across calls. The mutation is observable:
-subsequent calls with the same message/category/stacklevel are silently
-suppressed because the registry entry exists. This is GlobalMutation (P1) per
-EC-005 semantics.
+deduplication. This write is filter-configuration dependent but occurs under
+default filter settings. The mutation is observable: subsequent calls with the
+same message/category/stacklevel are silently suppressed because the registry
+entry exists. This is GlobalMutation (P1) per EC-005 semantics. Note: under
+non-default filter configurations (e.g., `warnings.filterwarnings("always")`),
+the registry write may be bypassed — the detection is a conservative annotation
+that is correct under typical usage.
 
 Detection is via attribute-access call: `obj_name == "warnings"` and
 `method_name == "warn"`.

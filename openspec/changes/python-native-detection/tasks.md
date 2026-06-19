@@ -35,8 +35,10 @@ Before implementing any task, read:
       ```
 
 - [ ] 1.2 Add `_is_db_context` as a module-level function alongside the other
-      module-level helpers (`_extract_open_mode`, `_collect_return_names_excluding_finally`),
-      after the visitor classes and before `FileDetector`:
+      module-level helpers, after the visitor classes and before `FileDetector`.
+      Place it **before** `_has_lru_cache_decorator` (task 6.1) — `_is_db_context`
+      is called from visitor methods while `_has_lru_cache_decorator` is called from
+      `FileDetector.detect()`, so placing them in call-order makes the file flow natural:
 
       ```python
       def _is_db_context(name: str) -> bool:
@@ -48,14 +50,22 @@ Before implementing any task, read:
           `session` is excluded from the word-part set: `session_id` is a common
           HTTP/user session identifier (a string), not a DB connection — including it
           would produce DatabaseTransaction false positives in web framework code.
+          `session` alone (bare name) also returns False — use `conn` or `connection`.
           `db` is word-part only (not substring) to avoid matching `debug`.
+          `conn` is word-part only (not substring) to avoid matching `reconnect`,
+          `connector`, `disconnect`. Only `connection` and `transaction` are in the
+          substring list (both long enough to avoid false matches).
           `dbConn` (camelCase, no underscore) → False — accepted limitation.
 
           Examples:
-              _is_db_context("conn")        → True
-              _is_db_context("db_conn")     → True   (word parts: "db" and "conn" match)
-              _is_db_context("my_db")       → True   (word part "db" matches)
+              _is_db_context("conn")        → True   (word part "conn")
+              _is_db_context("db_conn")     → True   (word parts: "db" and "conn")
+              _is_db_context("my_db")       → True   (word part "db")
+              _is_db_context("connection")  → True   (word part AND substring)
+              _is_db_context("session")     → False  ("session" not in word-part set)
               _is_db_context("session_id")  → False  ("session" not in word-part set)
+              _is_db_context("reconnect")   → False  ("conn" not in substring list)
+              _is_db_context("connector")   → False  ("conn" not in substring list)
               _is_db_context("ctx")         → False  ("ctx" not in set)
               _is_db_context("lock")        → False
               _is_db_context("dbConn")      → False  (camelCase — accepted gap)
@@ -63,8 +73,10 @@ Before implementing any task, read:
           parts = set(name.lower().split("_"))
           if parts & {"conn", "connection", "tx", "transaction", "db"}:
               return True
-          # Substring check for camelCase or unsplit compound words (e.g. dbConnection)
-          for kw in ("conn", "connection", "transaction"):
+          # Substring check for camelCase compound words only — use long keywords
+          # to avoid false positives: "conn" is excluded (matches "reconnect",
+          # "connector"); "connection" and "transaction" are safe.
+          for kw in ("connection", "transaction"):
               if kw in name.lower():
                   return True
           return False
@@ -168,9 +180,14 @@ Before implementing any task, read:
       ```
 
       All existing fixture param names (`connection`, `conn`, `lock`) classify
-      identically — no existing tests break. This is a pure refactor within the
-      sync path; the docstring for `visit_With` should be updated to mention
-      `_is_db_context` in place of the inline set description.
+      identically — no existing tests break. Note: the old inline set included
+      `session`; the new helper excludes it. Verify no existing test asserts
+      `with session:` → `DatabaseTransaction` (grep for `session.*DatabaseTransaction`).
+
+      The docstring for `visit_With` MUST be updated to reference `_is_db_context`
+      and remove the stale inline comment at line ~1129 that lists
+      `connection/session/tx` explicitly (it will be factually wrong after the
+      refactor).
 
 ## 4. atexit.register() → GlobalMutation
 
@@ -192,9 +209,10 @@ Before implementing any task, read:
 
       **CC note**: After adding atexit and warnings blocks (tasks 4.1 and 5.1),
       verify the cyclomatic complexity of `_handle_lib_attr_call`. It currently
-      has ~7 branches and already carries `# noqa: PLR0911`. If CC exceeds 10
-      after both additions, extract a `_handle_stdlib_mutation_call` helper and
-      add a task for it before proceeding.
+      has 7 branches and already carries `# noqa: PLR0911`. Adding both blocks
+      brings it to 9 — under the ruff PLR0912 threshold of ≥ 10. If any future
+      addition brings it to 10 or above, extract a `_handle_stdlib_mutation_call`
+      helper. (Threshold is ≥ 10, not > 10 — ruff fires at exactly 10.)
 
 ## 5. warnings.warn() → LogWrite + GlobalMutation
 
@@ -383,7 +401,7 @@ Before implementing any task, read:
 
 
       async def async_session(session) -> None:
-          """async with session: — DatabaseTransaction."""
+          """async with session: — MutexOp (NOT DatabaseTransaction; 'session' excluded from heuristic)."""
           async with session:
               pass
 
@@ -493,6 +511,19 @@ Before implementing any task, read:
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
           fn = next(t for t in targets if t.name == "spawn_check_call")
           assert any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
+
+
+      def test_non_subprocess_run_not_goroutine_spawn(tmp_path: Path) -> None:
+          """proc.run() where proc is not subprocess → no GoroutineSpawn."""
+          source = textwrap.dedent("""
+              def f(proc):
+                  proc.run(["ls"])
+          """)
+          path = tmp_path / "non_subprocess.py"
+          path.write_text(source)
+          targets = FileDetector.detect(path, root=tmp_path)
+          fn = next(t for t in targets if t.name == "f")
+          assert not any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
       ```
 
 - [ ] 8.2 [P] Append tests for async with MutexOp / DatabaseTransaction:
@@ -530,11 +561,16 @@ Before implementing any task, read:
           assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
 
 
-      def test_async_with_session_is_database_transaction() -> None:
-          """async with session (param) → DatabaseTransaction."""
+      def test_async_with_session_is_mutex_op_not_database_transaction() -> None:
+          """async with session (param) → MutexOp, NOT DatabaseTransaction.
+          
+          'session' is excluded from _is_db_context to avoid false positives on
+          session_id (a common HTTP/user session identifier). session → MutexOp by default.
+          """
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
           fn = next(t for t in targets if t.name == "async_session")
-          assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
+          assert any(e.type == SideEffectType.MutexOp for e in fn.effects)
+          assert not any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
 
 
       def test_async_with_db_conn_is_database_transaction() -> None:
@@ -771,6 +807,26 @@ Before implementing any task, read:
           assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
+      def test_functools_cache_call_form_is_global_mutation(tmp_path: Path) -> None:
+          """@functools.cache() (qualified call form) → GlobalMutation.
+
+          Note: functools.cache() with zero arguments is valid Python (it's a
+          no-argument call). The _has_lru_cache_decorator helper's fourth branch
+          handles ast.Call(func=ast.Attribute(value='functools', attr='cache')).
+          """
+          source = textwrap.dedent("""
+              import functools
+              @functools.cache()
+              def f(x: int) -> int:
+                  return x * x
+          """)
+          path = tmp_path / "qualified_cache_call_form.py"
+          path.write_text(source)
+          targets = FileDetector.detect(path, root=tmp_path)
+          fn = next(t for t in targets if t.name == "f")
+          assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
+
+
       def test_lru_cache_effect_on_definition_not_call_site(tmp_path: Path) -> None:
           """@lru_cache effect attributed to decorated fn, NOT to its callers."""
           source = textwrap.dedent("""
@@ -801,9 +857,11 @@ Before implementing any task, read:
 
 ## 9. CHANGELOG + version bump
 
-- [ ] 9.1 Bump version `0.5.2` → `0.5.3` in `pyproject.toml` and
-      `src/gaze_py/__init__.py`. Verify the current version in `pyproject.toml`
-      before bumping — this spec was written against `0.5.2`.
+- [ ] 9.1 Bump version to the next MINOR: `0.5.2` → `0.6.0` in `pyproject.toml`
+      and `src/gaze_py/__init__.py`. This change adds 5 new detection capabilities
+      (additive, backward-compatible new features) which warrants MINOR per semver.
+      Verify the current version in `pyproject.toml` before bumping — this spec was
+      written against `0.5.2`.
 
 - [ ] 9.2 Append the following at the end of the current `## [Unreleased]` block
       in `CHANGELOG.md` (after any existing `### Specs` reference):
@@ -830,6 +888,8 @@ Before implementing any task, read:
         `_is_db_context` helper, aligning sync and async heuristics. Compound
         names like `db_conn` now correctly classify as `DatabaseTransaction`.
         Existing fixture param names (`connection`, `conn`, `lock`) are unaffected.
+        Note: `session` is excluded from the heuristic — `with session:` now
+        produces `MutexOp` (previously `DatabaseTransaction` via the old inline set).
 
       ### Specs
       - `openspec/changes/python-native-detection/specs/`

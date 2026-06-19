@@ -60,9 +60,12 @@ excluded (see note above). `db` is word-part only (not substring).
 - **WHEN** a function has parameter `conn` and uses `async with conn:`
 - **THEN** a `DatabaseTransaction` effect is present
 
-##### Scenario: async with session parameter produces DatabaseTransaction
+##### Scenario: async with session parameter produces MutexOp (NOT DatabaseTransaction)
 - **WHEN** a function has parameter `session` and uses `async with session:`
-- **THEN** a `DatabaseTransaction` effect is present
+- **THEN** a `MutexOp` effect is present (NOT `DatabaseTransaction`)
+- **AND** `session` is excluded from the connection heuristic: `session_id` is a
+  common HTTP/user session identifier (not a DB session), so including `session`
+  would produce high-frequency false positives in web framework code
 
 ##### Scenario: async with db_conn parameter produces DatabaseTransaction
 - **WHEN** a function has parameter `db_conn` and uses `async with db_conn:`
