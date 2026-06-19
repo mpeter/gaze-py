@@ -1509,7 +1509,8 @@ def _matches_cache_decorator(dec: ast.expr) -> bool:
 
     Note: @functools.cache() with arguments is NOT valid Python at runtime
     (functools.cache is not a decorator factory). The AST pattern is handled
-    for completeness but will not appear in valid Python source.
+    for completeness but will not appear in correctly-functioning Python source
+    (the decorator call raises TypeError at decoration time).
 
     Args:
         dec: A single decorator expression node from fn_node.decorator_list.
