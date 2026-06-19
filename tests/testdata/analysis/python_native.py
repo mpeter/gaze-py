@@ -1,4 +1,5 @@
 # ruff: noqa
+# Parsed as AST by the analysis engine. Never executed. See CR-002.
 """Fixture for Python-native detection patterns.
 
 Covers: subprocess GoroutineSpawn, async-with MutexOp/DatabaseTransaction,

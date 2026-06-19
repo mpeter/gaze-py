@@ -1184,32 +1184,42 @@ class _FunctionVisitor(ast.NodeVisitor):
     # With statement — DatabaseTransaction, MutexOp
     # ------------------------------------------------------------------
 
+    def _handle_with_param(self, ctx_name: str, node: ast.AST, *, is_async: bool) -> None:
+        """Emit MutexOp or DatabaseTransaction for a parameter-based context manager.
+
+        Used by both visit_With (is_async=False) and visit_AsyncWith (is_async=True).
+        The effect type is determined by _is_db_context(ctx_name).
+
+        Args:
+            ctx_name: The parameter name used as the context manager.
+            node: The with/async-with AST node (for location tracking).
+            is_async: True when called from visit_AsyncWith, False from visit_With.
+        """
+        prefix = "async " if is_async else ""
+        if _is_db_context(ctx_name):
+            async_infix = "async " if is_async else ""
+            self._add(
+                SideEffectType.DatabaseTransaction,
+                node,
+                f"Function uses a database connection as an {async_infix}"
+                f"context manager via {ctx_name}",
+            )
+        else:
+            self._add(
+                SideEffectType.MutexOp,
+                node,
+                f"Function acquires a lock/mutex via '{prefix}with {ctx_name}:'",
+            )
+
     def visit_With(self, node: ast.With) -> None:  # noqa: N802
         """Detect DatabaseTransaction and MutexOp from 'with param:' patterns.
 
-        Uses _is_db_context() heuristic to distinguish database connection
-        context managers from lock/mutex context managers. Param-only: local
-        variables do not trigger these effects.
-
-        _is_db_context() returns True for conn/connection/tx/transaction/db
-        word-parts and connection/transaction substrings. 'session' is excluded
-        to avoid false positives on session_id (HTTP/user session identifiers).
+        Uses _is_db_context() heuristic — see its docstring for word-part rules.
         """
         for item in node.items:
             ctx = item.context_expr
             if isinstance(ctx, ast.Name) and ctx.id in self._params:
-                if _is_db_context(ctx.id):
-                    self._add(
-                        SideEffectType.DatabaseTransaction,
-                        node,
-                        f"Function uses a database connection as a context manager via {ctx.id}",
-                    )
-                else:
-                    self._add(
-                        SideEffectType.MutexOp,
-                        node,
-                        f"Function acquires a lock/mutex via 'with {ctx.id}:'",
-                    )
+                self._handle_with_param(ctx.id, node, is_async=False)
 
         self.generic_visit(node)
 
@@ -1237,19 +1247,7 @@ class _FunctionVisitor(ast.NodeVisitor):
             ctx = item.context_expr
             # Param-based async context managers — same heuristic as visit_With
             if isinstance(ctx, ast.Name) and ctx.id in self._params:
-                if _is_db_context(ctx.id):
-                    self._add(
-                        SideEffectType.DatabaseTransaction,
-                        node,
-                        "Function uses a database connection"
-                        f" as an async context manager via {ctx.id}",
-                    )
-                else:
-                    self._add(
-                        SideEffectType.MutexOp,
-                        node,
-                        f"Function acquires a lock/mutex via 'async with {ctx.id}:'",
-                    )
+                self._handle_with_param(ctx.id, node, is_async=True)
             # TaskGroup pattern — WaitGroupOp
             elif (
                 isinstance(ctx, ast.Call)

@@ -1178,10 +1178,15 @@ def test_sync_with_db_conn_is_database_transaction() -> None:
 
 
 def test_sync_with_ctx_is_not_database_transaction() -> None:
-    """with ctx (sync) → NOT DatabaseTransaction (ctx excluded from _is_db_context)."""
+    """with ctx (sync) → MutexOp, NOT DatabaseTransaction (ctx excluded from _is_db_context)."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
     fn = next(t for t in targets if t.name == "sync_ctx_not_db")
-    assert not any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
+    assert any(e.type == SideEffectType.MutexOp for e in fn.effects), (
+        f"Expected MutexOp for 'with ctx:', got: {[e.type for e in fn.effects]}"
+    )
+    assert not any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects), (
+        "ctx must NOT produce DatabaseTransaction (excluded from _is_db_context)"
+    )
 
 
 def test_async_with_non_param_does_not_emit_mutex(tmp_path: Path) -> None:
@@ -1294,7 +1299,7 @@ def test_warnings_warn_with_stacklevel_emits_both_effects(tmp_path: Path) -> Non
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
-def test_warnings_warn_not_finalizer_or_callback(tmp_path: Path) -> None:
+def test_warnings_warn_not_finalizer_or_callback() -> None:
     """warnings.warn → NOT FinalizerRegistration or CallbackInvocation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
     fn = next(t for t in targets if t.name == "emit_warning")
@@ -1332,13 +1337,9 @@ def test_uncached_function_not_global_mutation_from_decorator() -> None:
     """Plain function with no cache decorator → no lru_cache GlobalMutation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
     fn = next(t for t in targets if t.name == "not_cached")
-    # May have other GlobalMutation effects but NOT from lru_cache
-    lru_effects = [
-        e
-        for e in fn.effects
-        if e.type == SideEffectType.GlobalMutation and "lru_cache" in e.description
-    ]
-    assert len(lru_effects) == 0
+    assert not any(e.type == SideEffectType.GlobalMutation for e in fn.effects), (
+        f"not_cached has no GlobalMutation sources; got: {[e.type for e in fn.effects]}"
+    )
 
 
 def test_functools_lru_cache_qualified_form(tmp_path: Path) -> None:
@@ -1404,12 +1405,15 @@ def test_lru_cache_effect_on_definition_not_call_site(tmp_path: Path) -> None:
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
     compute_fn = next(t for t in targets if t.name == "compute")
-    assert any(e.type == SideEffectType.GlobalMutation for e in compute_fn.effects)
+    gm_effects = [e for e in compute_fn.effects if e.type == SideEffectType.GlobalMutation]
+    assert len(gm_effects) == 1, (
+        f"Expected exactly 1 GlobalMutation on compute, got {len(gm_effects)}"
+    )
+    assert "lru_cache" in gm_effects[0].description, (
+        f"Expected 'lru_cache' in description, got: {gm_effects[0].description!r}"
+    )
     for caller in ("caller_a", "caller_b", "caller_c"):
         caller_fn = next(t for t in targets if t.name == caller)
-        lru_effects = [
-            e
-            for e in caller_fn.effects
-            if e.type == SideEffectType.GlobalMutation and "lru_cache" in e.description
-        ]
-        assert len(lru_effects) == 0, f"{caller} should not have lru_cache GlobalMutation"
+        assert not any(e.type == SideEffectType.GlobalMutation for e in caller_fn.effects), (
+            f"{caller} should not have GlobalMutation (callers have no GlobalMutation sources)"
+        )
