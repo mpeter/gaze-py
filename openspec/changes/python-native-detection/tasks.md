@@ -12,7 +12,7 @@ Before implementing any task, read:
 
 ## 1. New constants and helpers in detector.py
 
-- [ ] 1.1 In `src/gaze_py/analysis/detector.py`, add to the constants section
+- [x] 1.1 In `src/gaze_py/analysis/detector.py`, add to the constants section
       after `_GOROUTINE_SPAWN_CALLS`:
 
       ```python
@@ -34,7 +34,7 @@ Before implementing any task, read:
       _LRU_CACHE_DECORATORS: frozenset[str] = frozenset({"lru_cache", "cache"})
       ```
 
-- [ ] 1.2 Add `_is_db_context` as a module-level function alongside the other
+- [x] 1.2 Add `_is_db_context` as a module-level function alongside the other
       module-level helpers, after the visitor classes and before `FileDetector`.
       Place it **before** `_has_lru_cache_decorator` (task 6.1) — `_is_db_context`
       is called from visitor methods while `_has_lru_cache_decorator` is called from
@@ -84,7 +84,7 @@ Before implementing any task, read:
 
 ## 2. subprocess → GoroutineSpawn
 
-- [ ] 2.1 In `_handle_goroutine_process_time`, add after the existing
+- [x] 2.1 In `_handle_goroutine_process_time`, add after the existing
       `GoroutineSpawn` (`_GOROUTINE_SPAWN_CALLS`) detection block and
       before the `concurrent.futures.*.submit` block:
 
@@ -106,7 +106,7 @@ Before implementing any task, read:
 
 ## 3. async with param → MutexOp / DatabaseTransaction; align visit_With
 
-- [ ] 3.1 In `visit_AsyncWith`, add param-based lock detection immediately
+- [x] 3.1 In `visit_AsyncWith`, add param-based lock detection immediately
       **before** the existing TaskGroup detection loop. Use `_is_db_context`
       (added in task 1.2) instead of an inline name set. The full method becomes:
 
@@ -168,7 +168,7 @@ Before implementing any task, read:
       `break`) to avoid double-processing items. The `break` on TaskGroup match
       still exits the item loop after finding the first TaskGroup.
 
-- [ ] 3.2 In `visit_With`, replace the inline connection-name set with
+- [x] 3.2 In `visit_With`, replace the inline connection-name set with
       `_is_db_context` to align the sync heuristic with the async one:
 
       ```python
@@ -191,7 +191,7 @@ Before implementing any task, read:
 
 ## 4. atexit.register() → GlobalMutation
 
-- [ ] 4.1 In `_handle_lib_attr_call`, add after the `FinalizerRegistration`
+- [x] 4.1 In `_handle_lib_attr_call`, add after the `FinalizerRegistration`
       (`weakref.finalize`) block and before the `CgoCall` block:
 
       ```python
@@ -216,7 +216,7 @@ Before implementing any task, read:
 
 ## 5. warnings.warn() → LogWrite + GlobalMutation
 
-- [ ] 5.1 In `_handle_lib_attr_call`, add after the `LogWrite` (`_LOG_NAMES`)
+- [x] 5.1 In `_handle_lib_attr_call`, add after the `LogWrite` (`_LOG_NAMES`)
       block:
 
       ```python
@@ -248,7 +248,7 @@ Before implementing any task, read:
 
 ## 6. @lru_cache / @cache → GlobalMutation
 
-- [ ] 6.1 Add a module-level helper function `_has_lru_cache_decorator` to
+- [x] 6.1 Add a module-level helper function `_has_lru_cache_decorator` to
       `src/gaze_py/analysis/detector.py`, alongside the other module-level
       helpers (`_extract_open_mode`, `_collect_return_names_excluding_finally`),
       after the visitor classes and before `FileDetector`:
@@ -303,7 +303,7 @@ Before implementing any task, read:
           return False
       ```
 
-- [ ] 6.2 In `FileDetector.detect()`, in the per-function loop (`for fn_node
+- [x] 6.2 In `FileDetector.detect()`, in the per-function loop (`for fn_node
       in ast.walk(module):`), add lru_cache detection immediately after
       `effects.extend(visitor.effects)` and before `complexity =
       cyclomatic_complexity(fn_node)`:
@@ -330,7 +330,7 @@ Before implementing any task, read:
 
 ## 7. Fixture file
 
-- [ ] 7.1 Create `tests/testdata/analysis/python_native.py`:
+- [x] 7.1 Create `tests/testdata/analysis/python_native.py`:
 
       ```python
       # ruff: noqa
@@ -470,7 +470,7 @@ Before implementing any task, read:
 
 ## 8. Tests
 
-- [ ] 8.1 [P] In `tests/test_detector.py`, append new test section for
+- [x] 8.1 [P] In `tests/test_detector.py`, append new test section for
       subprocess GoroutineSpawn:
 
       ```python
@@ -526,7 +526,7 @@ Before implementing any task, read:
           assert not any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
       ```
 
-- [ ] 8.2 [P] Append tests for async with MutexOp / DatabaseTransaction:
+- [x] 8.2 [P] Append tests for async with MutexOp / DatabaseTransaction:
 
       ```python
       # ---------------------------------------------------------------------------
@@ -617,7 +617,7 @@ Before implementing any task, read:
           assert not any(e.type == SideEffectType.MutexOp for e in fn.effects)
       ```
 
-- [ ] 8.3 [P] Append tests for atexit GlobalMutation:
+- [x] 8.3 [P] Append tests for atexit GlobalMutation:
 
       ```python
       # ---------------------------------------------------------------------------
@@ -666,7 +666,7 @@ Before implementing any task, read:
           assert not any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
       ```
 
-- [ ] 8.4 [P] Append tests for warnings.warn() LogWrite + GlobalMutation:
+- [x] 8.4 [P] Append tests for warnings.warn() LogWrite + GlobalMutation:
 
       ```python
       # ---------------------------------------------------------------------------
@@ -721,7 +721,7 @@ Before implementing any task, read:
           assert not any(e.type == SideEffectType.CallbackInvocation for e in fn.effects)
       ```
 
-- [ ] 8.5 [P] Append tests for @lru_cache GlobalMutation:
+- [x] 8.5 [P] Append tests for @lru_cache GlobalMutation:
 
       ```python
       # ---------------------------------------------------------------------------
@@ -837,13 +837,13 @@ Before implementing any task, read:
 
 ## 9. CHANGELOG + version bump
 
-- [ ] 9.1 Bump version to the next MINOR: `0.5.2` → `0.6.0` in `pyproject.toml`
+- [x] 9.1 Bump version to the next MINOR: `0.5.2` → `0.6.0` in `pyproject.toml`
       and `src/gaze_py/__init__.py`. This change adds 5 new detection capabilities
       (additive, backward-compatible new features) which warrants MINOR per semver.
       Verify the current version in `pyproject.toml` before bumping — this spec was
       written against `0.5.2`.
 
-- [ ] 9.2 Append the following at the end of the current `## [Unreleased]` block
+- [x] 9.2 Append the following at the end of the current `## [Unreleased]` block
       in `CHANGELOG.md` (after any existing `### Specs` reference):
 
       ```
@@ -877,10 +877,10 @@ Before implementing any task, read:
 
 ## 10. CI gate
 
-- [ ] 10.1 [P] `uv run ruff check .`
-- [ ] 10.2 [P] `uv run ruff format --check .`
-- [ ] 10.3 [P] `uv run mypy --strict src/`
-- [ ] 10.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+- [x] 10.1 [P] `uv run ruff check .`
+- [x] 10.2 [P] `uv run ruff format --check .`
+- [x] 10.3 [P] `uv run mypy --strict src/`
+- [x] 10.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
 
 ## 11. Archive return-none-annotation
 
@@ -889,7 +889,7 @@ The `return-none-annotation` change documents design decision EC-005/G.1
 implemented in `detector.py:visit_Return` and has a passing test
 (`test_detector.py:98–104`).
 
-- [ ] 11.0 Add EC-005/G.1 traceability comment to `visit_Return` docstring in
+- [x] 11.0 Add EC-005/G.1 traceability comment to `visit_Return` docstring in
       `src/gaze_py/analysis/detector.py`. The spec requires: "the decision is
       documented in `detector.py` `visit_Return` with reference to EC-005/G.1
       and the spec archive." Add a comment such as:
@@ -902,14 +902,14 @@ implemented in `detector.py:visit_Return` and has a passing test
       # openspec/changes/archive/return-none-annotation/
       ```
 
-- [ ] 11.1 Move `openspec/changes/return-none-annotation/` to
+- [x] 11.1 Move `openspec/changes/return-none-annotation/` to
       `openspec/changes/archive/return-none-annotation/`:
       ```bash
       mv openspec/changes/return-none-annotation \
          openspec/changes/archive/return-none-annotation
       ```
 
-- [ ] 11.2 Commit the archive:
+- [x] 11.2 Commit the archive:
       ```
       chore: archive return-none-annotation (EC-005/G.1 already implemented)
       ```
