@@ -90,6 +90,23 @@ _GOROUTINE_SPAWN_CALLS: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# Qualified names for GoroutineSpawn — subprocess module (separate from
+# _GOROUTINE_SPAWN_CALLS to keep OS-process spawning semantically distinct
+# from thread/coroutine spawning). concurrent.futures executor constructors
+# are deferred — they require chained-attribute obj_name handling.
+_SUBPROCESS_SPAWN_CALLS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("subprocess", "Popen"),
+        ("subprocess", "run"),
+        ("subprocess", "call"),
+        ("subprocess", "check_output"),
+        ("subprocess", "check_call"),
+    }
+)
+
+# Decorator names (bare and qualified) that indicate lru_cache/cache decoration
+_LRU_CACHE_DECORATORS: frozenset[str] = frozenset({"lru_cache", "cache"})
+
 # Qualified names for WaitGroupOp detection (asyncio module only).
 # concurrent.futures.wait is detected via name heuristic below
 # (obj_name == "futures") when imported as: import concurrent.futures as futures.
@@ -408,6 +425,12 @@ class _FunctionVisitor(ast.NodeVisitor):
           ALL return statements (including 'return None') are ReturnValue.
         - Otherwise, only 'return <expr>' where expr is not None literal.
         - Bare 'return' (node.value is None) never produces ReturnValue.
+
+        # EC-005/G.1: unannotated `return None` is idiomatically equivalent to
+        # bare `return` in Python — it does not signal that None is a meaningful
+        # return value. Treating it as ReturnValue would produce false positives
+        # on a large class of void functions. Documented in:
+        # openspec/changes/archive/return-none-annotation/
         """
         if node.value is None:
             # Bare 'return' — never a ReturnValue
@@ -770,6 +793,16 @@ class _FunctionVisitor(ast.NodeVisitor):
             self.generic_visit(node)
             return True
 
+        # GoroutineSpawn: subprocess.Popen/run/call/check_output/check_call
+        if obj_name is not None and (obj_name, method) in _SUBPROCESS_SPAWN_CALLS:
+            self._add(
+                SideEffectType.GoroutineSpawn,
+                node,
+                f"Function spawns a child process via {obj_name}.{method}()",
+            )
+            self.generic_visit(node)
+            return True
+
         # concurrent.futures.*.submit — check for submit on any futures obj
         if method == "submit" and obj_name is not None:
             # Heuristic: if the object is named executor/pool/futures
@@ -862,6 +895,27 @@ class _FunctionVisitor(ast.NodeVisitor):
             self.generic_visit(node)
             return True
 
+        # warnings.warn() — two effects:
+        # (1) LogWrite: structured, filterable developer-facing warning emission
+        # (2) GlobalMutation: typically writes to __warningregistry__ in the calling
+        #     module's globals for deduplication (filter-configuration dependent)
+        if obj_name == "warnings" and method == "warn":
+            self._add(
+                SideEffectType.LogWrite,
+                node,
+                "Function emits a warning via warnings.warn()"
+                " (structured developer-facing output;"
+                " may go to stderr, logging, or be suppressed)",
+            )
+            self._add(
+                SideEffectType.GlobalMutation,
+                node,
+                "Function typically mutates __warningregistry__ in the calling module"
+                " via warnings.warn() (deduplication state; filter-configuration dependent)",
+            )
+            self.generic_visit(node)
+            return True
+
         # Delegate goroutine/process/time detection to reduce CC.
         if self._handle_goroutine_process_time(obj_name, method, node):
             return True
@@ -902,6 +956,17 @@ class _FunctionVisitor(ast.NodeVisitor):
                 SideEffectType.FinalizerRegistration,
                 node,
                 "Function registers a finalizer via weakref.finalize()",
+            )
+            self.generic_visit(node)
+            return True
+
+        # GlobalMutation: atexit.register() — mutates interpreter shutdown handler list
+        if obj_name == "atexit" and method == "register":
+            self._add(
+                SideEffectType.GlobalMutation,
+                node,
+                "Function registers a shutdown callback via atexit.register()"
+                " (mutates interpreter-global atexit handler list)",
             )
             self.generic_visit(node)
             return True
@@ -1120,14 +1185,20 @@ class _FunctionVisitor(ast.NodeVisitor):
     # ------------------------------------------------------------------
 
     def visit_With(self, node: ast.With) -> None:  # noqa: N802
-        """Detect DatabaseTransaction and MutexOp from 'with param:' patterns."""
+        """Detect DatabaseTransaction and MutexOp from 'with param:' patterns.
+
+        Uses _is_db_context() heuristic to distinguish database connection
+        context managers from lock/mutex context managers. Param-only: local
+        variables do not trigger these effects.
+
+        _is_db_context() returns True for conn/connection/tx/transaction/db
+        word-parts and connection/transaction substrings. 'session' is excluded
+        to avoid false positives on session_id (HTTP/user session identifiers).
+        """
         for item in node.items:
             ctx = item.context_expr
             if isinstance(ctx, ast.Name) and ctx.id in self._params:
-                # MutexOp and DatabaseTransaction both match 'with param:'
-                # Use MutexOp for lock-like names, DatabaseTransaction for connection-like names
-                # Heuristic: connection/session/tx → DatabaseTransaction; else MutexOp
-                if ctx.id in {"connection", "conn", "session", "tx", "transaction"}:
+                if _is_db_context(ctx.id):
                     self._add(
                         SideEffectType.DatabaseTransaction,
                         node,
@@ -1143,18 +1214,44 @@ class _FunctionVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802
-        """Detect WaitGroupOp from 'async with asyncio.TaskGroup()' pattern.
+        """Detect WaitGroupOp and MutexOp/DatabaseTransaction from async with patterns.
 
-        Uses break after first match (only one TaskGroup pattern here).
-        Unlike visit_With which has two patterns with no break,
-        this method breaks after finding the first TaskGroup context.
+        Param-based patterns (async with lock:, async with conn:):
+            Uses _is_db_context() heuristic — conn/connection/tx/db names
+            → DatabaseTransaction; all others → MutexOp. Param-only: local
+            variables do not trigger these effects.
 
-        Known gap: 'async with lock:' patterns are not detected as MutexOp.
+        TaskGroup pattern:
+            async with asyncio.TaskGroup() as tg: → WaitGroupOp.
+
+        The two branches use `elif` because a single context manager expression
+        cannot be both an ast.Name (param-based) and an ast.Call (TaskGroup) —
+        they are mutually exclusive by AST node type. `break` exits the item
+        loop after the first TaskGroup match (only one TaskGroup is expected per
+        async with). Known limitation: items after a TaskGroup in the same
+        async with statement are not inspected (see design.md Risks).
+
         Alias limitation: only detects asyncio.TaskGroup(), not aio.TaskGroup().
         """
         for item in node.items:
             ctx = item.context_expr
-            if (
+            # Param-based async context managers — same heuristic as visit_With
+            if isinstance(ctx, ast.Name) and ctx.id in self._params:
+                if _is_db_context(ctx.id):
+                    self._add(
+                        SideEffectType.DatabaseTransaction,
+                        node,
+                        "Function uses a database connection"
+                        f" as an async context manager via {ctx.id}",
+                    )
+                else:
+                    self._add(
+                        SideEffectType.MutexOp,
+                        node,
+                        f"Function acquires a lock/mutex via 'async with {ctx.id}:'",
+                    )
+            # TaskGroup pattern — WaitGroupOp
+            elif (
                 isinstance(ctx, ast.Call)
                 and isinstance(ctx.func, ast.Attribute)
                 and isinstance(ctx.func.value, ast.Name)
@@ -1354,6 +1451,106 @@ def _collect_return_names_excluding_finally(stmts: list[ast.stmt]) -> set[str]:
                 if isinstance(child, ast.stmt):
                     names |= _collect_return_names_excluding_finally([child])
     return names
+
+
+def _is_db_context(name: str) -> bool:
+    """Return True if the parameter name suggests a database connection context.
+
+    Uses word-part split on underscores plus substring check for compound words.
+    Avoids the ctx→tx false positive (ctx → parts ["ctx"] → no match).
+
+    `session` is excluded from the word-part set: `session_id` is a common
+    HTTP/user session identifier (a string), not a DB connection — including it
+    would produce DatabaseTransaction false positives in web framework code.
+    `session` alone (bare name) also returns False — use `conn` or `connection`.
+    `db` is word-part only (not substring) to avoid matching `debug`.
+    `conn` is word-part only (not substring) to avoid matching `reconnect`,
+    `connector`, `disconnect`. Only `connection` and `transaction` are in the
+    substring list (both long enough to avoid false matches).
+    `dbConn` (camelCase, no underscore) → False — accepted limitation.
+
+    Examples:
+        _is_db_context("conn")        → True   (word part "conn")
+        _is_db_context("db_conn")     → True   (word parts: "db" and "conn")
+        _is_db_context("my_db")       → True   (word part "db")
+        _is_db_context("connection")  → True   (word part AND substring)
+        _is_db_context("session")     → False  ("session" not in word-part set)
+        _is_db_context("session_id")  → False  ("session" not in word-part set)
+        _is_db_context("reconnect")   → False  ("conn" not in substring list)
+        _is_db_context("connector")   → False  ("conn" not in substring list)
+        _is_db_context("ctx")         → False  ("ctx" not in set)
+        _is_db_context("lock")        → False
+        _is_db_context("dbConn")      → False  (camelCase — accepted gap)
+
+    Args:
+        name: Parameter name to check.
+
+    Returns:
+        True if the name suggests a database connection context.
+    """
+    parts = set(name.lower().split("_"))
+    if parts & {"conn", "connection", "tx", "transaction", "db"}:
+        return True
+    # Substring check for camelCase compound words only — use long keywords
+    # to avoid false positives: "conn" is excluded (matches "reconnect",
+    # "connector"); "connection" and "transaction" are safe.
+    for kw in ("connection", "transaction"):
+        if kw in name.lower():
+            return True
+    return False
+
+
+def _has_lru_cache_decorator(
+    fn_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """Return True if the function has an @lru_cache or @cache decorator.
+
+    Handles four decorator forms:
+    - @lru_cache        (bare name)
+    - @lru_cache(...)   (call form)
+    - @functools.lru_cache      (qualified attribute)
+    - @functools.lru_cache(...) (qualified attribute call)
+    Same for @cache / @functools.cache.
+
+    Note: @functools.cache() with arguments is NOT valid Python at runtime
+    (functools.cache is not a decorator factory). The AST pattern is handled
+    for completeness but will not appear in valid Python source.
+
+    Args:
+        fn_node: The function definition AST node to inspect.
+
+    Returns:
+        True if any decorator matches the lru_cache/cache pattern.
+    """
+    for dec in fn_node.decorator_list:
+        # Bare name: @lru_cache or @cache
+        if isinstance(dec, ast.Name) and dec.id in _LRU_CACHE_DECORATORS:
+            return True
+        # Call form: @lru_cache(...) or @cache()
+        if (
+            isinstance(dec, ast.Call)
+            and isinstance(dec.func, ast.Name)
+            and dec.func.id in _LRU_CACHE_DECORATORS
+        ):
+            return True
+        # Qualified: @functools.lru_cache or @functools.cache
+        if (
+            isinstance(dec, ast.Attribute)
+            and isinstance(dec.value, ast.Name)
+            and dec.value.id == "functools"
+            and dec.attr in _LRU_CACHE_DECORATORS
+        ):
+            return True
+        # Qualified call: @functools.lru_cache(...) or @functools.cache(...)
+        if (
+            isinstance(dec, ast.Call)
+            and isinstance(dec.func, ast.Attribute)
+            and isinstance(dec.func.value, ast.Name)
+            and dec.func.value.id == "functools"
+            and dec.func.attr in _LRU_CACHE_DECORATORS
+        ):
+            return True
+    return False
 
 
 def _extract_open_mode(call: ast.Call) -> str:
@@ -1639,6 +1836,24 @@ class FileDetector:
             # Post-process: DeferredReturnMutation requires whole-function context
             visitor.collect_deferred_return_mutation(fn_node)
             effects.extend(visitor.effects)
+
+            # GlobalMutation: @lru_cache / @functools.cache decorator
+            # The cache dict is attached to the function object at decoration time
+            # and persists across all callers (functionally global mutable state).
+            if _has_lru_cache_decorator(fn_node):
+                effects.append(
+                    _make_effect(
+                        rel_path=rel_path,
+                        fn_name=fn_name,
+                        effect_type=SideEffectType.GlobalMutation,
+                        node=fn_node,
+                        description=(
+                            "Function is decorated with @lru_cache/@cache —"
+                            " memoization cache is persistent global mutable state"
+                            " shared across all callers"
+                        ),
+                    )
+                )
 
             # Compute complexity
             complexity = cyclomatic_complexity(fn_node)
