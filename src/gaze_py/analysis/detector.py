@@ -1498,21 +1498,63 @@ def _is_db_context(name: str) -> bool:
     return False
 
 
+def _matches_cache_decorator(dec: ast.expr) -> bool:
+    """Return True if a single decorator node matches @lru_cache or @cache.
+
+    Handles four decorator forms:
+    - @lru_cache or @cache              (bare ast.Name)
+    - @lru_cache(...) or @cache(...)    (ast.Call wrapping ast.Name)
+    - @functools.lru_cache or @functools.cache   (ast.Attribute)
+    - @functools.lru_cache(...) or @functools.cache(...)  (ast.Call wrapping ast.Attribute)
+
+    Note: @functools.cache() with arguments is NOT valid Python at runtime
+    (functools.cache is not a decorator factory). The AST pattern is handled
+    for completeness but will not appear in valid Python source.
+
+    Args:
+        dec: A single decorator expression node from fn_node.decorator_list.
+
+    Returns:
+        True if the decorator matches any lru_cache/cache form.
+    """
+    # Bare name: @lru_cache or @cache
+    if isinstance(dec, ast.Name) and dec.id in _LRU_CACHE_DECORATORS:
+        return True
+    # Call form: @lru_cache(...) or @cache()
+    if (
+        isinstance(dec, ast.Call)
+        and isinstance(dec.func, ast.Name)
+        and dec.func.id in _LRU_CACHE_DECORATORS
+    ):
+        return True
+    # Qualified: @functools.lru_cache or @functools.cache
+    if (
+        isinstance(dec, ast.Attribute)
+        and isinstance(dec.value, ast.Name)
+        and dec.value.id == "functools"
+        and dec.attr in _LRU_CACHE_DECORATORS
+    ):
+        return True
+    # Qualified call: @functools.lru_cache(...) or @functools.cache(...)
+    if (
+        isinstance(dec, ast.Call)
+        and isinstance(dec.func, ast.Attribute)
+        and isinstance(dec.func.value, ast.Name)
+        and dec.func.value.id == "functools"
+        and dec.func.attr in _LRU_CACHE_DECORATORS
+    ):
+        return True
+    return False
+
+
 def _has_lru_cache_decorator(
     fn_node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> bool:
     """Return True if the function has an @lru_cache or @cache decorator.
 
-    Handles four decorator forms:
-    - @lru_cache        (bare name)
-    - @lru_cache(...)   (call form)
-    - @functools.lru_cache      (qualified attribute)
-    - @functools.lru_cache(...) (qualified attribute call)
-    Same for @cache / @functools.cache.
-
-    Note: @functools.cache() with arguments is NOT valid Python at runtime
-    (functools.cache is not a decorator factory). The AST pattern is handled
-    for completeness but will not appear in valid Python source.
+    Delegates per-decorator matching to _matches_cache_decorator, which
+    handles all four AST forms (bare name, call, qualified attribute,
+    qualified attribute call).
 
     Args:
         fn_node: The function definition AST node to inspect.
@@ -1520,35 +1562,7 @@ def _has_lru_cache_decorator(
     Returns:
         True if any decorator matches the lru_cache/cache pattern.
     """
-    for dec in fn_node.decorator_list:
-        # Bare name: @lru_cache or @cache
-        if isinstance(dec, ast.Name) and dec.id in _LRU_CACHE_DECORATORS:
-            return True
-        # Call form: @lru_cache(...) or @cache()
-        if (
-            isinstance(dec, ast.Call)
-            and isinstance(dec.func, ast.Name)
-            and dec.func.id in _LRU_CACHE_DECORATORS
-        ):
-            return True
-        # Qualified: @functools.lru_cache or @functools.cache
-        if (
-            isinstance(dec, ast.Attribute)
-            and isinstance(dec.value, ast.Name)
-            and dec.value.id == "functools"
-            and dec.attr in _LRU_CACHE_DECORATORS
-        ):
-            return True
-        # Qualified call: @functools.lru_cache(...) or @functools.cache(...)
-        if (
-            isinstance(dec, ast.Call)
-            and isinstance(dec.func, ast.Attribute)
-            and isinstance(dec.func.value, ast.Name)
-            and dec.func.value.id == "functools"
-            and dec.func.attr in _LRU_CACHE_DECORATORS
-        ):
-            return True
-    return False
+    return any(_matches_cache_decorator(d) for d in fn_node.decorator_list)
 
 
 def _extract_open_mode(call: ast.Call) -> str:
