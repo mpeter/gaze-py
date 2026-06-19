@@ -913,3 +913,5 @@ implemented in `detector.py:visit_Return` and has a passing test
       ```
       chore: archive return-none-annotation (EC-005/G.1 already implemented)
       ```
+
+<!-- spec-review: passed -->
