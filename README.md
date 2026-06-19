@@ -11,6 +11,8 @@ each effect as contractual or incidental using a five-signal confidence engine, 
 computes CRAP and GazeCRAP scores to surface functions that are both complex and
 under-tested. The output is schema-compatible with the Go gaze implementation.
 
+**[Documentation](docs/index.md)** — concepts, getting-started guide, CLI reference, configuration, glossary.
+
 ## Requirements
 
 - Python 3.11+
