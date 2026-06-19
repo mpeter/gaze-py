@@ -16,7 +16,10 @@ Before implementing any task, read:
       after `_GOROUTINE_SPAWN_CALLS`:
 
       ```python
-      # Additional qualified names for GoroutineSpawn — subprocess and futures pools
+      # Qualified names for GoroutineSpawn — subprocess module (separate from
+      # _GOROUTINE_SPAWN_CALLS to keep OS-process spawning semantically distinct
+      # from thread/coroutine spawning). concurrent.futures executor constructors
+      # are deferred — they require chained-attribute obj_name handling.
       _SUBPROCESS_SPAWN_CALLS: frozenset[tuple[str, str]] = frozenset(
           {
               ("subprocess", "Popen"),
@@ -24,8 +27,6 @@ Before implementing any task, read:
               ("subprocess", "call"),
               ("subprocess", "check_output"),
               ("subprocess", "check_call"),
-              ("concurrent.futures", "ThreadPoolExecutor"),
-              ("concurrent.futures", "ProcessPoolExecutor"),
           }
       )
 
@@ -33,67 +34,41 @@ Before implementing any task, read:
       _LRU_CACHE_DECORATORS: frozenset[str] = frozenset({"lru_cache", "cache"})
       ```
 
-      **Note on `concurrent.futures` entries**: the `obj_name` extraction in
-      `visit_Call` only handles `ast.Name` as the receiver (e.g., `subprocess.Popen`
-      where `subprocess` is a bare name). For `concurrent.futures.ThreadPoolExecutor`,
-      the receiver is a chained attribute (`concurrent.futures`) and `obj_name` will
-      be `None`. These entries are intentionally included for documentation purposes
-      and future extensibility; they will not match via the current `obj_name` heuristic.
-      Detection of `concurrent.futures` executor constructors requires either
-      (a) `import concurrent.futures as futures; futures.ThreadPoolExecutor()` (alias
-      form — then `obj_name == "futures"` would match a separate heuristic), or
-      (b) a chained-attribute handler. This is a deferred improvement; the constant
-      is included with a comment explaining the current limitation.
-
-      Revise `_SUBPROCESS_SPAWN_CALLS` to:
-      ```python
-      # Qualified names for GoroutineSpawn — subprocess module.
-      # Note: concurrent.futures.ThreadPoolExecutor/ProcessPoolExecutor also spawn
-      # concurrent workers but require alias import (import concurrent.futures as futures)
-      # to be detected via obj_name heuristic. Executor constructors via chained attribute
-      # (concurrent.futures.ThreadPoolExecutor) are not yet detected. Deferred.
-      _SUBPROCESS_SPAWN_CALLS: frozenset[tuple[str, str]] = frozenset(
-          {
-              ("subprocess", "Popen"),
-              ("subprocess", "run"),
-              ("subprocess", "call"),
-              ("subprocess", "check_output"),
-              ("subprocess", "check_call"),
-          }
-      )
-      ```
-
-- [ ] 1.2 In the constants section (after `_LOG_NAMES` or nearby), add the
-      `_is_db_context` module-level helper function (before `_WRITE_MODES` or
-      any other appropriate place near the top-of-file helpers):
+- [ ] 1.2 Add `_is_db_context` as a module-level function alongside the other
+      module-level helpers (`_extract_open_mode`, `_collect_return_names_excluding_finally`),
+      after the visitor classes and before `FileDetector`:
 
       ```python
       def _is_db_context(name: str) -> bool:
           """Return True if the parameter name suggests a database connection context.
 
           Uses word-part split on underscores plus substring check for compound words.
-          Avoids the ctx→tx false positive that pure substring matching would produce.
+          Avoids the ctx→tx false positive (ctx → parts ["ctx"] → no match).
+
+          `session` is excluded from the word-part set: `session_id` is a common
+          HTTP/user session identifier (a string), not a DB connection — including it
+          would produce DatabaseTransaction false positives in web framework code.
+          `db` is word-part only (not substring) to avoid matching `debug`.
+          `dbConn` (camelCase, no underscore) → False — accepted limitation.
 
           Examples:
               _is_db_context("conn")        → True
-              _is_db_context("db_conn")     → True   (word part "db")
-              _is_db_context("session_id")  → True   (word part "session")
-              _is_db_context("ctx")         → False  (word part "ctx" not in set)
+              _is_db_context("db_conn")     → True   (word parts: "db" and "conn" match)
+              _is_db_context("my_db")       → True   (word part "db" matches)
+              _is_db_context("session_id")  → False  ("session" not in word-part set)
+              _is_db_context("ctx")         → False  ("ctx" not in set)
               _is_db_context("lock")        → False
+              _is_db_context("dbConn")      → False  (camelCase — accepted gap)
           """
           parts = set(name.lower().split("_"))
-          if parts & {"conn", "connection", "session", "tx", "transaction", "db"}:
+          if parts & {"conn", "connection", "tx", "transaction", "db"}:
               return True
           # Substring check for camelCase or unsplit compound words (e.g. dbConnection)
-          for kw in ("conn", "connection", "session", "transaction"):
+          for kw in ("conn", "connection", "transaction"):
               if kw in name.lower():
                   return True
           return False
       ```
-
-      **Note**: this is a module-level function, not a method — place it near
-      the other module-level helpers (alongside `_extract_open_mode`,
-      `_effect_id`, etc.).
 
 ## 2. subprocess → GoroutineSpawn
 
@@ -113,9 +88,9 @@ Before implementing any task, read:
           return True
       ```
 
-      This function already has `# noqa: PLR0911` from the previous change.
-      Adding one more return point (now 9 total) does not change the noqa
-      requirement — it is already suppressed.
+      `_handle_goroutine_process_time` already carries `# noqa: PLR0911` at
+      its definition. The existing suppression covers this additional return
+      point — no new noqa comment is needed.
 
 ## 3. async with param → MutexOp / DatabaseTransaction; align visit_With
 
@@ -128,16 +103,19 @@ Before implementing any task, read:
           """Detect WaitGroupOp and MutexOp/DatabaseTransaction from async with patterns.
 
           Param-based patterns (async with lock:, async with conn:):
-              Uses _is_db_context() heuristic — connection/session/tx/db names
+              Uses _is_db_context() heuristic — conn/connection/tx/db names
               → DatabaseTransaction; all others → MutexOp. Param-only: local
               variables do not trigger these effects.
 
           TaskGroup pattern:
               async with asyncio.TaskGroup() as tg: → WaitGroupOp.
 
-          Uses break after first TaskGroup match (only one TaskGroup pattern).
-          Unlike visit_With, this method handles both the param-name and
-          TaskGroup cases in one visitor.
+          The two branches use `elif` because a single context manager expression
+          cannot be both an ast.Name (param-based) and an ast.Call (TaskGroup) —
+          they are mutually exclusive by AST node type. `break` exits the item
+          loop after the first TaskGroup match (only one TaskGroup is expected per
+          async with). Known limitation: items after a TaskGroup in the same
+          async with statement are not inspected (see design.md Risks).
 
           Alias limitation: only detects asyncio.TaskGroup(), not aio.TaskGroup().
           """
@@ -212,6 +190,12 @@ Before implementing any task, read:
           return True
       ```
 
+      **CC note**: After adding atexit and warnings blocks (tasks 4.1 and 5.1),
+      verify the cyclomatic complexity of `_handle_lib_attr_call`. It currently
+      has ~7 branches and already carries `# noqa: PLR0911`. If CC exceeds 10
+      after both additions, extract a `_handle_stdlib_mutation_call` helper and
+      add a task for it before proceeding.
+
 ## 5. warnings.warn() → LogWrite + GlobalMutation
 
 - [ ] 5.1 In `_handle_lib_attr_call`, add after the `LogWrite` (`_LOG_NAMES`)
@@ -220,8 +204,8 @@ Before implementing any task, read:
       ```python
       # warnings.warn() — two effects:
       # (1) LogWrite: structured, filterable developer-facing warning emission
-      # (2) GlobalMutation: always writes to __warningregistry__ in the calling
-      #     module's globals for deduplication
+      # (2) GlobalMutation: typically writes to __warningregistry__ in the calling
+      #     module's globals for deduplication (filter-configuration dependent)
       if obj_name == "warnings" and method == "warn":
           self._add(
               SideEffectType.LogWrite,
@@ -232,8 +216,8 @@ Before implementing any task, read:
           self._add(
               SideEffectType.GlobalMutation,
               node,
-              "Function mutates __warningregistry__ in the calling module via warnings.warn()"
-              " (deduplication state — always written regardless of filter action)",
+              "Function typically mutates __warningregistry__ in the calling module"
+              " via warnings.warn() (deduplication state; filter-configuration dependent)",
           )
           self.generic_visit(node)
           return True
@@ -247,9 +231,9 @@ Before implementing any task, read:
 ## 6. @lru_cache / @cache → GlobalMutation
 
 - [ ] 6.1 Add a module-level helper function `_has_lru_cache_decorator` to
-      `src/gaze_py/analysis/detector.py`, after the existing
-      `_collect_return_names_excluding_finally` function near the bottom of the
-      module (before the `FileDetector` class):
+      `src/gaze_py/analysis/detector.py`, alongside the other module-level
+      helpers (`_extract_open_mode`, `_collect_return_names_excluding_finally`),
+      after the visitor classes and before `FileDetector`:
 
       ```python
       def _has_lru_cache_decorator(
@@ -367,11 +351,28 @@ Before implementing any task, read:
           return subprocess.check_output(["date"]).decode()
 
 
+      def spawn_check_call() -> None:
+          """subprocess.check_call — GoroutineSpawn."""
+          subprocess.check_call(["true"])
+
+
       # --- MutexOp: async with param ---
 
       async def async_lock(lock) -> None:
           """async with lock: — MutexOp."""
           async with lock:
+              pass
+
+
+      async def async_mutex(mutex) -> None:
+          """async with mutex: — MutexOp."""
+          async with mutex:
+              pass
+
+
+      async def async_sem(sem) -> None:
+          """async with sem: — MutexOp (not a connection name → MutexOp by default)."""
+          async with sem:
               pass
 
 
@@ -381,8 +382,14 @@ Before implementing any task, read:
               pass
 
 
+      async def async_session(session) -> None:
+          """async with session: — DatabaseTransaction."""
+          async with session:
+              pass
+
+
       async def async_db_conn(db_conn) -> None:
-          """async with db_conn: — DatabaseTransaction (substring match)."""
+          """async with db_conn: — DatabaseTransaction (word-part 'db' match)."""
           async with db_conn:
               pass
 
@@ -393,11 +400,22 @@ Before implementing any task, read:
               pass
 
 
+      def sync_ctx_not_db(ctx) -> None:
+          """with ctx: — MutexOp, NOT DatabaseTransaction (ctx excluded from heuristic)."""
+          with ctx:
+              pass
+
+
       # --- GlobalMutation: atexit ---
 
       def register_shutdown(cleanup) -> None:
           """atexit.register — GlobalMutation."""
           atexit.register(cleanup)
+
+
+      def register_lambda_shutdown() -> None:
+          """atexit.register with lambda — GlobalMutation."""
+          atexit.register(lambda: None)
 
 
       # --- LogWrite + GlobalMutation: warnings ---
@@ -468,6 +486,13 @@ Before implementing any task, read:
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
           fn = next(t for t in targets if t.name == "spawn_check_output")
           assert any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
+
+
+      def test_subprocess_check_call_is_goroutine_spawn() -> None:
+          """subprocess.check_call → GoroutineSpawn."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "spawn_check_call")
+          assert any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
       ```
 
 - [ ] 8.2 [P] Append tests for async with MutexOp / DatabaseTransaction:
@@ -484,6 +509,20 @@ Before implementing any task, read:
           assert any(e.type == SideEffectType.MutexOp for e in fn.effects)
 
 
+      def test_async_with_mutex_is_mutex_op() -> None:
+          """async with mutex (param) → MutexOp."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "async_mutex")
+          assert any(e.type == SideEffectType.MutexOp for e in fn.effects)
+
+
+      def test_async_with_sem_is_mutex_op() -> None:
+          """async with sem (param) → MutexOp (not a connection name → MutexOp by default)."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "async_sem")
+          assert any(e.type == SideEffectType.MutexOp for e in fn.effects)
+
+
       def test_async_with_conn_is_database_transaction() -> None:
           """async with conn (param) → DatabaseTransaction."""
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
@@ -491,8 +530,15 @@ Before implementing any task, read:
           assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
 
 
+      def test_async_with_session_is_database_transaction() -> None:
+          """async with session (param) → DatabaseTransaction."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "async_session")
+          assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
+
+
       def test_async_with_db_conn_is_database_transaction() -> None:
-          """async with db_conn (param, substring match) → DatabaseTransaction."""
+          """async with db_conn (param, word-part 'db' match) → DatabaseTransaction."""
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
           fn = next(t for t in targets if t.name == "async_db_conn")
           assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
@@ -510,6 +556,13 @@ Before implementing any task, read:
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
           fn = next(t for t in targets if t.name == "sync_db_conn")
           assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
+
+
+      def test_sync_with_ctx_is_not_database_transaction() -> None:
+          """with ctx (sync) → NOT DatabaseTransaction (ctx excluded from _is_db_context)."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "sync_ctx_not_db")
+          assert not any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
 
 
       def test_async_with_non_param_does_not_emit_mutex(tmp_path: Path) -> None:
@@ -540,6 +593,41 @@ Before implementing any task, read:
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
           fn = next(t for t in targets if t.name == "register_shutdown")
           assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
+
+
+      def test_atexit_register_lambda_is_global_mutation() -> None:
+          """atexit.register(lambda) → GlobalMutation."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "register_lambda_shutdown")
+          assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
+
+
+      def test_atexit_register_not_finalizer_registration() -> None:
+          """atexit.register → NOT FinalizerRegistration."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "register_shutdown")
+          assert not any(e.type == SideEffectType.FinalizerRegistration for e in fn.effects)
+
+
+      def test_atexit_register_not_callback_invocation() -> None:
+          """atexit.register → NOT CallbackInvocation (registers, does not invoke)."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "register_shutdown")
+          assert not any(e.type == SideEffectType.CallbackInvocation for e in fn.effects)
+
+
+      def test_atexit_unregister_not_global_mutation(tmp_path: Path) -> None:
+          """atexit.unregister → NOT GlobalMutation (only .register is detected)."""
+          source = textwrap.dedent("""
+              import atexit
+              def cancel_shutdown(cleanup):
+                  atexit.unregister(cleanup)
+          """)
+          path = tmp_path / "atexit_unreg.py"
+          path.write_text(source)
+          targets = FileDetector.detect(path, root=tmp_path)
+          fn = next(t for t in targets if t.name == "cancel_shutdown")
+          assert not any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
       ```
 
 - [ ] 8.4 [P] Append tests for warnings.warn() LogWrite + GlobalMutation:
@@ -563,13 +651,38 @@ Before implementing any task, read:
           assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
-      def test_warnings_warn_emits_two_effects() -> None:
-          """warnings.warn → exactly LogWrite + GlobalMutation (two effects)."""
+      def test_warnings_warn_emits_exactly_one_each_with_distinct_ids() -> None:
+          """warnings.warn → exactly one LogWrite AND one GlobalMutation, distinct IDs (EC-003)."""
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
           fn = next(t for t in targets if t.name == "emit_warning")
-          types = {e.type for e in fn.effects}
-          assert SideEffectType.LogWrite in types
-          assert SideEffectType.GlobalMutation in types
+          log_effects = [e for e in fn.effects if e.type == SideEffectType.LogWrite]
+          mut_effects = [e for e in fn.effects if e.type == SideEffectType.GlobalMutation]
+          assert len(log_effects) == 1, f"Expected 1 LogWrite, got {len(log_effects)}"
+          assert len(mut_effects) == 1, f"Expected 1 GlobalMutation, got {len(mut_effects)}"
+          assert log_effects[0].id != mut_effects[0].id, "Effects from same node must have distinct IDs (EC-003)"
+
+
+      def test_warnings_warn_with_stacklevel_emits_both_effects(tmp_path: Path) -> None:
+          """warnings.warn(..., stacklevel=2) → both LogWrite and GlobalMutation."""
+          source = textwrap.dedent("""
+              import warnings
+              def warn_stacklevel():
+                  warnings.warn("deprecated", stacklevel=2)
+          """)
+          path = tmp_path / "warn_stacklevel.py"
+          path.write_text(source)
+          targets = FileDetector.detect(path, root=tmp_path)
+          fn = next(t for t in targets if t.name == "warn_stacklevel")
+          assert any(e.type == SideEffectType.LogWrite for e in fn.effects)
+          assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
+
+
+      def test_warnings_warn_not_finalizer_or_callback(tmp_path: Path) -> None:
+          """warnings.warn → NOT FinalizerRegistration or CallbackInvocation."""
+          targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
+          fn = next(t for t in targets if t.name == "emit_warning")
+          assert not any(e.type == SideEffectType.FinalizerRegistration for e in fn.effects)
+          assert not any(e.type == SideEffectType.CallbackInvocation for e in fn.effects)
       ```
 
 - [ ] 8.5 [P] Append tests for @lru_cache GlobalMutation:
@@ -600,7 +713,7 @@ Before implementing any task, read:
           assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
-      def test_uncached_function_not_global_mutation_from_decorator(tmp_path: Path) -> None:
+      def test_uncached_function_not_global_mutation_from_decorator() -> None:
           """Plain function with no cache decorator → no lru_cache GlobalMutation."""
           targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
           fn = next(t for t in targets if t.name == "not_cached")
@@ -626,15 +739,74 @@ Before implementing any task, read:
           targets = FileDetector.detect(path, root=tmp_path)
           fn = next(t for t in targets if t.name == "f")
           assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
+
+
+      def test_functools_lru_cache_call_form_is_global_mutation(tmp_path: Path) -> None:
+          """@functools.lru_cache(maxsize=None) → GlobalMutation."""
+          source = textwrap.dedent("""
+              import functools
+              @functools.lru_cache(maxsize=None)
+              def f(x: int) -> int:
+                  return x * x
+          """)
+          path = tmp_path / "qualified_cache_call.py"
+          path.write_text(source)
+          targets = FileDetector.detect(path, root=tmp_path)
+          fn = next(t for t in targets if t.name == "f")
+          assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
+
+
+      def test_functools_cache_qualified_form_is_global_mutation(tmp_path: Path) -> None:
+          """@functools.cache → GlobalMutation."""
+          source = textwrap.dedent("""
+              import functools
+              @functools.cache
+              def f(x: int) -> int:
+                  return x * x
+          """)
+          path = tmp_path / "qualified_cache_bare.py"
+          path.write_text(source)
+          targets = FileDetector.detect(path, root=tmp_path)
+          fn = next(t for t in targets if t.name == "f")
+          assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
+
+
+      def test_lru_cache_effect_on_definition_not_call_site(tmp_path: Path) -> None:
+          """@lru_cache effect attributed to decorated fn, NOT to its callers."""
+          source = textwrap.dedent("""
+              from functools import lru_cache
+              @lru_cache
+              def compute(x: int) -> int:
+                  return x * x
+              def caller_a() -> int:
+                  return compute(1)
+              def caller_b() -> int:
+                  return compute(2)
+              def caller_c() -> int:
+                  return compute(3)
+          """)
+          path = tmp_path / "cache_call_site.py"
+          path.write_text(source)
+          targets = FileDetector.detect(path, root=tmp_path)
+          compute_fn = next(t for t in targets if t.name == "compute")
+          assert any(e.type == SideEffectType.GlobalMutation for e in compute_fn.effects)
+          for caller in ("caller_a", "caller_b", "caller_c"):
+              caller_fn = next(t for t in targets if t.name == caller)
+              lru_effects = [
+                  e for e in caller_fn.effects
+                  if e.type == SideEffectType.GlobalMutation and "lru_cache" in e.description
+              ]
+              assert len(lru_effects) == 0, f"{caller} should not have lru_cache GlobalMutation"
       ```
 
 ## 9. CHANGELOG + version bump
 
 - [ ] 9.1 Bump version `0.5.2` → `0.5.3` in `pyproject.toml` and
-      `src/gaze_py/__init__.py`.
+      `src/gaze_py/__init__.py`. Verify the current version in `pyproject.toml`
+      before bumping — this spec was written against `0.5.2`.
 
-- [ ] 9.2 Add CHANGELOG entry under `## [Unreleased]`. Format per project
-      convention — spec reference in a `### Specs` bullet:
+- [ ] 9.2 Append the following at the end of the current `## [Unreleased]` block
+      in `CHANGELOG.md` (after any existing `### Specs` reference):
 
       ```
       ### Added
@@ -642,20 +814,25 @@ Before implementing any task, read:
         `subprocess.check_output`, `subprocess.check_call` detected as
         `GoroutineSpawn` (P2). OS child processes are concurrent tasks per EC-005.
       - `async with param:` patterns detected as `MutexOp` (P3) or
-        `DatabaseTransaction` (P2), using the same name heuristics as the
-        existing `with param:` detection. Closes the known gap documented in
-        `visit_AsyncWith`.
+        `DatabaseTransaction` (P2), using the `_is_db_context` name heuristic.
+        Closes the known gap documented in `visit_AsyncWith`.
       - `atexit.register()` detected as `GlobalMutation` (P1). Registering a
         shutdown callback mutates the interpreter-global atexit handler list.
       - `warnings.warn()` detected as `LogWrite` (P2) + `GlobalMutation` (P1).
         Warnings are a structured filterable developer output channel; they also
-        always write to `__warningregistry__` in the calling module's globals.
+        typically write to `__warningregistry__` in the calling module's globals.
       - `@lru_cache` / `@functools.lru_cache` / `@cache` / `@functools.cache`
         decorated functions detected as `GlobalMutation` (P1). The memoization
         cache is persistent global-like state shared across all callers.
 
+      ### Changed
+      - `with param:` (synchronous) connection detection now uses the shared
+        `_is_db_context` helper, aligning sync and async heuristics. Compound
+        names like `db_conn` now correctly classify as `DatabaseTransaction`.
+        Existing fixture param names (`connection`, `conn`, `lock`) are unaffected.
+
       ### Specs
-      - `openspec/changes/python-native-detection/`
+      - `openspec/changes/python-native-detection/specs/`
       ```
 
 ## 10. CI gate
@@ -670,7 +847,20 @@ Before implementing any task, read:
 The `return-none-annotation` change documents design decision EC-005/G.1
 (`return None` without annotation → no `ReturnValue`). This is already
 implemented in `detector.py:visit_Return` and has a passing test
-(`test_detector.py:98–104`). No source changes are needed.
+(`test_detector.py:98–104`).
+
+- [ ] 11.0 Add EC-005/G.1 traceability comment to `visit_Return` docstring in
+      `src/gaze_py/analysis/detector.py`. The spec requires: "the decision is
+      documented in `detector.py` `visit_Return` with reference to EC-005/G.1
+      and the spec archive." Add a comment such as:
+
+      ```python
+      # EC-005/G.1: unannotated `return None` is idiomatically equivalent to
+      # bare `return` in Python — it does not signal that None is a meaningful
+      # return value. Treating it as ReturnValue would produce false positives
+      # on a large class of void functions. Documented in:
+      # openspec/changes/archive/return-none-annotation/
+      ```
 
 - [ ] 11.1 Move `openspec/changes/return-none-annotation/` to
       `openspec/changes/archive/return-none-annotation/`:

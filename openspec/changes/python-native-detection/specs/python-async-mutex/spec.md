@@ -17,8 +17,13 @@ these effects. This mirrors the existing `with param:` constraint.
 name does NOT match the connection name heuristic → `MutexOp` (P3).
 
 The connection name heuristic (which routes to DatabaseTransaction instead)
-matches names containing any of: `conn`, `connection`, `session`, `tx`,
-`transaction`, `db`.
+is implemented by `_is_db_context(name)`: word-part split on `_`, matching
+`conn`, `connection`, `tx`, `transaction`, `db` as word parts, plus substring
+match for `conn`, `connection`, `transaction` to cover camelCase.
+
+`session` is **excluded** from the word-part set: `session_id` (a common
+HTTP/user session identifier) would otherwise be a false positive.
+`db` is word-part only (not substring) to avoid matching `debug`.
 
 Any parameter name that does not match the connection heuristic is treated as
 a lock/mutex and produces `MutexOp`.
@@ -33,7 +38,8 @@ a lock/mutex and produces `MutexOp`.
 
 ##### Scenario: async with sem parameter produces MutexOp
 - **WHEN** a function has parameter `sem` and uses `async with sem:`
-- **THEN** a `MutexOp` effect is present (semaphore name heuristic)
+- **THEN** a `MutexOp` effect is present (`sem` does not match any connection
+  keyword → MutexOp by default; there is no positive semaphore heuristic)
 
 ##### Scenario: async with local variable does NOT produce MutexOp
 - **WHEN** a function creates `lock = asyncio.Lock()` locally and uses
@@ -45,8 +51,10 @@ a lock/mutex and produces `MutexOp`.
 `async with param:` where `param` is a function parameter and the variable
 name matches the connection name heuristic → `DatabaseTransaction` (P2).
 
-The connection name heuristic matches names containing any of: `conn`,
-`connection`, `session`, `tx`, `transaction`, `db`.
+The connection name heuristic uses `_is_db_context(name)` — same as the MutexOp
+heuristic above. Word-part matches: `conn`, `connection`, `tx`, `transaction`,
+`db`. Substring matches: `conn`, `connection`, `transaction`. `session` is
+excluded (see note above). `db` is word-part only (not substring).
 
 ##### Scenario: async with conn parameter produces DatabaseTransaction
 - **WHEN** a function has parameter `conn` and uses `async with conn:`
@@ -75,3 +83,24 @@ A single `async with param:` statement produces exactly one effect — either
 - **WHEN** a function has parameter `conn` and uses `async with conn:`
 - **THEN** a `DatabaseTransaction` effect is present AND no `MutexOp` effect
   is produced for the same statement
+
+#### Sync visit_With alignment (MODIFIED requirement)
+
+The synchronous `with param:` detection path (`visit_With`) MUST use the same
+`_is_db_context` helper. This replaces the previous inline exact-set
+`{"connection", "conn", "session", "tx", "transaction"}`.
+
+##### Scenario: with db_conn produces DatabaseTransaction (sync, new match)
+- **WHEN** a function has parameter `db_conn` and uses `with db_conn:`
+- **THEN** a `DatabaseTransaction` effect is present (previously undetected)
+
+##### Scenario: with ctx does NOT produce DatabaseTransaction (sync, regression)
+- **WHEN** a function has parameter `ctx` and uses `with ctx:`
+- **THEN** NO `DatabaseTransaction` effect is produced (`ctx` is not a connection name)
+
+#### Known limitation: multi-item async with
+
+`async with asyncio.TaskGroup() as tg, lock:` — if a TaskGroup appears before
+a param-based lock in the same `async with` statement, the `break` after the
+TaskGroup match exits the item loop and the `lock` item is not inspected. This
+is an accepted limitation; the pattern is extremely unusual in practice.

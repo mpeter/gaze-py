@@ -9,7 +9,8 @@ The detector MUST detect `GlobalMutation` (P1) when a function calls
 interpreter-global atexit handler list — a module-level data structure
 maintained by the Python runtime. This is module-level global state per the
 EC-005 GlobalMutation definition. The effect is observable to any code that
-subsequently inspects `atexit._atexit` or calls `atexit.unregister()`.
+subsequently calls `atexit.unregister()` (which can de-register the handler)
+or relies on the handler being invoked at interpreter shutdown.
 
 **Why not FinalizerRegistration (P4)**: `FinalizerRegistration` is reserved
 for `weakref.finalize()`, which registers a callback triggered by garbage

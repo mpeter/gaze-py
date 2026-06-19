@@ -20,7 +20,7 @@ Current state:
 ## Goals / Non-Goals
 
 **Goals:**
-- Detect `subprocess.Popen/run/call/check_output` as `GoroutineSpawn` (P2)
+- Detect `subprocess.Popen/run/call/check_output/check_call` as `GoroutineSpawn` (P2)
 - Detect `async with param:` lock patterns as `MutexOp` (P3)
 - Detect `atexit.register()` as `GlobalMutation` (P1)
 - Detect `warnings.warn()` as both `LogWrite` (P2) and `GlobalMutation` (P1)
@@ -32,19 +32,29 @@ Current state:
 - Detecting lru_cache *call sites* (the effect is the decoration, not each call)
 - Signal, sys.settrace, threading.local — these remain deferred/closed
 - socket or network write detection (no existing NetworkWrite type)
-- Any change to existing detection paths
+- Alias-aware detection (`import subprocess as sp; sp.run()` — name-based heuristics only)
 
 ## Decisions
 
-### D1: subprocess → GoroutineSpawn via `_GOROUTINE_SPAWN_CALLS` extension
+### D1: subprocess → GoroutineSpawn via new `_SUBPROCESS_SPAWN_CALLS` constant
 
-Add `("subprocess", "Popen")`, `("subprocess", "run")`, `("subprocess", "call")`,
-`("subprocess", "check_output")`, `("subprocess", "check_call")` to
-`_GOROUTINE_SPAWN_CALLS`.
+Add a new `_SUBPROCESS_SPAWN_CALLS` frozenset constant containing:
+`("subprocess", "Popen")`, `("subprocess", "run")`, `("subprocess", "call")`,
+`("subprocess", "check_output")`, `("subprocess", "check_call")`.
 
-Also add `("concurrent.futures", "ThreadPoolExecutor")` and
-`("concurrent.futures", "ProcessPoolExecutor")` — these create worker pools
-that execute tasks concurrently, fitting GoroutineSpawn semantics.
+**Why a separate constant, not extending `_GOROUTINE_SPAWN_CALLS`**: semantic
+separation. `_GOROUTINE_SPAWN_CALLS` captures thread/coroutine spawning
+(threading.Thread, asyncio.create_task, multiprocessing.Process). OS subprocess
+spawning is a different mechanism — a child process, not a thread or coroutine.
+Keeping them in separate constants makes each set's intent clear and avoids
+mixing concurrency models in one frozenset. `_handle_goroutine_process_time`
+will be extended to check `_SUBPROCESS_SPAWN_CALLS` alongside the existing
+`_GOROUTINE_SPAWN_CALLS` check.
+
+**Note on `concurrent.futures`**: `concurrent.futures.ThreadPoolExecutor` and
+`ProcessPoolExecutor` were considered but excluded. The `obj_name` extraction
+in `visit_Call` only handles simple `ast.Name` receivers; chained attributes
+like `concurrent.futures` yield `obj_name = None` and cannot match. Deferred.
 
 **Rationale**: EC-005 maps GoroutineSpawn to "spawning a concurrent task."
 Subprocess creates an OS process that executes concurrently. Gemini verdict:
@@ -79,10 +89,10 @@ for compound words:
 def _is_db_context(name: str) -> bool:
     """Return True if the parameter name suggests a database connection context."""
     parts = set(name.lower().split("_"))
-    if parts & {"conn", "connection", "session", "tx", "transaction", "db"}:
+    if parts & {"conn", "connection", "tx", "transaction", "db"}:
         return True
     # Substring check for camelCase or unsplit compound words (e.g. dbConnection)
-    for kw in ("conn", "connection", "session", "transaction"):
+    for kw in ("conn", "connection", "transaction"):
         if kw in name.lower():
             return True
     return False
@@ -90,13 +100,40 @@ def _is_db_context(name: str) -> bool:
 
 Word-part split on `_` avoids the `ctx`-contains-`tx` false positive that pure
 substring matching would produce (`ctx` → parts `["ctx"]` → no match). The
-substring check for the four longer keywords catches camelCase compounds.
-Verified: `ctx → False`, `db_conn → True`, `context → False`, `session_id → True`.
+substring check for three longer keywords catches camelCase compounds.
+
+**`session` is intentionally excluded from the word-part set**: `session_id`
+is an extremely common parameter name for an opaque HTTP/user session identifier
+(a string or integer), not a database session object. Including `"session"` in
+word-part matching would produce `DatabaseTransaction` for `async with session_id:`
+in typical web framework code — a false positive that violates Constitution
+Principle I. `session` alone (exact name) will still match via the existing exact
+forms if added as a specific alias (deferred; the exact name `session` is common
+enough for DB session objects that it may warrant re-evaluation later).
+
+**`db` is word-part only, not substring**: `"db"` is excluded from the substring
+check deliberately. `"debug"` contains `"db"` as a substring; adding `"db"` to
+the substring list would make `debug_ctx`, `debug_info`, etc. false-positive as
+DatabaseTransaction. Word-part split handles `db_conn` (`["db", "conn"]` → `"db"` matches)
+and `my_db` (`["my", "db"]` → `"db"` matches) without the `debug` false positive.
+As a result, `dbConn` (camelCase, no underscore) → False — this is an accepted
+limitation. The word-part approach is the correct trade-off.
+
+Verified: `ctx → False`, `db_conn → True`, `context → False`, `session_id → False`,
+`session → False` (exact name no longer auto-matches; see note above), `conn → True`,
+`dbConn → False` (camelCase — accepted limitation), `my_db → True`.
 
 **`visit_AsyncWith`** will use `_is_db_context` in place of the inline set.
 **`visit_With`** will replace its inline `if ctx.id in {"connection", ...}:` guard
 with `if _is_db_context(ctx.id):`. All existing fixture param names (`connection`,
 `conn`, `lock`) classify identically — no existing tests break.
+
+**Sync `visit_With` refactor is a behaviour extension**: the old inline set was
+`{"connection", "conn", "session", "tx", "transaction"}`. The new helper drops
+`"session"` from the word-part set (see note above) and adds `"db"` as a
+word-part match. Compound names like `db_conn` now correctly classify as
+`DatabaseTransaction` in both sync and async paths where they previously did not.
+This is additive, not breaking — new matches only.
 
 This closes the known gap documented at line 1152.
 
@@ -156,8 +193,9 @@ if obj_name == "warnings" and method == "warn":
 **Rationale**: Gemini verdict: LOG_WRITE + GLOBAL_MUTATION — "two distinct,
 simultaneous side effects." LogWrite because warnings are a structured,
 filterable developer-facing channel (not raw stderr). GlobalMutation because
-`__warningregistry__` is always written as deduplication state in the calling
-module's globals.
+`__warningregistry__` is typically written as deduplication state in the calling
+module's globals under default filter settings. (Filter-configuration caveats
+apply across Python versions — see Risks.)
 
 **Emitting two effects from one call**: This is not novel — the existing
 `GlobalMutation` detection from `_check_env_var_mutation` can fire alongside
@@ -234,8 +272,11 @@ def _has_lru_cache_decorator(fn_node: ast.FunctionDef | ast.AsyncFunctionDef) ->
 
 **Placement**: Add `_LRU_CACHE_DECORATORS` constant to the constants section.
 Add `_has_lru_cache_decorator` as a module-level function (not a method —
-it does not need `self`). Call it from `FileDetector.detect()` in the
-per-function loop, before or after constructing the `FunctionVisitor`.
+it does not need `self`) alongside the other module-level helpers
+(`_extract_open_mode`, `_collect_return_names_excluding_finally`), after the
+visitor classes and before `FileDetector`. Call it from `FileDetector.detect()`
+in the per-function loop, immediately after `effects.extend(visitor.effects)`
+and before `complexity = cyclomatic_complexity(fn_node)`.
 
 ## Module Structure
 
@@ -329,3 +370,31 @@ makes the semantics explicit.
 **[Risk] `_has_lru_cache_decorator` adds a new module-level function** →
 Mitigation: consistent with `_collect_return_names_excluding_finally` and
 `_extract_open_mode` which are already module-level helpers in `detector.py`.
+
+**[Risk] `session` removed from `_is_db_context` word-part set** →
+Mitigation: `session_id` (HTTP/user session identifier) is an extremely common
+parameter name that does not indicate a database connection. Including `session`
+would produce false positives in web framework code. The exact name `session` is
+re-evaluated as a future addition; for this change it is excluded. The existing
+`db_transaction.py` fixture uses `connection`, which is unaffected.
+
+**[Risk] `dbConn` (camelCase, no underscore) is not detected** →
+Mitigation: `db` is word-part only (not substring) to avoid the `debug` false
+positive. `dbConn` without an underscore will not match. This is an accepted
+limitation — Python naming conventions strongly prefer `snake_case` for parameters,
+making camelCase DB context names rare in practice.
+
+**[Risk] `warnings.warn()` `__warningregistry__` write is not unconditional** →
+Mitigation: the `__warningregistry__` write behaviour is filter-configuration
+sensitive and varies across Python 3.11/3.12/3.13. The GlobalMutation effect
+is still correct as a conservative annotation — the write occurs under default
+filter settings. The description string is qualified to say "typically" rather
+than "always". The detection fires on the call site regardless of runtime
+filter state (AST-only — no runtime execution).
+
+**[Risk] Multi-item `async with A, B:` — `break` on TaskGroup suppresses items after it** →
+Mitigation: if `async with asyncio.TaskGroup() as tg, lock:` is used (TaskGroup
+first, param-based lock second), the `break` after the TaskGroup match exits
+the item loop and the `lock` item is not inspected. This is a known limitation
+documented in `visit_AsyncWith`'s docstring. The pattern is extremely unusual in
+practice. A future improvement could remove the `break` and use a flag instead.

@@ -11,7 +11,7 @@ or upstream coordination.
 Specifically: five Python stdlib patterns that produce side effects in real
 codebases are silently undetected:
 
-1. `subprocess.Popen/run/call/check_output` — spawns an OS child process
+1. `subprocess.Popen/run/call/check_output/check_call` — spawns an OS child process
    (concurrent with parent → GoroutineSpawn, P2)
 2. `async with param:` (lock-named parameter) — async mutex acquire
    (→ MutexOp, P3; known gap documented in `visit_AsyncWith` line 1152)
@@ -32,7 +32,8 @@ from EC-005 semantics and Python ecosystem conventions.
 ### New Capabilities
 
 - `python-subprocess-spawn`: detect `subprocess.Popen`, `subprocess.run`,
-  `subprocess.call`, `subprocess.check_output` as `GoroutineSpawn`
+  `subprocess.call`, `subprocess.check_output`, `subprocess.check_call`
+  as `GoroutineSpawn`
 - `python-async-mutex`: detect `async with param:` (lock-named parameter)
   as `MutexOp` in `visit_AsyncWith`
 - `python-atexit`: detect `atexit.register()` as `GlobalMutation`
@@ -44,10 +45,11 @@ from EC-005 semantics and Python ecosystem conventions.
 
 ### Modified Capabilities
 
-- `effect-detection`: `_GOROUTINE_SPAWN_CALLS` extended; `visit_AsyncWith`
-  extended for MutexOp; `_handle_name_call` extended for atexit and warnings;
-  `visit_FunctionDef` / `visit_AsyncFunctionDef` extended for lru_cache
-  decorator detection
+- `effect-detection`: new `_SUBPROCESS_SPAWN_CALLS` constant; `visit_AsyncWith`
+  extended for MutexOp/DatabaseTransaction; `_handle_lib_attr_call` extended
+  for atexit and warnings; `FileDetector.detect()` extended for lru_cache
+  decorator detection; `visit_With` refactored to use `_is_db_context` helper
+  (sync/async heuristic alignment — Option B)
 
 ## Capabilities
 
@@ -66,8 +68,10 @@ from EC-005 semantics and Python ecosystem conventions.
 
 ## Impact
 
-- `src/gaze_py/analysis/detector.py` — primary change file: one new constant,
-  five new detection blocks across existing visitor methods
+- `src/gaze_py/analysis/detector.py` — primary change file: two new constants
+  (`_SUBPROCESS_SPAWN_CALLS`, `_LRU_CACHE_DECORATORS`), two new module-level
+  helpers (`_is_db_context`, `_has_lru_cache_decorator`), five new detection
+  blocks, one refactor (`visit_With` heuristic alignment)
 - `tests/test_detector.py` — new test cases for each new pattern
 - `tests/testdata/analysis/` — new fixture files
 - No new runtime dependencies

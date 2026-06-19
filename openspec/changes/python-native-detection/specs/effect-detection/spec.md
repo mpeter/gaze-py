@@ -3,10 +3,15 @@
 ### Requirement: EC-005 Language Adaptation — Python-Native Detection (now shipped)
 
 > **Replaces**: The "Requirement: Python-Native Detection (Planned)" section in
-> `openspec/specs/effect-detection/spec.md` (lines 378–395). The "planned"
-> qualifier is removed. These are now normative requirements, not future
+> `specs/effect-detection/spec.md` (search for "Python-Native Detection (Planned)").
+> The "planned" qualifier is removed. These are now normative requirements, not future
 > intentions. Tests for these patterns MUST be added to the main test suite
 > when this change is merged.
+>
+> **Also modifies**: the `visit_With` heuristic for `DatabaseTransaction` detection
+> is refactored to use `_is_db_context()` (see `specs/python-async-mutex/spec.md`).
+> This is a behaviour extension: compound names like `db_conn` now match in the
+> sync path where they previously did not.
 
 The following Python-native patterns are now implemented. The canonical mapping
 table in EC-005 is extended with these rows:
