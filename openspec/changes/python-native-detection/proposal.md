@@ -63,8 +63,10 @@ from EC-005 semantics and Python ecosystem conventions.
 
 ### Modified Capabilities
 
-- `effect-detection`: detector additions only, no logic changes to
-  existing detection paths
+- `effect-detection`: detector additions and one behaviour extension —
+  `visit_With` heuristic refactored to use `_is_db_context` (compound names
+  like `db_conn` now match `DatabaseTransaction` in the sync `with` path;
+  `session` is dropped from the heuristic and now routes to `MutexOp`)
 
 ## Impact
 

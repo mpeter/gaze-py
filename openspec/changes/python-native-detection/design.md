@@ -91,8 +91,9 @@ def _is_db_context(name: str) -> bool:
     parts = set(name.lower().split("_"))
     if parts & {"conn", "connection", "tx", "transaction", "db"}:
         return True
-    # Substring check for camelCase or unsplit compound words (e.g. dbConnection)
-    for kw in ("conn", "connection", "transaction"):
+    # Substring check for camelCase compound words — long keywords only.
+    # "conn" is excluded from substring to avoid matching "reconnect"/"connector".
+    for kw in ("connection", "transaction"):
         if kw in name.lower():
             return True
     return False
@@ -100,28 +101,32 @@ def _is_db_context(name: str) -> bool:
 
 Word-part split on `_` avoids the `ctx`-contains-`tx` false positive that pure
 substring matching would produce (`ctx` → parts `["ctx"]` → no match). The
-substring check for three longer keywords catches camelCase compounds.
+substring check for two long keywords (`connection`, `transaction`) catches
+camelCase compounds without false positives.
 
 **`session` is intentionally excluded from the word-part set**: `session_id`
-is an extremely common parameter name for an opaque HTTP/user session identifier
-(a string or integer), not a database session object. Including `"session"` in
-word-part matching would produce `DatabaseTransaction` for `async with session_id:`
-in typical web framework code — a false positive that violates Constitution
-Principle I. `session` alone (exact name) will still match via the existing exact
-forms if added as a specific alias (deferred; the exact name `session` is common
-enough for DB session objects that it may warrant re-evaluation later).
+and `session` alone are extremely common parameter names for HTTP/user session
+identifiers (strings/integers), not database connection objects. Including
+`"session"` would produce `DatabaseTransaction` for `with session_id:` in typical
+web framework code — a false positive violating Constitution Principle I.
+Consequence: `async with session:` and `with session:` produce `MutexOp`, not
+`DatabaseTransaction`. Database session objects should be named `db_session`,
+`conn`, or `connection` to be unambiguous.
 
-**`db` is word-part only, not substring**: `"db"` is excluded from the substring
-check deliberately. `"debug"` contains `"db"` as a substring; adding `"db"` to
-the substring list would make `debug_ctx`, `debug_info`, etc. false-positive as
-DatabaseTransaction. Word-part split handles `db_conn` (`["db", "conn"]` → `"db"` matches)
-and `my_db` (`["my", "db"]` → `"db"` matches) without the `debug` false positive.
-As a result, `dbConn` (camelCase, no underscore) → False — this is an accepted
-limitation. The word-part approach is the correct trade-off.
+**`conn` is word-part only, not substring**: `"reconnect"`, `"connector"`,
+`"disconnect"` all contain `"conn"`. Adding `"conn"` to the substring list would
+produce false positives on retry-logic and driver parameters. Word-part split
+already handles `db_conn`, `my_conn`, `conn` (bare). The substring list uses only
+`"connection"` and `"transaction"` — both long enough to avoid false matches.
 
-Verified: `ctx → False`, `db_conn → True`, `context → False`, `session_id → False`,
-`session → False` (exact name no longer auto-matches; see note above), `conn → True`,
-`dbConn → False` (camelCase — accepted limitation), `my_db → True`.
+**`db` is word-part only, not substring**: `"debug"` contains `"db"`. Word-part
+split handles `db_conn`, `my_db` without the `debug` false positive. `dbConn`
+(camelCase) → False — accepted limitation.
+
+Verified: `ctx → False`, `db_conn → True`, `context → False`, `session → False`,
+`session_id → False`, `conn → True`, `reconnect → False` (conn not in substring),
+`connector → False`, `dbConn → False` (camelCase — accepted), `my_db → True`,
+`dbConnection → True` (substring "connection" matches).
 
 **`visit_AsyncWith`** will use `_is_db_context` in place of the inline set.
 **`visit_With`** will replace its inline `if ctx.id in {"connection", ...}:` guard
@@ -335,18 +340,28 @@ warnings.warn("msg", DeprecationWarning)  # ← LogWrite + GlobalMutation
 
 ```python
 from functools import lru_cache, cache
+import functools
 
 @lru_cache          # ← GlobalMutation on the function definition
 def compute(x): ...
 
-@lru_cache(maxsize=128)   # ← GlobalMutation
+@lru_cache(maxsize=128)   # ← GlobalMutation (call form)
 def fetch(url): ...
 
 @cache              # ← GlobalMutation
 def memoized(n): ...
 
-@functools.lru_cache        # ← GlobalMutation
+@functools.lru_cache        # ← GlobalMutation (qualified bare)
 def qualified(x): ...
+
+@functools.lru_cache(maxsize=None)  # ← GlobalMutation (qualified call)
+def qualified_call(x): ...
+
+@functools.cache            # ← GlobalMutation (qualified bare)
+def qualified_cache(x): ...
+
+@functools.cache()          # ← GlobalMutation (qualified call — zero args)
+def qualified_cache_call(x): ...
 ```
 
 ## Risks / Trade-offs

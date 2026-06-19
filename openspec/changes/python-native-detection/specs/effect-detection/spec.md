@@ -26,7 +26,8 @@ table in EC-005 is extended with these rows:
 | `@lru_cache` / `@cache` / `@functools.lru_cache` / `@functools.cache` | GlobalMutation | P1 | Annotated at definition site; persistent shared cache |
 
 The full authoritative detection rules for each pattern are in the
-capability-specific delta specs within this change:
+capability-specific delta specs within this change (paths relative to the change
+directory; will be updated at archive time):
 
 - `specs/python-subprocess-spawn/spec.md` — subprocess GoroutineSpawn
 - `specs/python-async-mutex/spec.md` — async with MutexOp / DatabaseTransaction
