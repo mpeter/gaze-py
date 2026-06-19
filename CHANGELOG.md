@@ -65,6 +65,33 @@ All notable changes to gaze-py are documented here.
 - `openspec/changes/report-command/` (superseded by `ai-http-adapters`)
 - `openspec/changes/ai-http-adapters/` (PR #39)
 
+### Added
+- `subprocess.Popen`, `subprocess.run`, `subprocess.call`,
+  `subprocess.check_output`, `subprocess.check_call` detected as
+  `GoroutineSpawn` (P2). OS child processes are concurrent tasks per EC-005.
+- `async with param:` patterns detected as `MutexOp` (P3) or
+  `DatabaseTransaction` (P2), using the `_is_db_context` name heuristic.
+  Closes the known gap documented in `visit_AsyncWith`.
+- `atexit.register()` detected as `GlobalMutation` (P1). Registering a
+  shutdown callback mutates the interpreter-global atexit handler list.
+- `warnings.warn()` detected as `LogWrite` (P2) + `GlobalMutation` (P1).
+  Warnings are a structured filterable developer output channel; they also
+  typically write to `__warningregistry__` in the calling module's globals.
+- `@lru_cache` / `@functools.lru_cache` / `@cache` / `@functools.cache`
+  decorated functions detected as `GlobalMutation` (P1). The memoization
+  cache is persistent global-like state shared across all callers.
+
+### Changed
+- `with param:` (synchronous) connection detection now uses the shared
+  `_is_db_context` helper, aligning sync and async heuristics. Compound
+  names like `db_conn` now correctly classify as `DatabaseTransaction`.
+  Existing fixture param names (`connection`, `conn`, `lock`) are unaffected.
+  Note: `session` is excluded from the heuristic — `with session:` now
+  produces `MutexOp` (previously `DatabaseTransaction` via the old inline set).
+
+### Specs
+- `openspec/changes/python-native-detection/specs/`
+
 ---
 
 ### Added (prior)
