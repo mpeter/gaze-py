@@ -6,7 +6,7 @@ Before implementing, read:
 
 ## 1. Refactor `detector.py`
 
-- [ ] 1.1 In `src/gaze_py/analysis/detector.py`, immediately before the existing
+- [x] 1.1 In `src/gaze_py/analysis/detector.py`, immediately before the existing
       `_has_lru_cache_decorator` function (currently line ~1501), insert the new
       predicate:
 
@@ -60,7 +60,7 @@ Before implementing, read:
           return False
       ```
 
-- [ ] 1.2 Replace the **entire body** of `_has_lru_cache_decorator` (keep the
+- [x] 1.2 Replace the **entire body** of `_has_lru_cache_decorator` (keep the
       function signature and a simplified docstring; replace the `for` loop and
       all `if … return True` branches) with:
 
@@ -85,9 +85,9 @@ Before implementing, read:
 
 ## 2. CI gate
 
-- [ ] 2.1 [P] `uv run ruff check .`
-- [ ] 2.2 [P] `uv run ruff format --check .`
-- [ ] 2.3 [P] `uv run mypy --strict src/`
-- [ ] 2.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
+- [x] 2.1 [P] `uv run ruff check .`
+- [x] 2.2 [P] `uv run ruff format --check .`
+- [x] 2.3 [P] `uv run mypy --strict src/`
+- [x] 2.4     `uv run pytest -m "not slow" --cov=gaze_py --cov-fail-under=85`
 
 <!-- spec-review: passed -->
