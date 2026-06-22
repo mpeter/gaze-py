@@ -25,6 +25,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -48,7 +49,7 @@ from gaze_py.crap.scorer import (
     quadrant,
     recommended_actions,
 )
-from gaze_py.report.json_formatter import SCHEMA, quality_to_json, to_json
+from gaze_py.report.json_formatter import SCHEMA, analysis_to_json, quality_to_json
 from gaze_py.report.text_formatter import to_text
 from gaze_py.taxonomy.exceptions import GazeConfigError, GazeParseError
 from gaze_py.taxonomy.models import (
@@ -176,6 +177,7 @@ def analyze(
     # --verbose implies --classify
     run_classify = classify or verbose
 
+    start_time = time.monotonic()
     targets = _run_detect_classify(
         src_path.resolve(),
         config=config,
@@ -197,8 +199,8 @@ def analyze(
         crap_threshold=config.crap_threshold,
         gaze_crap_threshold=config.gaze_crap_threshold,
     )
-    result = AnalysisResult(functions=targets, summary=summary)
-    _emit(result, output_format)
+    result = AnalysisResult(results=targets, summary=summary)
+    _emit(result, output_format, start_time=start_time)
 
 
 # ---------------------------------------------------------------------------
@@ -653,7 +655,11 @@ def _emit_quality_text(reports: Sequence[QualityReport], *, src_path: Path) -> N
     click.echo(sep)
 
     for report in reports:
-        fn_label = report.target_function or "?"
+        fn_label = (
+            report.target_function.function
+            if isinstance(report.target_function, FunctionTarget)
+            else "?"
+        )
         test_label = f" (← {report.test_function})"
         fn_col = f"{fn_label}{test_label}"
 
@@ -720,7 +726,11 @@ def _check_min_contract_coverage(reports: Sequence[QualityReport], threshold: fl
     coverages: list[tuple[str, float]] = []
     for report in reports:
         if report.contract_coverage is not None and report.contract_coverage.percentage is not None:
-            fn_name = report.target_function or report.test_function
+            fn_name = (
+                report.target_function.function
+                if isinstance(report.target_function, FunctionTarget)
+                else report.test_function
+            )
             coverages.append((fn_name, report.contract_coverage.percentage))
 
     if not coverages:
@@ -1107,8 +1117,8 @@ def _enforce_min_contract_coverage_from_result(
         return
 
     coverages = [
-        (t.name, t.score.contract_coverage)
-        for t in result.functions
+        (t.function, t.score.contract_coverage)
+        for t in result.results
         if t.score is not None and t.score.contract_coverage is not None
     ]
     if not coverages:
@@ -1212,9 +1222,7 @@ def _assemble_report_payload(result: AnalysisResult) -> str:
     Returns:
         JSON string representation of the analysis result.
     """
-    from gaze_py.report.json_formatter import to_json
-
-    return to_json(result)
+    return analysis_to_json(result)
 
 
 def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
@@ -1641,10 +1649,10 @@ def _run_detect_classify(
 
         for target in targets:
             # Apply --include-unexported filter.
-            if not include_unexported and target.name.startswith("_"):
+            if not include_unexported and target.function.startswith("_"):
                 continue
             # Apply --function name filter.
-            if function_filter is not None and target.name != function_filter:
+            if function_filter is not None and target.function != function_filter:
                 continue
             all_targets.append(target)
 
@@ -1717,8 +1725,8 @@ def _enrich_with_quality(
 
     # include_unexported defaults to True — matches _run_crap() at line 1762.
     coverage_map = build_contract_coverage_map(src, resolved_tests, config)
-    for target in result.functions:
-        ccr = coverage_map.get(target.name)
+    for target in result.results:
+        ccr = coverage_map.get(target.function)
         if ccr is not None:
             # "no_test_coverage": percentage=None → else branch →
             # gaze_crap stays null per Go contract (D5).
@@ -1729,7 +1737,7 @@ def _enrich_with_quality(
                 quality_result=ccr,
             )
     # Re-build summary to reflect updated contract_coverage data.
-    result.summary = _build_summary(result.functions, config=config, coverage_data=coverage_data)
+    result.summary = _build_summary(result.results, config=config, coverage_data=coverage_data)
 
 
 def _run_crap(
@@ -1766,18 +1774,26 @@ def _run_crap(
         _score_target(target, line_coverage_frac=line_coverage_frac, config=config)
 
     summary = _build_summary(targets, config=config, coverage_data=coverage_data)
-    return AnalysisResult(functions=targets, summary=summary)
+    return AnalysisResult(results=targets, summary=summary)
 
 
-def _emit(result: AnalysisResult, output_format: str) -> None:
+def _emit(
+    result: AnalysisResult,
+    output_format: str,
+    *,
+    start_time: float | None = None,
+) -> None:
     """Emit the analysis result in the requested format.
 
     Args:
         result: The AnalysisResult to emit.
         output_format: One of "json" or "text".
+        start_time: time.monotonic() captured before analysis ran. Used to
+            compute duration_ms in the metadata block. When None, duration_ms
+            is 0.
     """
     if output_format == "json":
-        click.echo(to_json(result))
+        click.echo(analysis_to_json(result, start_time=start_time))
     else:
         click.echo(to_text(result))
 

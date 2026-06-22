@@ -1,46 +1,17 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "dewey": {
+    "general-dev": {
       "type": "remote",
-      "url": "http://127.0.0.1:3333/mcp",
-      "enabled": true
+      "url": "http://127.0.0.1:8080/v0/groups/general-dev/mcp"
     },
-    "replicator": {
-      "type": "local",
-      "command": [
-        "replicator",
-        "serve"
-      ],
-      "enabled": true
-    },
-    "fieldkit-search": {
+    "general-dewey": {
       "type": "remote",
-      "url": "http://127.0.0.1:8080/v0/groups/fieldkit-search/mcp"
-    }
-  },
-  "permission": {
-    "bash": {
-      "gh pr create*unbound-force*": "deny",
-      "gh pr merge*unbound-force*": "deny",
-      "gh pr edit*unbound-force*": "deny",
-      "gh pr close*unbound-force*": "deny",
-      "gh pr reopen*unbound-force*": "deny",
-      "gh pr review *unbound-force*": "deny",
-      "gh issue create*unbound-force*": "deny",
-      "gh issue edit*unbound-force*": "deny",
-      "gh issue close*unbound-force*": "deny",
-      "gh issue reopen*unbound-force*": "deny",
-      "gh release create*unbound-force*": "deny",
-      "gh repo create*unbound-force*": "deny",
-      "gh repo fork*unbound-force*": "deny",
-      "gh repo delete*unbound-force*": "deny",
-      "gh api*unbound-force*": "deny",
-      "gh pr create*": "ask",
-      "gh pr merge*": "ask",
-      "gh issue create*": "ask",
-      "gh release create*": "ask",
-      "gh repo delete*": "ask"
+      "url": "http://127.0.0.1:8080/v0/groups/general-dewey/mcp"
+    },
+    "general-replicator": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8080/v0/groups/general-replicator/mcp"
     }
   }
 }

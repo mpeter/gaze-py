@@ -31,7 +31,7 @@ Use `--max-crapload` as a CI gate to fail when too many high-CRAP functions exis
 
 **Text** (`--format text`, default): Per-function table with CC, coverage %, CRAP score, quadrant, and fix strategy. Summary shows CRAPload.
 
-**JSON** (`--format json`): Full `AnalysisResult` including all CRAP-derived fields. See `gazepy schema`.
+**JSON** (`--format json`): Top-level envelope is `{"results": [...], "summary": {...}}`. Each entry in `results` wraps function identity in a `target` object (`package`, `function`, `receiver`, `signature`, `location`) and includes `metadata` (`gaze_version`, `duration_ms`, `timestamp`). CRAP-derived fields (`line_coverage`, `crap`, `gaze_crap`, `fix_strategy`, `quadrant`) appear at the top level of each result entry. See `gazepy schema`.
 
 ## CI Integration
 

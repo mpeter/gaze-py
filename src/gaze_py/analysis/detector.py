@@ -1745,6 +1745,30 @@ class _ClosureVisitor(ast.NodeVisitor):
 # ---------------------------------------------------------------------------
 
 
+def _build_class_method_map(module: ast.Module) -> dict[int, str]:
+    """Build a map from function node id → enclosing class name.
+
+    Walks the module AST once to record which function definitions are direct
+    methods of a ClassDef (appear in the class body at depth 1). Used to
+    populate FunctionTarget.receiver during detection.
+
+    Args:
+        module: Parsed AST module node.
+
+    Returns:
+        Dict mapping id(fn_node) → class_name for all direct class methods.
+        Module-level functions are not included (they have no enclosing class).
+    """
+    fn_to_class: dict[int, str] = {}
+    for class_node in ast.walk(module):
+        if not isinstance(class_node, ast.ClassDef):
+            continue
+        for stmt in class_node.body:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                fn_to_class[id(stmt)] = class_node.name
+    return fn_to_class
+
+
 class FileDetector:
     """Detects side effects in a Python source file using AST-only analysis.
 
@@ -1804,16 +1828,22 @@ class FileDetector:
         sentinel_pairs = _sentinel_effects(module, rel_path)
         if sentinel_pairs:
             module_target = FunctionTarget(
-                name="<module>",
+                function="<module>",
                 file_path=rel_path,
                 line=1,
                 complexity=1,
+                package=rel_path,
+                receiver=None,
+                signature="def <module>()",
                 caller_count=0,
                 effects=[effect for _, effect in sentinel_pairs],
             )
             targets.append(module_target)
 
         # --- Phase 2: Per-function pass ---
+        # Build a map from function node id → enclosing class name for receiver.
+        _fn_to_class = _build_class_method_map(module)
+
         # Walk ALL function definitions at any nesting level
         for fn_node in ast.walk(module):
             if not isinstance(fn_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -1876,17 +1906,114 @@ class FileDetector:
             if callers is not None:
                 caller_count = callers.get(fn_name, 0)
 
+            # Resolve receiver (class name for methods, None for module-level).
+            receiver: str | None = _fn_to_class.get(id(fn_node))
+
+            # Reconstruct signature from AST arguments.
+            signature = _build_signature(fn_node, fn_name)
+
             target = FunctionTarget(
-                name=fn_name,
+                function=fn_name,
                 file_path=rel_path,
                 line=fn_node.lineno,
                 complexity=complexity,
+                package=rel_path,
+                receiver=receiver,
+                signature=signature,
                 caller_count=caller_count,
                 effects=effects,
             )
             targets.append(target)
 
         return targets
+
+
+def _format_annotation(node: ast.expr | None) -> str:
+    """Format an AST annotation node as a string. Returns '' on failure.
+
+    Args:
+        node: An AST expression node representing a type annotation, or None.
+
+    Returns:
+        String representation of the annotation, or empty string when absent
+        or when ast.unparse() raises.
+    """
+    if node is None:
+        return ""
+    try:
+        return ast.unparse(node)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _build_signature(fn_node: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> str:
+    """Reconstruct function signature from AST arguments node.
+
+    Produces a human-readable signature string in the form:
+        def name(param: Type = ...) -> ReturnType
+
+    Handles positional-only, regular, *args, keyword-only, and **kwargs
+    parameters. Default values are represented as '...' (the actual value
+    is not available from the AST without evaluating it).
+
+    Args:
+        fn_node: The function definition AST node.
+        name: The simple function name (used in the 'def name(...)' prefix).
+
+    Returns:
+        Signature string. Falls back to 'def name(...)' on any error.
+    """
+    try:
+        args = fn_node.args
+        parts: list[str] = []
+
+        # positional-only params (before /)
+        for arg in args.posonlyargs:
+            anno = _format_annotation(arg.annotation)
+            parts.append(f"{arg.arg}: {anno}" if anno else arg.arg)
+        if args.posonlyargs:
+            parts.append("/")
+
+        # regular args
+        n_defaults = len(args.defaults)
+        n_args = len(args.args)
+        for i, arg in enumerate(args.args):
+            default_offset = i - (n_args - n_defaults)
+            anno = _format_annotation(arg.annotation)
+            s = f"{arg.arg}: {anno}" if anno else arg.arg
+            if default_offset >= 0:
+                s += " = ..."
+            parts.append(s)
+
+        # *args
+        if args.vararg:
+            anno = _format_annotation(args.vararg.annotation)
+            parts.append(f"*{args.vararg.arg}: {anno}" if anno else f"*{args.vararg.arg}")
+        elif args.kwonlyargs:
+            parts.append("*")
+
+        # keyword-only args
+        for i, arg in enumerate(args.kwonlyargs):
+            default = args.kw_defaults[i]
+            anno = _format_annotation(arg.annotation)
+            s = f"{arg.arg}: {anno}" if anno else arg.arg
+            if default is not None:
+                s += " = ..."
+            parts.append(s)
+
+        # **kwargs
+        if args.kwarg:
+            anno = _format_annotation(args.kwarg.annotation)
+            parts.append(f"**{args.kwarg.arg}: {anno}" if anno else f"**{args.kwarg.arg}")
+
+        # return annotation
+        ret = _format_annotation(fn_node.returns)
+        params = ", ".join(parts)
+        if ret:
+            return f"def {name}({params}) -> {ret}"
+        return f"def {name}({params})"
+    except Exception:  # noqa: BLE001
+        return f"def {name}(...)"
 
 
 def _has_nonlocal(fn_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:

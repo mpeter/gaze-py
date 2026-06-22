@@ -63,10 +63,13 @@ def _make_target(
 ) -> FunctionTarget:
     """Build a FunctionTarget with optional score fields."""
     target = FunctionTarget(
-        name=name,
+        function=name,
         file_path=file_path,
         line=1,
         complexity=complexity,
+        package=file_path,
+        receiver=None,
+        signature=f"def {name}()",
     )
     if with_effects:
         target.effects = [_make_effect()]
@@ -96,7 +99,7 @@ def _make_result(
         crap_threshold=crap_threshold,
         gaze_crap_threshold=gaze_crap_threshold,
     )
-    return AnalysisResult(functions=targets, summary=summary)
+    return AnalysisResult(results=targets, summary=summary)
 
 
 # ---------------------------------------------------------------------------
@@ -111,11 +114,12 @@ def test_oc002_json_function_has_required_fields() -> None:
     assert output
     data = json.loads(output)
 
-    assert "functions" in data
-    assert len(data["functions"]) == 1
-    fn = data["functions"][0]
+    assert "results" in data
+    assert len(data["results"]) == 1
+    fn = data["results"][0]
 
     # Required fields per OC-002
+    assert "target" in fn
     assert "side_effects" in fn
     assert "line_coverage" in fn
     assert "crap" in fn
@@ -162,7 +166,7 @@ def test_oc002_recommended_actions_entry_keys() -> None:
         crap_threshold=15.0,
         gaze_crap_threshold=15.0,
     )
-    result = AnalysisResult(functions=[target], summary=summary)
+    result = AnalysisResult(results=[target], summary=summary)
     output = to_json(result)
     assert output
     data = json.loads(output)
@@ -210,7 +214,7 @@ def test_oc003_line_coverage_is_null_when_not_provided() -> None:
     assert output
     data = json.loads(output)
 
-    fn = data["functions"][0]
+    fn = data["results"][0]
     assert "line_coverage" in fn
     assert fn["line_coverage"] is None  # JSON null, not 0.0
 
@@ -223,7 +227,7 @@ def test_oc003_effect_confidence_range_is_null_key_present() -> None:
     assert output
     data = json.loads(output)
 
-    fn = data["functions"][0]
+    fn = data["results"][0]
     # Key must exist AND value must be null
     assert "effect_confidence_range" in fn
     assert fn["effect_confidence_range"] is None
@@ -232,9 +236,9 @@ def test_oc003_effect_confidence_range_is_null_key_present() -> None:
 def test_oc003_effect_confidence_range_serializes_as_list() -> None:
     """OC-003 / AC3: non-None effect_confidence_range serializes as [min, max] list in JSON.
 
-    dataclasses.asdict() converts tuples to lists. This test regression-locks
-    that conversion so a future change to the field type does not silently break
-    JSON consumers expecting a two-element array.
+    The formatter explicitly converts the tuple to a list. This test
+    regression-locks that conversion so a future change to the field type does
+    not silently break JSON consumers expecting a two-element array.
     """
     target = _make_target()
     # Override score with a non-None effect_confidence_range tuple
@@ -246,7 +250,7 @@ def test_oc003_effect_confidence_range_serializes_as_list() -> None:
     assert output
     data = json.loads(output)
 
-    fn = data["functions"][0]
+    fn = data["results"][0]
     assert "effect_confidence_range" in fn
     assert fn["effect_confidence_range"] == [60, 85]  # list, not tuple  # noqa: PLR2004
     assert isinstance(fn["effect_confidence_range"], list)
@@ -258,10 +262,13 @@ def test_oc003_contract_coverage_reason_for_pure_function() -> None:
     """OC-003: contract_coverage_reason = 'no_effects_detected' for pure functions."""
     # A pure function has no effects
     target = FunctionTarget(
-        name="pure_func",
+        function="pure_func",
         file_path="test.py",
         line=1,
         complexity=1,
+        package="test.py",
+        receiver=None,
+        signature="def pure_func()",
     )
     target.effects = []  # No effects
     target.score = Score(
@@ -273,7 +280,7 @@ def test_oc003_contract_coverage_reason_for_pure_function() -> None:
     assert output
     data = json.loads(output)
 
-    fn = data["functions"][0]
+    fn = data["results"][0]
     assert fn.get("contract_coverage_reason") == "no_effects_detected"
 
 
@@ -308,7 +315,7 @@ def test_json_output_enum_values_are_strings() -> None:
     assert output
     data = json.loads(output)
 
-    fn = data["functions"][0]
+    fn = data["results"][0]
     effects = fn["side_effects"]
     assert len(effects) > 0
     # Effect type should be a string, not an object
@@ -324,7 +331,7 @@ def test_json_output_tier_enum_is_string() -> None:
     assert output
     data = json.loads(output)
 
-    fn = data["functions"][0]
+    fn = data["results"][0]
     effects = fn["side_effects"]
     assert isinstance(effects[0]["tier"], str)
 

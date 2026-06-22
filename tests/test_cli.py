@@ -64,7 +64,7 @@ def test_analyze_json_exits_zero() -> None:
     result = runner.invoke(cli, ["analyze", str(_TESTDATA), "--format=json"])
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
     assert "summary" in data
 
 
@@ -82,7 +82,7 @@ def test_analyze_default_format_is_json() -> None:
     result = runner.invoke(cli, ["analyze", str(_TESTDATA)])
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
 
 
 # ---------------------------------------------------------------------------
@@ -96,10 +96,11 @@ def test_analyze_crap_fields_null_in_json() -> None:
     result = runner.invoke(cli, ["analyze", str(_TESTDATA / "return_value.py"), "--format=json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    for fn in data["functions"]:
-        assert fn["crap"] is None, f"Expected null crap, got {fn['crap']} for {fn['name']}"
-        assert fn["fix_strategy"] is None, f"Expected null fix_strategy for {fn['name']}"
-        assert fn["line_coverage"] is None, f"Expected null line_coverage for {fn['name']}"
+    for fn in data["results"]:
+        fn_name = fn["target"]["function"]
+        assert fn["crap"] is None, f"Expected null crap, got {fn['crap']} for {fn_name}"
+        assert fn["fix_strategy"] is None, f"Expected null fix_strategy for {fn_name}"
+        assert fn["line_coverage"] is None, f"Expected null line_coverage for {fn_name}"
 
 
 def test_analyze_summary_crapload_null() -> None:
@@ -111,6 +112,228 @@ def test_analyze_summary_crapload_null() -> None:
     assert data["summary"]["crapload"] is None, (
         f"Expected null crapload, got {data['summary']['crapload']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# gazepy analyze — JSON schema compatibility (T122, T122b, T123, T126b, T127)
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_json_schema_envelope() -> None:
+    """T122: results[0][target] has all 5 sub-keys with correct types (FR-002).
+    T122b: schema regression guard — results key present, target nested, metadata present.
+    """
+    runner = CliRunner()
+    result = runner.invoke(cli, ["analyze", str(_TESTDATA / "return_value.py"), "--format=json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+
+    # T122b: regression guard — top-level must be 'results' not 'functions'
+    assert "results" in data, "top-level key must be 'results'"
+    assert "functions" not in data, "old 'functions' key must not be present"
+    assert len(data["results"]) > 0
+
+    r0 = data["results"][0]
+    # T122b: target must be nested, not flat
+    assert "target" in r0, "results[0] must have 'target' key"
+    # T122b: metadata must be present
+    assert "metadata" in r0, "results[0] must have 'metadata' key"
+    assert "gaze_version" in r0["metadata"], "metadata must have 'gaze_version'"
+
+    # T122: all 5 target sub-keys present with correct types
+    t = r0["target"]
+    assert isinstance(t.get("package"), str), (
+        f"target.package must be str, got {t.get('package')!r}"
+    )
+    assert isinstance(t.get("function"), str), (
+        f"target.function must be str, got {t.get('function')!r}"
+    )
+    assert t.get("receiver") is None or isinstance(t.get("receiver"), str), (
+        f"target.receiver must be str|null, got {t.get('receiver')!r}"
+    )
+    assert isinstance(t.get("signature"), str), (
+        f"target.signature must be str, got {t.get('signature')!r}"
+    )
+    assert isinstance(t.get("location"), str), (
+        f"target.location must be str, got {t.get('location')!r}"
+    )
+
+
+def test_analyze_json_metadata_fields() -> None:
+    """T123: metadata has gaze_version, duration_ms (int ≥ 0), timestamp (RFC3339 Z)."""
+    import re
+
+    import gaze_py
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["analyze", str(_TESTDATA / "return_value.py"), "--format=json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    meta = data["results"][0]["metadata"]
+
+    assert meta["gaze_version"] == gaze_py.__version__, (
+        f"gaze_version mismatch: {meta['gaze_version']!r} != {gaze_py.__version__!r}"
+    )
+    assert isinstance(meta["duration_ms"], int) and meta["duration_ms"] >= 0, (
+        f"duration_ms must be non-negative int, got {meta['duration_ms']!r}"
+    )
+    ts_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+    assert re.match(ts_pattern, meta["timestamp"]), (
+        f"timestamp must match RFC3339 Z format, got {meta['timestamp']!r}"
+    )
+
+
+def test_analyze_function_target_receiver_method_vs_module(tmp_path: Path) -> None:
+    """T126b: receiver is class name for methods, null for module-level functions.
+
+    Writes inline source strings to tmp_path — not testdata files — to avoid
+    coupling to production file content.
+    """
+    import textwrap
+
+    from gaze_py.analysis.detector import FileDetector
+
+    root = tmp_path
+
+    # Method case: receiver should be "Foo"
+    method_file = tmp_path / "method_case.py"
+    method_file.write_text(
+        textwrap.dedent("""\
+        class Foo:
+            def bar(self) -> int:
+                return 42
+    """)
+    )
+    targets = FileDetector.detect(method_file, root=root)
+    bar = next((t for t in targets if t.function == "bar"), None)
+    assert bar is not None, "bar not found"
+    assert bar.receiver == "Foo", f"Expected receiver='Foo', got {bar.receiver!r}"
+
+    # Module-level case: receiver should be None
+    module_file = tmp_path / "module_case.py"
+    module_file.write_text("def baz() -> None:\n    pass\n")
+    targets2 = FileDetector.detect(module_file, root=root)
+    baz = next((t for t in targets2 if t.function == "baz"), None)
+    assert baz is not None, "baz not found"
+    assert baz.receiver is None, f"Expected receiver=None, got {baz.receiver!r}"
+
+    # *args / **kwargs case: signature must contain them, not fallback "def f(...)"
+    variadic_file = tmp_path / "variadic_case.py"
+    variadic_file.write_text("def f(*args: int, **kwargs: str) -> None:\n    pass\n")
+    targets3 = FileDetector.detect(variadic_file, root=root)
+    f = next((t for t in targets3 if t.function == "f"), None)
+    assert f is not None, "f not found"
+    assert "*args" in f.signature, f"Expected *args in signature, got {f.signature!r}"
+    assert "**kwargs" in f.signature, f"Expected **kwargs in signature, got {f.signature!r}"
+    assert f.signature != "def f(...)", f"Must not use fallback 'def f(...)', got {f.signature!r}"
+
+    # Return annotation case
+    annotated_file = tmp_path / "annotated_case.py"
+    annotated_file.write_text("def g() -> int:\n    return 1\n")
+    targets4 = FileDetector.detect(annotated_file, root=root)
+    g = next((t for t in targets4 if t.function == "g"), None)
+    assert g is not None, "g not found"
+    assert "-> int" in g.signature, f"Expected '-> int' in signature, got {g.signature!r}"
+
+
+def test_schema_command_uses_results_key() -> None:
+    """T127: gazepy schema output uses 'results' key, not 'functions'."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["schema"])
+    assert result.exit_code == 0, result.output
+    schema = json.loads(result.output)
+    # The schema should reference 'results' not 'functions'
+    schema_str = json.dumps(schema)
+    assert '"results"' in schema_str or "results" in schema_str, (
+        "schema must reference 'results' key"
+    )
+    assert '"functions"' not in schema_str, "schema must not reference old 'functions' key"
+
+
+# ---------------------------------------------------------------------------
+# gazepy quality — schema envelope (T124, T125, T126)
+# ---------------------------------------------------------------------------
+
+
+def test_quality_json_envelope() -> None:
+    """T124: quality JSON output uses quality_reports/quality_summary envelope."""
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "quality",
+            str(_QUALITY_SIMPLE_SRC),
+            "--tests",
+            str(_QUALITY_TESTS / "test_simple.py"),
+            "--format=json",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    data = json.loads(result.output)
+    assert "quality_reports" in data, "top-level must have 'quality_reports'"
+    assert "quality_summary" in data, "top-level must have 'quality_summary'"
+    assert isinstance(data["quality_reports"], list)
+
+    # T124: quality_summary fields
+    qs = data["quality_summary"]
+    assert "total_tests" in qs
+    assert "average_contract_coverage" in qs
+    assert isinstance(qs.get("worst_coverage_tests"), list), (
+        f"worst_coverage_tests must be list, got {qs.get('worst_coverage_tests')!r}"
+    )
+    assert "assertion_detection_confidence" in qs
+    assert isinstance(qs["assertion_detection_confidence"], int)
+
+    # T125: per-report fields
+    for r in data["quality_reports"]:
+        assert "over_specification" in r, f"Missing over_specification in {r.get('test_function')}"
+        assert "assertion_count" in r, f"Missing assertion_count in {r.get('test_function')}"
+        assert "assertion_detection_confidence" in r
+        assert "test_location" in r
+        ratio = r["over_specification"].get("ratio")
+        assert isinstance(ratio, float) and 0.0 <= ratio <= 1.0, (
+            f"over_specification.ratio must be float in [0,1], got {ratio!r}"
+        )
+
+    # T126: contract_coverage sub-fields
+    for r in data["quality_reports"]:
+        cc = r.get("contract_coverage")
+        if cc is not None:
+            assert "covered_count" in cc, "contract_coverage must have covered_count"
+            assert "total_contractual" in cc, "contract_coverage must have total_contractual"
+            assert cc.get("discarded_returns") == [], (
+                f"discarded_returns must be [] (OC-003), got {cc.get('discarded_returns')!r}"
+            )
+            assert cc.get("discarded_return_hints") == [], (
+                "discarded_return_hints must be [] (OC-003), "
+                f"got {cc.get('discarded_return_hints')!r}"
+            )
+
+
+def test_quality_over_specification_ratio_zero_assertions() -> None:
+    """T125: over_specification.ratio = 0.0 when assertion_count = 0 (no ZeroDivisionError)."""
+    # Use a source file that the test suite doesn't cover at all
+    # so assertion_count = 0 → ratio must be 0.0 not ZeroDivisionError
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "quality",
+            str(_QUALITY_SRC / "undertested.py"),
+            "--tests",
+            str(_QUALITY_TESTS / "test_simple.py"),  # test_simple doesn't test undertested
+            "--format=json",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
+    )
+    data = json.loads(result.output)
+    for r in data["quality_reports"]:
+        ratio = r.get("over_specification", {}).get("ratio", -1.0)
+        assert ratio >= 0.0, f"ratio must be >= 0.0, got {ratio!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +350,7 @@ def test_analyze_classify_flag() -> None:
     )
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    assert "functions" in data
+    assert "results" in data
 
 
 def test_analyze_verbose_flag() -> None:
@@ -136,7 +359,7 @@ def test_analyze_verbose_flag() -> None:
     result = runner.invoke(cli, ["analyze", str(_TESTDATA), "--format=json", "--verbose"])
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
 
 
 def test_analyze_function_flag_filters() -> None:
@@ -154,7 +377,7 @@ def test_analyze_function_flag_filters() -> None:
     )
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    names = [fn["name"] for fn in data["functions"]]
+    names = [fn["target"]["function"] for fn in data["results"]]
     assert names == ["pure"], f"Expected only 'pure', got {names}"
 
 
@@ -172,7 +395,7 @@ def test_analyze_function_flag_no_match_returns_empty() -> None:
     )
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    assert data["functions"] == []
+    assert data["results"] == []
 
 
 def test_analyze_include_unexported_flag() -> None:
@@ -184,7 +407,7 @@ def test_analyze_include_unexported_flag() -> None:
     result_default = runner.invoke(cli, ["analyze", str(fixture), "--format=json"])
     assert result_default.exit_code == 0, result_default.output
     data_default = json.loads(result_default.output)
-    names_default = [fn["name"] for fn in data_default["functions"]]
+    names_default = [fn["target"]["function"] for fn in data_default["results"]]
     assert "_private_helper" not in names_default
     assert "public_entry_point" in names_default
 
@@ -194,7 +417,7 @@ def test_analyze_include_unexported_flag() -> None:
     )
     assert result_with.exit_code == 0, result_with.output
     data_with = json.loads(result_with.output)
-    names_with = [fn["name"] for fn in data_with["functions"]]
+    names_with = [fn["target"]["function"] for fn in data_with["results"]]
     assert "_private_helper" in names_with
     assert "public_entry_point" in names_with
 
@@ -221,7 +444,7 @@ def test_analyze_single_file_exits_zero() -> None:
     result = runner.invoke(cli, ["analyze", str(single_file), "--format=json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    assert "functions" in data
+    assert "results" in data
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +503,7 @@ def test_report_prompt_only_no_provider(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     data = _parse_json(result.stdout)
-    assert "functions" in data
+    assert "results" in data
     # Fix 13: assert against result.stderr directly (tip goes to stderr, not stdout).
     assert "Tip:" in result.stderr
     assert ".gaze.yaml" in result.stderr
@@ -398,7 +621,7 @@ def test_report_unavailable_provider_fallback(tmp_path: Path) -> None:
     assert "not available" in combined
     assert "falling back to prompt-only mode" in combined
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
 
 
 # ---------------------------------------------------------------------------
@@ -422,7 +645,7 @@ def test_report_json_exits_zero(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     data = _parse_json(result.stdout)
-    assert "functions" in data
+    assert "results" in data
 
 
 def test_report_text_exits_zero(tmp_path: Path) -> None:
@@ -501,15 +724,15 @@ def test_cli_json_functions_have_required_fields() -> None:
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
 
-    for fn in data["functions"]:
-        assert "side_effects" in fn, f"Missing side_effects in {fn.get('name')}"
+    for fn in data["results"]:
+        fn_name = fn.get("target", {}).get("function")
+        assert "side_effects" in fn, f"Missing side_effects in {fn_name}"
         # CRAP-derived fields must be present in JSON but null per OC-003.
-        assert "line_coverage" in fn, f"Missing line_coverage in {fn.get('name')}"
-        assert "crap" in fn, f"Missing crap key in {fn.get('name')}"
+        assert "line_coverage" in fn, f"Missing line_coverage in {fn_name}"
+        assert "crap" in fn, f"Missing crap key in {fn_name}"
         assert fn["crap"] is None, f"Expected crap=null, got {fn['crap']}"
-        assert "fix_strategy" in fn, f"Missing fix_strategy in {fn.get('name')}"
+        assert "fix_strategy" in fn, f"Missing fix_strategy in {fn_name}"
         assert fn["fix_strategy"] is None, "Expected fix_strategy=null"
-        fn_name = fn.get("name")
         assert "effect_confidence_range" in fn, f"Missing effect_confidence_range in {fn_name}"
 
 
@@ -533,7 +756,7 @@ def test_crap_coverprofile_path(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
     assert data["summary"]["crapload"] is not None
 
 
@@ -655,7 +878,7 @@ def test_crap_subprocess_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
     assert data["summary"]["crapload"] is not None
-    assert len(data["functions"]) > 0
+    assert len(data["results"]) > 0
 
 
 def test_crap_subprocess_calledprocesserror(
@@ -678,7 +901,7 @@ def test_crap_subprocess_calledprocesserror(
     assert "Warning" in result.stderr
     assert "pytest" in result.stderr
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
 
 
 def test_crap_subprocess_oserror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -697,7 +920,7 @@ def test_crap_subprocess_oserror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert result.exit_code == 0, result.output
     assert "Warning" in result.stderr
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
 
 
 def test_crap_subprocess_malformed_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -722,7 +945,7 @@ def test_crap_subprocess_malformed_json(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert "Warning" in result.stderr
     assert "parsed" in result.stderr
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
 
 
 # ---------------------------------------------------------------------------
@@ -897,7 +1120,7 @@ def test_crap_format_json(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
-    assert "functions" in data
+    assert "results" in data
     assert "summary" in data
     assert data["summary"]["crapload"] is not None
 
@@ -963,13 +1186,20 @@ def test_quality_runs_pipeline() -> None:
     assert result.exit_code == 0, (
         f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
     )
-    reports = json.loads(result.output)
-    assert isinstance(reports, list), f"Expected list, got {type(reports)}"
+    payload = json.loads(result.output)
+    assert isinstance(payload, dict), f"Expected dict, got {type(payload)}"
+    assert "quality_reports" in payload
+    reports = payload["quality_reports"]
     assert len(reports) > 0, "Expected at least one report"
 
     # Find the report for simple_function.
     simple_report = next(
-        (r for r in reports if r.get("target_function") == "simple_function"),
+        (
+            r
+            for r in reports
+            if isinstance(r.get("target_function"), dict)
+            and r["target_function"].get("function") == "simple_function"
+        ),
         None,
     )
     assert simple_report is not None, f"No report for simple_function in {reports}"
@@ -1003,13 +1233,19 @@ def test_quality_runs_pipeline_undertested_gaze_crap() -> None:
     assert result.exit_code == 0, (
         f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
     )
-    reports = json.loads(result.output)
-    assert isinstance(reports, list)
+    payload = json.loads(result.output)
+    assert isinstance(payload, dict)
+    reports = payload["quality_reports"]
     assert len(reports) > 0, "Expected at least one report"
 
     # Find the report for compute_total.
     undertested_report = next(
-        (r for r in reports if r.get("target_function") == "compute_total"),
+        (
+            r
+            for r in reports
+            if isinstance(r.get("target_function"), dict)
+            and r["target_function"].get("function") == "compute_total"
+        ),
         None,
     )
     assert undertested_report is not None, f"No report for compute_total in {reports}"
@@ -1040,7 +1276,8 @@ def test_quality_auto_discovers_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0, (
         f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
     )
-    reports = json.loads(result.output)
+    payload = json.loads(result.output)
+    reports = payload["quality_reports"]
     assert len(reports) > 0, "Expected non-empty result from auto-discovery"
 
 
@@ -1116,12 +1353,16 @@ def test_quality_target_flag_filters() -> None:
     assert result.exit_code == 0, (
         f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
     )
-    reports = json.loads(result.output)
+    payload = json.loads(result.output)
+    reports = payload["quality_reports"]
     assert isinstance(reports, list)
     # All returned reports must target simple_function.
+    # target_function is now a FunctionTarget dict per FR-005 / OC-002.
     for r in reports:
-        assert r.get("target_function") == "simple_function", (
-            f"Expected only simple_function reports, got: {r.get('target_function')}"
+        tf = r.get("target_function")
+        tf_name = tf.get("function") if isinstance(tf, dict) else tf
+        assert tf_name == "simple_function", (
+            f"Expected only simple_function reports, got: {tf_name!r}"
         )
 
 
@@ -1142,7 +1383,8 @@ def test_quality_target_flag_no_match() -> None:
     assert result.exit_code == 0, (
         f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
     )
-    reports = json.loads(result.output)
+    payload = json.loads(result.output)
+    reports = payload["quality_reports"]
     assert reports == [], f"Expected empty list, got {reports}"
 
 
@@ -1428,7 +1670,7 @@ def test_selfcheck_max_crapload_flag(tmp_path: Path, monkeypatch: pytest.MonkeyP
             crap_threshold=15.0,
             gaze_crap_threshold=15.0,
         )
-        return AnalysisResult(functions=[], summary=summary)
+        return AnalysisResult(results=[], summary=summary)
 
     monkeypatch.setattr(cli_main, "_run_crap", _fake_crap)
 
@@ -1899,7 +2141,7 @@ def test_crap_with_tests_populates_contract_coverage_reason(tmp_path: Path) -> N
         f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
     )
     data = _parse_json(result.output)
-    functions = data["functions"]
+    functions = data["results"]
     assert isinstance(functions, list)
     reasons = [fn.get("contract_coverage_reason") for fn in functions]
     assert any(r is not None for r in reasons), (
@@ -1934,14 +2176,15 @@ def test_crap_no_test_coverage_reason_gaze_crap_still_null(tmp_path: Path) -> No
         f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
     )
     data = _parse_json(result.output)
-    functions = data["functions"]
+    functions = data["results"]
 
     orphan = next(
-        (fn for fn in functions if fn.get("name") == "orphan_compute"),
+        (fn for fn in functions if fn.get("target", {}).get("function") == "orphan_compute"),
         None,
     )
     assert orphan is not None, (
-        f"orphan_compute not found in crap output; functions: {[f.get('name') for f in functions]}"
+        f"orphan_compute not found in crap output; functions: "
+        f"{[f.get('target', {}).get('function') for f in functions]}"
     )
     assert orphan.get("contract_coverage_reason") == "no_test_coverage", (
         f"Expected 'no_test_coverage', got: {orphan.get('contract_coverage_reason')!r}"
@@ -1980,7 +2223,7 @@ def test_crap_without_tests_gaze_crap_null(tmp_path: Path) -> None:
         f"exit={result.exit_code}\nstdout={result.output}\nstderr={result.stderr}"
     )
     data = _parse_json(result.output)
-    for fn in data["functions"]:
+    for fn in data["results"]:
         assert fn.get("gaze_crap") is None, (
             f"Expected gaze_crap=null without --tests, got {fn.get('gaze_crap')!r} "
             f"for function {fn.get('name')!r}"
@@ -2330,7 +2573,7 @@ def test_report_no_ai_emits_json(tmp_path: Path) -> None:
     assert result.exit_code == 0, f"exit={result.exit_code} stderr={result.stderr!r}"
     # stdout must be valid JSON containing 'functions' and 'summary'.
     data = json.loads(result.stdout)
-    assert "functions" in data, f"'functions' not in JSON: {list(data.keys())}"
+    assert "results" in data, f"'results' not in JSON: {list(data.keys())}"
     assert "summary" in data, f"'summary' not in JSON: {list(data.keys())}"
     # stderr must contain the Tip about configuring a provider.
     tip_text = (result.stderr or "") + result.output
@@ -2461,7 +2704,7 @@ def test_report_max_gaze_crapload_gate(tmp_path: Path) -> None:
     # stdout must be non-empty valid JSON regardless of exit code (gate fires after output).
     assert result.stdout.strip(), "stdout must be non-empty — JSON emitted before gate"
     data = json.loads(result.stdout)
-    assert "functions" in data, f"'functions' missing from JSON: {list(data.keys())}"
+    assert "results" in data, f"'results' missing from JSON: {list(data.keys())}"
     assert "summary" in data, f"'summary' missing from JSON: {list(data.keys())}"
 
     crapload_val = data.get("summary", {}).get("crapload")

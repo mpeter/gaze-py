@@ -35,7 +35,7 @@ Use `--min-contract-coverage` as a CI gate.
 
 **Text** (default): Per-function report showing contract coverage %, GazeCRAP score, and gap hints (side effects not covered by assertions).
 
-**JSON**: Full quality assessment including all pairing and mapper data.
+**JSON**: Top-level envelope is `{"quality_reports": [...], "quality_summary": {...}}`. Each report includes `test_function`, `test_location`, `target_function` (FunctionTarget object), `contract_coverage` (with `covered_count`, `total_contractual`, `discarded_returns`, `discarded_return_hints`), `over_specification` (with `count`, `ratio`), `assertion_count`, `assertion_detection_confidence`.
 
 ## CI Integration
 
