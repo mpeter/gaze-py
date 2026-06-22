@@ -75,7 +75,7 @@
 - [ ] T208 Implement `classify_delta(crap_delta: float, gaze_crap_delta: float | None, has_gaze_delta: bool, epsilon: float) -> FunctionStatus`: regression wins on conflict; `has_gaze_delta=False` when baseline had no GazeCRAP data (null or 0)
 - [ ] T209 Implement `compare(baseline: list[dict], current: list[dict], opts: CompareOptions) -> ComparisonResult`: pure function; build lookup map via `score_key`; classify each current entry; collect new/removed
 - [ ] T209b In `compare()`: after building results, if unmatched baseline entries > 50% of baseline count, add a warning string to a returned `warnings: list[str]` field on `ComparisonResult`; caller emits this to stderr
-- [ ] T210 Implement `build_comparison_summary(result: ComparisonResult, opts: CompareOptions) -> ComparisonSummary`: count statuses; `passed = regressions == 0 and new_violations == 0`
+- [ ] T210 Implement `build_comparison_summary(result: ComparisonResult, opts: CompareOptions) -> ComparisonSummary`: count statuses; `passed = regressions == 0 and new_violations == 0`; `opts.new_function_threshold` is guaranteed non-None at this call site (T218 resolves before `compare()` is called — use `assert opts.new_function_threshold is not None` before assigning to `ComparisonSummary.new_function_threshold: float`)
 
 ### Phase 2.2: Config
 
@@ -92,7 +92,7 @@
 
 - [ ] T216 Add `resolve_baseline_path(flag_path: str | None, config: GazeConfig, project_root: Path) -> tuple[Path | None, bool]`: (1) `--baseline` flag → `(Path(flag_path), True)` (explicit); (2) `config.baseline.file` not None → `(Path(config.baseline.file), True)` (explicit); (3) auto-discovery: check `project_root / ".gaze" / "baseline.json"` — return `(path, False)` if it exists as a regular file, `(None, False)` if absent or directory. For explicit paths: if file not found → caller exits 2; if path is a directory → caller exits 2.
 - [ ] T217 Update `crap` command: update `--baseline` help (remove "stub: not yet implemented"); after running CRAP, call `resolve_baseline_path()`; if `None`, skip; else `load_baseline()` wrapping errors: when `is_explicit=True` and `ValueError` → exit 2; when `is_explicit=False` and `ValueError` (auto-discovered file gone or corrupt) → emit stderr warning and skip (do NOT exit 2); compare and emit; for each `result.warnings` entry emit to stderr; apply gate (exit 1 if `not passed`)
-- [ ] T218 Wire `CompareOptions`: `epsilon = config.baseline.epsilon`, `new_function_threshold = config.baseline.new_function_threshold or config.crap_threshold`
+- [ ] T218 Wire `CompareOptions`: `epsilon = config.baseline.epsilon`, `new_function_threshold = config.baseline.new_function_threshold if config.baseline.new_function_threshold is not None else config.crap_threshold` — use explicit `is not None` check (not `or`) to avoid silently overriding a valid 0.0 value
 
 ### Phase 2.5: Tests
 
