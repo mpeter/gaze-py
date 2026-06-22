@@ -261,9 +261,9 @@ methods, `null` for module-level functions.
 
 **FR-003** (Story 1): `Metadata` MUST serialize as
 `{"gaze_version": str, "warnings": [str], "duration_ms": int, "timestamp": str}`.
-`timestamp` MUST use the format `YYYY-MM-DDTHH:MM:SSZ` (seconds precision,
-UTC, `Z` suffix — matching Go's `time.RFC3339`). Use
-`datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")`.
+`timestamp` MUST use the format `YYYY-MM-DDTHH:mm:SSZ` (where `MM` = month,
+`mm` = minutes, seconds precision, UTC, `Z` suffix — matching Go's
+`time.RFC3339`). Use `datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")`.
 
 **FR-004** (Story 1): `quality` JSON output MUST use
 `{"quality_reports": [...], "quality_summary": {...}}` as the top-level
@@ -305,8 +305,13 @@ silent skip with stderr warning.
 
 **FR-009** (Story 2): `.gaze.yaml` MUST support `baseline.file: str | null`
 (null = auto-discovery, default null), `baseline.epsilon: float` (≥ 0,
-default 0.0), `baseline.new_function_threshold: float | null` (> 0, default
-null = use `crap_threshold` at runtime).
+default 0.0), and `baseline.new_function_threshold: float | null` (> 0, default
+null = use `crap_threshold` at runtime). Note: `CompareOptions.new_function_threshold`
+defaults to `None` in the dataclass (not 15.0) — the `None` → `crap_threshold`
+resolution happens at CLI wiring time (T218), not in the dataclass default.
+This differs from Go's `CompareOptions.NewFunctionThreshold` zero-value (0.0)
+deliberately — a 0.0 threshold would classify all new functions as violations,
+which is not the intended default behavior.
 
 **FR-010** (Story 2): Comparison gate exits 1 when `comparison.passed ==
 false` (regressions > 0 or new_violations > 0). Gate fires after output is
@@ -362,13 +367,13 @@ this release (T300.5 verification).
 
 | Contract | Story | Assessment |
 |---|---|---|
-| OC-002 JSON field names | 1 | This story fixes the current violation |
+| OC-002 JSON field names | 1 | This story fixes the current violation. Note: `FunctionTarget.package` uses project-relative file path as the Python equivalent of Go's import path — semantic adaptation documented in Assumptions. |
 | OC-003 Nullable fields | 1 | Preserved — all nullable fields remain nullable |
 | EC-001 Taxonomy (38 types) | 1 | Preserved — `models.py` changes add fields only; P4 count discrepancy (contracts.md says 5, enumeration yields 6) already documented in constitution v1.1.1 |
 | EC-003 Effect identity | 1 | IDs unchanged — envelope changes only |
 | SC-001/SC-002 Formulas | All | Unchanged |
 | SC-003 CRAPload | 2 | Preserved in comparison output |
-| Story 2 | 2 | No porting contract — gaze-py extension ported from Go reference implementation (`internal/crap/compare.go`) |
+| Story 2 | 2 | No porting contract — gaze-py extension ported from Go reference implementation (`internal/crap/compare.go`). Note: comparison JSON uses `results` instead of Go's `scores` key (`compare_report.go:52`) for consistency with the non-comparison envelope (FR-001). This is a deliberate gaze-py deviation from the Go wire format — gaze-py comparison output is NOT expected to be wire-compatible with Go's comparison output. |
 | Story 3 | 3 | N/A — documentation and version hygiene |
 | Story 4 | 4 | N/A — release mechanics |
 
