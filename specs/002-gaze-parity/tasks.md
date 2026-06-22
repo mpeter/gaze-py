@@ -2,6 +2,8 @@
 
 **Spec**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md)
 
+<!-- spec-review: passed -->
+
 ---
 
 ## Story 1: JSON Schema Compatibility — branch `opsx/schema-compat`
