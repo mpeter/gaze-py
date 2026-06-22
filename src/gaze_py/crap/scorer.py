@@ -205,7 +205,7 @@ def recommended_actions(
             continue
         actions.append(
             {
-                "function": target.name,
+                "function": target.function,
                 "file": target.file_path,
                 "strategy": strategy,
                 "crap": target.score.crap,

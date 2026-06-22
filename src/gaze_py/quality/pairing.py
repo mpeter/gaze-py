@@ -291,20 +291,20 @@ def pair_to_targets(
 
     # Exact match (confidence 0.9).
     for fn in source_functions:
-        if fn.name == candidate:
+        if fn.function == candidate:
             return TestTargetPair(
                 test_name=test_func.name,
-                target_name=fn.name,
+                target_name=fn.function,
                 inference_method="name_convention",
                 confidence=0.9,
             )
 
     # Case-insensitive match (confidence 0.7).
     for fn in source_functions:
-        if fn.name.lower() == candidate.lower():
+        if fn.function.lower() == candidate.lower():
             return TestTargetPair(
                 test_name=test_func.name,
-                target_name=fn.name,
+                target_name=fn.function,
                 inference_method="name_convention",
                 confidence=0.7,
             )
@@ -313,7 +313,7 @@ def pair_to_targets(
     # Intentional deep walk — tests frequently call targets from within with-blocks,
     # comprehensions, or inline helpers. Known limitation: first match in pre-order
     # traversal is selected when multiple source functions are called.
-    source_names = {fn.name for fn in source_functions}
+    source_names = {fn.function for fn in source_functions}
     for node in ast.walk(test_func.node):
         if isinstance(node, ast.Call):
             called = _extract_call_name(node)

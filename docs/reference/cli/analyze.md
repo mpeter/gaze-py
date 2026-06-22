@@ -31,7 +31,36 @@ CRAP scoring is not included in `analyze` output — use `gazepy crap` for CRAP-
 
 ## Output Format
 
-**JSON** (`--format json`): Emits a JSON object matching the `AnalysisResult` schema. Use `gazepy schema` to print the full JSON schema.
+**JSON** (`--format json`): Emits a JSON object with the following structure:
+
+```json
+{
+  "results": [
+    {
+      "target": {
+        "package": "src/mymodule/parser.py",
+        "function": "parse_expression",
+        "receiver": null,
+        "signature": "def parse_expression(text: str) -> int",
+        "location": "src/mymodule/parser.py:12"
+      },
+      "side_effects": [...],
+      "metadata": {
+        "gaze_version": "0.7.0",
+        "warnings": [],
+        "duration_ms": 42,
+        "timestamp": "2026-06-22T10:00:00Z"
+      },
+      "line_coverage": null,
+      "crap": null,
+      "fix_strategy": null
+    }
+  ],
+  "summary": {...}
+}
+```
+
+Use `gazepy schema` to print the full JSON schema.
 
 **Text** (`--format text`): Human-readable per-function side effect list with classification labels when `--classify` is active.
 

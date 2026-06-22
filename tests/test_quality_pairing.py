@@ -42,10 +42,13 @@ def _make_test_func(src: str, name: str = "test_foo") -> TestFunc:
 def _make_target(name: str) -> FunctionTarget:
     """Create a minimal FunctionTarget with the given name."""
     return FunctionTarget(
-        name=name,
+        function=name,
         file_path="src/example.py",
         line=1,
         complexity=1,
+        package="src/example.py",
+        receiver=None,
+        signature=f"def {name}()",
     )
 
 

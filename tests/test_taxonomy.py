@@ -279,28 +279,68 @@ class TestFunctionTargetFields:
 
     def test_function_target_caller_count_defaults_zero(self) -> None:
         """caller_count defaults to 0."""
-        ft = FunctionTarget(name="fn", file_path="a.py", line=1, complexity=1)
+        ft = FunctionTarget(
+            function="fn",
+            file_path="a.py",
+            line=1,
+            complexity=1,
+            package="a.py",
+            receiver=None,
+            signature="def fn()",
+        )
         assert ft.caller_count == 0
 
     def test_function_target_effects_defaults_empty_list(self) -> None:
         """effects defaults to an empty list."""
-        ft = FunctionTarget(name="fn", file_path="a.py", line=1, complexity=1)
+        ft = FunctionTarget(
+            function="fn",
+            file_path="a.py",
+            line=1,
+            complexity=1,
+            package="a.py",
+            receiver=None,
+            signature="def fn()",
+        )
         assert ft.effects == []
 
     def test_function_target_classification_defaults_none(self) -> None:
         """classification defaults to None."""
-        ft = FunctionTarget(name="fn", file_path="a.py", line=1, complexity=1)
+        ft = FunctionTarget(
+            function="fn",
+            file_path="a.py",
+            line=1,
+            complexity=1,
+            package="a.py",
+            receiver=None,
+            signature="def fn()",
+        )
         assert ft.classification is None
 
     def test_function_target_score_defaults_none(self) -> None:
         """score defaults to None."""
-        ft = FunctionTarget(name="fn", file_path="a.py", line=1, complexity=1)
+        ft = FunctionTarget(
+            function="fn",
+            file_path="a.py",
+            line=1,
+            complexity=1,
+            package="a.py",
+            receiver=None,
+            signature="def fn()",
+        )
         assert ft.score is None
 
     def test_function_target_is_mutable(self) -> None:
         """FunctionTarget is mutable (not frozen) so the pipeline can build it."""
         _caller_count = 5
-        ft = FunctionTarget(name="fn", file_path="a.py", line=1, complexity=1)
+        ft = FunctionTarget(
+            function="fn",
+            file_path="a.py",
+            line=1,
+            complexity=1,
+            package="a.py",
+            receiver=None,
+            signature="def fn()",
+        )
         ft.caller_count = _caller_count
         assert ft.caller_count == _caller_count
 
@@ -406,8 +446,8 @@ class TestModelInstantiation:
         assert effect.tier == Tier.P0
 
     def test_analysis_result_instantiation(self) -> None:
-        """AnalysisResult can be instantiated with functions and summary."""
+        """AnalysisResult can be instantiated with results and summary."""
         summary = Summary(function_count=0, crapload=0)
-        result = AnalysisResult(functions=[], summary=summary)
-        assert result.functions == []
+        result = AnalysisResult(results=[], summary=summary)
+        assert result.results == []
         assert result.summary.function_count == 0

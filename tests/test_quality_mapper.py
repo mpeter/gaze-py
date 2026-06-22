@@ -60,10 +60,13 @@ def _make_effect(
 def _make_target(effects: list[SideEffect] | None = None) -> FunctionTarget:
     """Create a minimal FunctionTarget."""
     return FunctionTarget(
-        name="example_fn",
+        function="example_fn",
         file_path="src/example.py",
         line=1,
         complexity=1,
+        package="src/example.py",
+        receiver=None,
+        signature="def example_fn()",
         effects=effects or [],
     )
 

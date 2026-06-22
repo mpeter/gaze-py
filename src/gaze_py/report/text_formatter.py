@@ -29,7 +29,7 @@ def to_text(result: AnalysisResult) -> str:
         analyzed function.
     """
     lines: list[str] = []
-    for target in result.functions:
+    for target in result.results:
         lines.append(_format_function(target))
     return "\n".join(lines)
 
@@ -59,7 +59,7 @@ def _format_function(target: FunctionTarget) -> str:
     effect_count = len(target.effects)
 
     return (
-        f"{target.file_path}:{target.name}"
+        f"{target.file_path}:{target.function}"
         f"  complexity={target.complexity}"
         f"  CRAP={crap_val}"
         f"  effects={effect_count}"

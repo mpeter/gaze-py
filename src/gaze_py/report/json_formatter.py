@@ -1,11 +1,12 @@
 """JSON output formatter for gaze-py analysis results.
 
-Serializes AnalysisResult to a JSON string using dataclasses.asdict() with
+Serializes AnalysisResult and QualityReport sequences to JSON strings using
 a custom encoder that handles enum values and None → null.
 
 Per OC-002: all field names are snake_case (no camelCase).
 Per OC-003: None fields serialize as JSON null (default Python behavior).
-Per CR-005: uses dataclasses.asdict() + custom encoder; no to_dict() methods.
+Per FR-001/FR-002: top-level keys are "results" and "target"/"function" per
+the Go gaze reference implementation's JSON field names.
 """
 
 from __future__ import annotations
@@ -13,21 +14,24 @@ from __future__ import annotations
 import dataclasses
 import enum
 import json
+import time
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any
 
-from gaze_py.taxonomy.models import AnalysisResult, QualityReport
+import gaze_py
+from gaze_py.taxonomy.models import (
+    AnalysisResult,
+    FunctionTarget,
+    OverSpecification,
+    QualityReport,
+    QualitySummary,
+)
 
 # JSON schema for the AnalysisResult output format.
 # Extracted as a module-level constant so the `schema` CLI command can emit it
 # directly without re-serializing a live object (task 6.1).
-# Updated in task 8.4 to reflect quality-related output fields populated by
-# the O1 pipeline (gaze_crap, contract_coverage, quadrant, gaze_crapload,
-# avg_contract_coverage, quadrant_counts, fix_strategy_counts).
-# Updated in gap-hints change: contract_coverage objects in quality_to_json()
-# output may now contain `gaps` (array of SideEffect dicts) and `gap_hints`
-# (array of strings) when coverage is partial. Both default to [] when
-# coverage is 100% or when percentage is None (OC-003 null-not-zero paths).
+# Updated to reflect "results"-keyed structure per FR-001 / OC-002.
 SCHEMA: str = json.dumps(
     {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -40,47 +44,43 @@ SCHEMA: str = json.dumps(
             "when the 'quality' command is used."
         ),
         "type": "object",
-        "required": ["functions", "summary"],
+        "required": ["results", "summary"],
         "properties": {
-            "functions": {
+            "results": {
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": ["name", "file_path", "line", "complexity", "side_effects"],
+                    "required": ["target", "side_effects", "metadata"],
                     "properties": {
-                        "name": {"type": "string"},
-                        "file_path": {"type": "string"},
-                        "line": {"type": "integer"},
-                        "complexity": {"type": "integer"},
+                        "target": {
+                            "type": "object",
+                            "required": [
+                                "package",
+                                "function",
+                                "receiver",
+                                "signature",
+                                "location",
+                            ],
+                            "properties": {
+                                "package": {"type": "string"},
+                                "function": {"type": "string"},
+                                "receiver": {"type": ["string", "null"]},
+                                "signature": {"type": "string"},
+                                "location": {"type": "string"},
+                            },
+                        },
                         "side_effects": {"type": "array"},
-                        "classification": {"type": ["object", "null"]},
-                        "line_coverage": {
-                            "type": ["number", "null"],
-                            "description": "Line coverage fraction [0.0, 1.0] from coverage.py, "
-                            "or null when --coverprofile was not provided.",
+                        "metadata": {
+                            "type": "object",
+                            "required": ["gaze_version", "warnings", "duration_ms", "timestamp"],
                         },
-                        "crap": {
-                            "type": ["number", "null"],
-                            "description": "CRAP score, or null when line_coverage is null.",
-                        },
-                        "gaze_crap": {
-                            "type": ["number", "null"],
-                            "description": "GazeCRAP score from O1 quality pipeline, "
-                            "or null when O1 has not run.",
-                        },
-                        "contract_coverage": {
-                            "type": ["number", "null"],
-                            "description": "Contract coverage percentage [0, 100] from O1, "
-                            "or null when O1 has not run.",
-                        },
+                        "line_coverage": {"type": ["number", "null"]},
+                        "crap": {"type": ["number", "null"]},
+                        "gaze_crap": {"type": ["number", "null"]},
+                        "contract_coverage": {"type": ["number", "null"]},
                         "contract_coverage_reason": {"type": ["string", "null"]},
                         "fix_strategy": {"type": ["string", "null"]},
-                        "quadrant": {
-                            "type": ["string", "null"],
-                            "description": "Quadrant label (Q1_Safe, Q2_ComplexButTested, "
-                            "Q3_SimpleButUnderspecified, Q4_Dangerous) from O1, "
-                            "or null when both line and contract coverage are unavailable.",
-                        },
+                        "quadrant": {"type": ["string", "null"]},
                         "effect_confidence_range": {"type": ["array", "null"]},
                     },
                 },
@@ -91,29 +91,11 @@ SCHEMA: str = json.dumps(
                 "properties": {
                     "function_count": {"type": "integer"},
                     "crapload": {"type": ["integer", "null"]},
-                    "gaze_crapload": {
-                        "type": ["integer", "null"],
-                        "description": "Count of functions where GazeCRAP >= gaze_crap_threshold. "
-                        "Populated when O1 quality results are available.",
-                    },
+                    "gaze_crapload": {"type": ["integer", "null"]},
                     "avg_line_coverage": {"type": ["number", "null"]},
-                    "avg_contract_coverage": {
-                        "type": ["number", "null"],
-                        "description": "Mean contract coverage across all functions with "
-                        "non-null coverage. Populated when O1 quality results are available.",
-                    },
-                    "quadrant_counts": {
-                        "type": ["object", "null"],
-                        "description": "Count of functions per quadrant label. "
-                        "Populated when both line and contract coverage are available.",
-                        "additionalProperties": {"type": "integer"},
-                    },
-                    "fix_strategy_counts": {
-                        "type": ["object", "null"],
-                        "description": "Count of functions per fix strategy. "
-                        "Populated whenever CRAP scores are available (does not require O1).",
-                        "additionalProperties": {"type": "integer"},
-                    },
+                    "avg_contract_coverage": {"type": ["number", "null"]},
+                    "quadrant_counts": {"type": ["object", "null"]},
+                    "fix_strategy_counts": {"type": ["object", "null"]},
                     "recommended_actions": {"type": ["array", "null"]},
                     "crap_threshold": {"type": "number"},
                     "gaze_crap_threshold": {"type": "number"},
@@ -151,38 +133,116 @@ def _json_default(obj: Any) -> Any:  # noqa: ANN401  # Any is required — json.
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
-def quality_to_json(reports: Sequence[QualityReport], *, indent: int = 2) -> str:
-    """Serialize a sequence of QualityReport objects to JSON.
+def _target_dict(ft: FunctionTarget) -> dict[str, object]:
+    """Serialize a FunctionTarget's identity fields as a target dict.
+
+    Produces the "target" sub-object in the analysis result JSON per FR-002.
 
     Args:
-        reports: Quality assessment reports to serialize. Accepts any
-            Sequence (list, tuple, etc.) of QualityReport instances.
-        indent: JSON indentation level.
+        ft: The FunctionTarget to serialize.
 
     Returns:
-        JSON string.
+        Dict with package, function, receiver, signature, and location keys.
     """
-    return json.dumps(
-        [dataclasses.asdict(r) for r in reports],
-        default=_json_default,
-        indent=indent,
-    )
+    return {
+        "package": ft.package,
+        "function": ft.function,
+        "receiver": ft.receiver,
+        "signature": ft.signature,
+        "location": f"{ft.file_path}:{ft.line}",
+    }
+
+
+def analysis_to_json(
+    result: AnalysisResult,
+    *,
+    start_time: float | None = None,
+    indent: int = 2,
+) -> str:
+    """Serialize an AnalysisResult to a JSON string.
+
+    Produces the canonical "results"-keyed envelope per FR-001 / OC-002.
+    Each result entry includes a "target" sub-object with package, function,
+    receiver, signature, and location fields per FR-002.
+
+    Metadata (gaze_version, warnings, duration_ms, timestamp) is injected at
+    serialization time — not stored in the model pipeline (avoids circular
+    imports and keeps models pure).
+
+    Args:
+        result: The AnalysisResult to serialize.
+        start_time: time.monotonic() value captured before the analysis ran.
+            Used to compute duration_ms. When None, duration_ms is 0.
+        indent: JSON indentation level. Default: 2.
+
+    Returns:
+        Indented JSON string representation of the result.
+    """
+    gaze_version = gaze_py.__version__
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    duration_ms = int((time.monotonic() - start_time) * 1000) if start_time is not None else 0
+
+    result_entries: list[dict[str, object]] = []
+    for ft in result.results:
+        score_dict: dict[str, object] = {}
+        if ft.score is not None:
+            score_dict = {
+                "line_coverage": ft.score.line_coverage,
+                "crap": ft.score.crap,
+                "gaze_crap": ft.score.gaze_crap,
+                "contract_coverage": ft.score.contract_coverage,
+                "contract_coverage_reason": ft.score.contract_coverage_reason,
+                "fix_strategy": ft.score.fix_strategy,
+                "quadrant": ft.score.quadrant,
+                "effect_confidence_range": (
+                    list(ft.score.effect_confidence_range)
+                    if ft.score.effect_confidence_range is not None
+                    else None
+                ),
+            }
+        else:
+            score_dict = {
+                "line_coverage": None,
+                "crap": None,
+                "gaze_crap": None,
+                "contract_coverage": None,
+                "contract_coverage_reason": None,
+                "fix_strategy": None,
+                "quadrant": None,
+                "effect_confidence_range": None,
+            }
+
+        # Serialize effects using dataclasses.asdict for nested dataclasses.
+        effects_list = [dataclasses.asdict(e) for e in ft.effects]
+
+        entry: dict[str, object] = {
+            "target": _target_dict(ft),
+            "side_effects": effects_list,
+            "metadata": {
+                "gaze_version": gaze_version,
+                "warnings": [],
+                "duration_ms": duration_ms,
+                "timestamp": timestamp,
+            },
+        }
+        entry.update(score_dict)
+        result_entries.append(entry)
+
+    summary_dict = dataclasses.asdict(result.summary)
+
+    payload: dict[str, object] = {
+        "results": result_entries,
+        "summary": summary_dict,
+    }
+
+    return json.dumps(payload, default=_json_default, indent=indent)
 
 
 def to_json(result: AnalysisResult, *, indent: int = 2) -> str:
     """Serialize an AnalysisResult to a JSON string.
 
-    Uses dataclasses.asdict() to convert the result to a plain dict, then
-    json.dumps() with a custom encoder for enum values. None fields serialize
-    as JSON null per OC-003.
-
-    The output structure mirrors the AnalysisResult dataclass hierarchy:
-    - "functions": list of function-level dicts
-    - "summary": aggregate statistics dict
-
-    Each function dict includes all Score fields (line_coverage, crap,
-    gaze_crap, contract_coverage, fix_strategy, quadrant,
-    effect_confidence_range) per OC-002 and OC-003.
+    Delegates to analysis_to_json() with no start_time (duration_ms = 0).
+    Kept for backward compatibility with existing callers.
 
     Args:
         result: The AnalysisResult to serialize.
@@ -191,25 +251,145 @@ def to_json(result: AnalysisResult, *, indent: int = 2) -> str:
     Returns:
         Indented JSON string representation of the result.
     """
-    # dataclasses.asdict() recursively converts all nested dataclasses to dicts.
-    # It also converts tuples to lists, which is correct for JSON arrays.
-    raw = dataclasses.asdict(result)
+    return analysis_to_json(result, indent=indent)
 
-    # Reshape each function dict to match OC-002 field names.
-    # The Score fields are nested under "score" in the dataclass but must be
-    # flattened to the function level in the JSON output per OC-002.
-    for fn_dict in raw.get("functions", []):
-        score_dict: dict[str, object] = fn_dict.pop("score", None) or {}
-        fn_dict["line_coverage"] = score_dict.get("line_coverage")
-        fn_dict["crap"] = score_dict.get("crap")
-        fn_dict["gaze_crap"] = score_dict.get("gaze_crap")
-        fn_dict["contract_coverage"] = score_dict.get("contract_coverage")
-        fn_dict["contract_coverage_reason"] = score_dict.get("contract_coverage_reason")
-        fn_dict["fix_strategy"] = score_dict.get("fix_strategy")
-        fn_dict["quadrant"] = score_dict.get("quadrant")
-        fn_dict["effect_confidence_range"] = score_dict.get("effect_confidence_range")
-        # Rename "effects" → "side_effects" per OC-002 field naming.
-        if "effects" in fn_dict:
-            fn_dict["side_effects"] = fn_dict.pop("effects")
 
-    return json.dumps(raw, default=_json_default, indent=indent)
+def _compute_quality_summary(reports: Sequence[QualityReport]) -> QualitySummary:
+    """Compute aggregate quality metrics from a sequence of QualityReport objects.
+
+    Args:
+        reports: Quality assessment reports to aggregate.
+
+    Returns:
+        QualitySummary with computed aggregate metrics.
+    """
+    total_tests = len(reports)
+    total_over_specs = 0
+    coverages: list[float] = []
+    confidences: list[int] = []
+
+    for r in reports:
+        total_over_specs += r.over_specification.count
+        if r.contract_coverage is not None and r.contract_coverage.percentage is not None:
+            coverages.append(r.contract_coverage.percentage)
+        confidences.append(r.assertion_detection_confidence)
+
+    avg_coverage: float | None = sum(coverages) / len(coverages) if coverages else None
+
+    avg_confidence = round(sum(confidences) / len(confidences)) if confidences else 100
+
+    # Worst coverage tests: bottom 5 by contract coverage percentage.
+    paired = [
+        (r.test_function, r.contract_coverage.percentage)
+        for r in reports
+        if r.contract_coverage is not None and r.contract_coverage.percentage is not None
+    ]
+    paired.sort(key=lambda x: x[1])
+    worst = [name for name, _ in paired[:5]]
+
+    return QualitySummary(
+        total_tests=total_tests,
+        average_contract_coverage=avg_coverage,
+        total_over_specifications=total_over_specs,
+        worst_coverage_tests=worst,
+        assertion_detection_confidence=avg_confidence,
+    )
+
+
+def quality_to_json(reports: Sequence[QualityReport], *, indent: int = 2) -> str:
+    """Serialize a sequence of QualityReport objects to JSON.
+
+    Produces the canonical "quality_reports"-keyed envelope with a
+    "quality_summary" aggregate per FR-003 / OC-002.
+
+    Each report entry includes:
+    - test_function, test_location, target_function (as target dict or null)
+    - contract_coverage with covered_count, discarded_returns, discarded_return_hints
+    - over_specification with count, ratio, incidental_assertions, suggestions
+    - ambiguous_effects, unmapped_assertions (both empty — OC-003 compliant)
+    - assertion_count, assertion_detection_confidence
+    - assertions, warnings, complexity
+
+    Args:
+        reports: Quality assessment reports to serialize. Accepts any
+            Sequence (list, tuple, etc.) of QualityReport instances.
+        indent: JSON indentation level.
+
+    Returns:
+        JSON string with "quality_reports" and "quality_summary" keys.
+    """
+    report_entries: list[dict[str, object]] = []
+
+    for qr in reports:
+        # Serialize target_function as target dict or null.
+        target_fn: dict[str, object] | None
+        if isinstance(qr.target_function, FunctionTarget):
+            target_fn = _target_dict(qr.target_function)
+        else:
+            target_fn = None
+
+        # Serialize contract_coverage with new fields.
+        cc_dict: dict[str, object] | None
+        if qr.contract_coverage is not None:
+            cc = qr.contract_coverage
+            cc_dict = {
+                "percentage": cc.percentage,
+                "covered_count": cc.covered_count,
+                "covered_effects": cc.covered_effects,
+                "total_contractual": cc.total_contractual,
+                "over_specification_count": cc.over_specification_count,
+                "unmapped_assertions": cc.unmapped_assertions,
+                "reason": cc.reason,
+                "min_confidence": cc.min_confidence,
+                "max_confidence": cc.max_confidence,
+                "gaps": [dataclasses.asdict(g) for g in cc.gaps],
+                "gap_hints": list(cc.gap_hints),
+                "discarded_returns": [],
+                "discarded_return_hints": [],
+            }
+        else:
+            cc_dict = None
+
+        # Serialize over_specification.
+        os_obj: OverSpecification = qr.over_specification
+        os_dict: dict[str, object] = {
+            "count": os_obj.count,
+            "ratio": os_obj.ratio,
+            "incidental_assertions": list(os_obj.incidental_assertions),
+            "suggestions": list(os_obj.suggestions),
+        }
+
+        # Serialize assertions using dataclasses.asdict.
+        assertions_list = [dataclasses.asdict(a) for a in qr.assertions]
+
+        entry: dict[str, object] = {
+            "test_function": qr.test_function,
+            "test_location": qr.test_location,
+            "target_function": target_fn,
+            "contract_coverage": cc_dict,
+            "over_specification": os_dict,
+            "ambiguous_effects": [],
+            "unmapped_assertions": [],
+            "assertion_count": qr.assertion_count,
+            "assertion_detection_confidence": qr.assertion_detection_confidence,
+            "assertions": assertions_list,
+            "warnings": list(qr.warnings),
+            "complexity": qr.complexity,
+        }
+        report_entries.append(entry)
+
+    summary = _compute_quality_summary(reports)
+    summary_dict: dict[str, object] = {
+        "total_tests": summary.total_tests,
+        "average_contract_coverage": summary.average_contract_coverage,
+        "total_over_specifications": summary.total_over_specifications,
+        "worst_coverage_tests": summary.worst_coverage_tests,
+        "assertion_detection_confidence": summary.assertion_detection_confidence,
+    }
+
+    payload: dict[str, object] = {
+        "quality_reports": report_entries,
+        "quality_summary": summary_dict,
+    }
+
+    return json.dumps(payload, default=_json_default, indent=indent)
