@@ -118,14 +118,14 @@
 
 ## Story 3: Stale content / docs cleanup — branch `opsx/parity-cleanup`
 
-- [ ] T301 Delete stale comment in `main.py`: `# report command (not yet implemented — requires O2)` (search by content, not line number — line may have shifted)
-- [ ] T302 Rewrite `docs/reference/cli/report.md`: remove `--ai`/`--ai-timeout` option rows, remove "requires O1+O2" note, add `.gaze.yaml` `ai:` section config reference, add `GAZEPY_AI_*` env var table, correct description to "direct HTTP" (not "subprocess")
-- [ ] T303 Consolidate `CHANGELOG.md [Unreleased]` → `## [0.7.0]`: one each of `### Added`, `### Changed`, `### Removed`, `### Breaking Changes` (omitting empty sections); no duplicate headers; no `Spec:` references (including the missing entries listed below); `### Breaking Changes` includes JSON schema migration notice (FR-001, FR-004) with before/after examples; missing entries to add (all without `Spec:` references): docs tree, `_matches_cache_decorator` refactor, python-native detection patterns, AI HTTP adapters
-- [ ] T304 Bump `pyproject.toml` `version` → `0.7.0`
-- [ ] T305 Bump `src/gaze_py/__init__.py` `__version__` → `0.7.0`
-- [ ] T306 Remove `pip` ecosystem entry from `.github/dependabot.yml` (retain `github-actions`); per constitution v1.1.3 SYNC IMPACT REPORT
-- [ ] T307 Run `uv run ruff check . && uv run ruff format --check . && uv run mypy src/` — all clean
-- [ ] T308 Open PR `opsx/parity-cleanup` → CI green → merge
+- [x] T301 Delete stale comment in `main.py`: `# report command (not yet implemented — requires O2)` (search by content, not line number — line may have shifted)
+- [x] T302 Rewrite `docs/reference/cli/report.md`: remove `--ai`/`--ai-timeout` option rows, remove "requires O1+O2" note, add `.gaze.yaml` `ai:` section config reference, add `GAZEPY_AI_*` env var table, correct description to "direct HTTP" (not "subprocess")
+- [x] T303 Consolidate `CHANGELOG.md [Unreleased]` → `## [0.7.0]`: one each of `### Added`, `### Changed`, `### Removed`, `### Breaking Changes` (omitting empty sections); no duplicate headers; no `Spec:` references (including the missing entries listed below); `### Breaking Changes` includes JSON schema migration notice (FR-001, FR-004) with before/after examples; missing entries to add (all without `Spec:` references): docs tree, `_matches_cache_decorator` refactor, python-native detection patterns, AI HTTP adapters
+- [x] T304 Bump `pyproject.toml` `version` → `0.7.0`
+- [x] T305 Bump `src/gaze_py/__init__.py` `__version__` → `0.7.0`
+- [x] T306 Remove `pip` ecosystem entry from `.github/dependabot.yml` (retain `github-actions`); per constitution v1.1.3 SYNC IMPACT REPORT
+- [x] T307 Run `uv run ruff check . && uv run ruff format --check . && uv run mypy src/` — all clean
+- [x] T308 Open PR `opsx/parity-cleanup` → CI green → merge
 
 ---
 

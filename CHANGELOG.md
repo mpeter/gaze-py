@@ -2,149 +2,115 @@
 
 All notable changes to gaze-py are documented here.
 
-## [Unreleased]
+## [0.7.0] — 2026-06-22
+
+### Breaking Changes
+
+**JSON output schema change** — affects consumers of `gazepy analyze`,
+`gazepy crap`, and `gazepy quality` JSON output.
+
+`analyze` / `crap`:
+- Top-level key renamed: `"functions"` → `"results"`
+- Function identity is now wrapped in a `"target"` object instead of
+  being flat at the top level: `"name"`, `"file_path"`, `"line"` →
+  `"target": {"package", "function", "receiver", "signature", "location"}`
+- New `"metadata"` field per result entry: `{"gaze_version", "warnings",
+  "duration_ms", "timestamp"}`
+
+`quality`:
+- Top-level is now `{"quality_reports": [...], "quality_summary": {...}}`
+  instead of a bare array
+- `"target_function"` is now a FunctionTarget object instead of a string
+- New per-report fields: `"test_location"`, `"over_specification"`,
+  `"assertion_count"`, `"assertion_detection_confidence"`
+- New `"contract_coverage"` fields: `"covered_count"`, `"total_contractual"`,
+  `"discarded_returns"`, `"discarded_return_hints"`
+
+**Migration:**
+```python
+# Before
+data = json.loads(output)
+name = data["functions"][0]["name"]
+
+# After
+data = json.loads(output)
+name = data["results"][0]["target"]["function"]
+```
+
+For `quality`:
+```python
+# Before
+reports = json.loads(output)  # bare list
+
+# After
+payload = json.loads(output)
+reports = payload["quality_reports"]
+```
 
 ### Added
-- `RecoverBehavior` (P3) detection: `try/except` blocks that suppress or
-  recover from exceptions (return fallback, assign default, bare `pass`).
-  Also handles Python 3.11+ `except*` blocks. Re-raise and
-  transform-and-re-raise patterns are not flagged.
-- `WaitGroupOp` (P3) detection: `asyncio.gather`, `asyncio.wait`,
-  `async with asyncio.TaskGroup()`, `futures.wait(...)` (via alias import),
-  and `threading.Barrier.wait` patterns.
-- `UnsafeMutation` (P4) detection: ctypes pointer subscript writes
-  (`ptr[0] = ...`, `buf[0] = ...`, `p_data[0] = ...`) and `.contents`
-  attribute writes (`mem.contents = ...`).
+
+- **15-file user documentation** (`docs/`) covering concepts (38-type
+  taxonomy, CRAP/GazeCRAP scoring), getting-started (installation,
+  quickstart), CLI reference for all 8 commands, `.gaze.yaml`
+  configuration reference, and glossary
+- **`gazepy report` AI HTTP adapters** — AI-powered narrative reports via
+  direct HTTP calls to Ollama (`/api/generate`) or Google Vertex AI
+  (`rawPredict`, Anthropic Messages format). Configure in `.gaze.yaml`
+  `ai:` section or via `GAZEPY_AI_*` env vars. Without a configured
+  provider, emits the raw JSON payload to stdout
+- **`gap_hints`** on `ContractCoverageResult` — `effect_hint` (which
+  effect type to add assertions for) and `test_hint` (suggested test
+  name pattern)
+- **Python-native detection patterns** (P2/P3):
+  - `subprocess.Popen/run/call/check_output/check_call` → `GoroutineSpawn`
+  - `async with param:` → `MutexOp` or `DatabaseTransaction` (via
+    `_is_db_context` name heuristic)
+  - `atexit.register()` → `GlobalMutation`
+  - `warnings.warn()` → `LogWrite` + `GlobalMutation`
+  - `@lru_cache` / `@cache` / `@functools.*` decorated functions →
+    `GlobalMutation`
+- **P3/P4 detection expansion**:
+  - `RecoverBehavior`: `try/except` blocks that suppress or recover
+  - `WaitGroupOp`: `asyncio.gather`, `asyncio.wait`, `TaskGroup`,
+    `threading.Barrier.wait`
+  - `UnsafeMutation`: ctypes pointer subscript and `.contents` writes
+- **`FunctionTarget.receiver`** — class name for methods, `null` for
+  module-level functions (Go parity)
+- **`FunctionTarget.signature`** — reconstructed from AST arguments node
+  (Go parity)
+- **`FunctionTarget.package`** — project-relative file path, equivalent
+  to Go's import path (Go parity, OC-002)
+
+### Changed
+
+- **`gazepy quality`** includes underscore-prefixed (private) functions
+  by default. Use `--no-include-unexported` to restore the old behaviour.
+  `gazepy analyze` retains `--include-unexported` defaulting to off.
+- **`assess()`** now returns `AssessResult` instead of `list[QualityReport]`.
+  Update: `reports = assess(...)` → `result = assess(...); reports = result.reports`
+- **`with param:` detection** now uses the shared `_is_db_context` helper,
+  aligning sync and async heuristics. `session` is excluded from the
+  heuristic — `with session:` produces `MutexOp` (previously
+  `DatabaseTransaction`).
+- **`_matches_cache_decorator`** extracted from `_has_lru_cache_decorator`
+  — CC reduced from 16 to ~2; both functions removed from the
+  `add_tests` recommendation list.
+
+### Removed
+
+- `gazepy report --ai` flag — provider is now config-driven via `.gaze.yaml`
+  `ai:` section or `GAZEPY_AI_*` env vars.
+  **Migration**: replace `--ai ollama --model llama3.2:3b` with an `ai:`
+  block in `.gaze.yaml`.
+- `gazepy report --ai-timeout` flag — replaced by `ai.timeout` in
+  `.gaze.yaml` or `GAZEPY_AI_TIMEOUT` env var.
 
 ### Fixed
+
 - `AtomicOp` (P3) and `SyncPoolOp` (P4) formally closed as having no
-  Python equivalent. Both remain in the taxonomy (EC-001 compatibility).
-  Closure is documented in `taxonomy/effects.py` comments.
-
-### Specs
-- `openspec/changes/p3p4-detection-expansion/`
-
-### Added
-- `gazepy report`: AI-powered narrative reports via direct HTTP REST calls to
-  Ollama (`/api/generate`) or Vertex AI (`rawPredict`, Anthropic Messages format).
-  Configure in `.gaze.yaml` `ai:` section or via `GAZEPY_AI_*` env vars.
-  Without a configured provider, emits the raw JSON payload to stdout.
-- `gazepy report --model`: per-invocation model override (takes precedence over
-  config file and env vars).
-- `.gaze.yaml` `ai:` section: `provider`, `model`, `endpoint`, `project`,
-  `region`, `timeout` fields for AI report configuration.
-- `GAZEPY_AI_PROVIDER`, `GAZEPY_AI_MODEL`, `GAZEPY_AI_ENDPOINT`,
-  `GAZEPY_AI_PROJECT`, `GAZEPY_AI_REGION`, `GAZEPY_AI_TIMEOUT` env vars.
-- `gap_hints` field on `ContractCoverageResult`: `effect_hint` (which effect
-  type to add assertions for) and `test_hint` (suggested test name pattern).
-
-### Changed
-- `gazepy quality` and `assess()` now include underscore-prefixed (private)
-  functions by default. Previously excluded, causing the quality pipeline to
-  miss the majority of functions in most Python codebases. Use
-  `--no-include-unexported` to restore the old behaviour. Note: `gazepy
-  analyze` retains `--include-unexported` defaulting to off; only the
-  quality pipeline changes.
-
-- Spec: `openspec/changes/quality-include-private/`
-
-### Added
-- `gazepy report`: AI-powered narrative reports via HTTP adapters
-  (Ollama, Google Vertex AI). Configure your provider in `.gaze.yaml`
-  under the `ai:` block or via `GAZEPY_AI_*` environment variables.
-  Without a configured provider, emits the raw analysis JSON to stdout.
-- `gazepy report --tests`: optional quality enrichment for
-  GazeCRAP, quadrant, and gap hint data in the report payload.
-
-### Removed
-- `gazepy report --ai` flag — provider is now config-driven (`.gaze.yaml`
-  `ai:` section or `GAZEPY_AI_*` env vars). **Migration**: replace
-  `--ai ollama --model llama3.2:3b` with `.gaze.yaml`:
-  `ai: {provider: ollama, model: llama3.2:3b}`
-- `gazepy report --ai-timeout` flag — replaced by `ai.timeout` in `.gaze.yaml`
-  or `GAZEPY_AI_TIMEOUT` env var.
-
-### Removed
-- `--ai` and `--ai-timeout` CLI flags from `gazepy report`. These
-  flags have been replaced by the `.gaze.yaml` `ai:` configuration
-  block and `GAZEPY_AI_*` environment variable overrides.
-
-  **Migration**: remove `--ai <provider>` and `--ai-timeout <n>` from
-  any scripts or agent configs. Instead, add an `ai:` section to your
-  `.gaze.yaml` (or set `GAZEPY_AI_PROVIDER` / `GAZEPY_AI_TIMEOUT`).
-  See the README `## AI Reports` section for the full reference.
-
-  - Spec: `openspec/changes/ai-http-adapters/`
-
-### Fixed
+  Python equivalent. Both remain in the taxonomy for EC-001 compatibility.
 - `--max-gaze-crapload` now enforced in `crap`, `self-check`, and
-  `report` commands (O5). Previously emitted a stale "deferred
-  until O1" warning; O1 has been shipped since v0.3.
-
-### Specs
-- `openspec/changes/archive/2026-06-18-quality-include-private/`
-- `openspec/changes/archive/2026-06-18-gap-hints/`
-- `openspec/changes/report-command/` (superseded by `ai-http-adapters`)
-- `openspec/changes/ai-http-adapters/` (PR #39)
-
-### Added
-- `subprocess.Popen`, `subprocess.run`, `subprocess.call`,
-  `subprocess.check_output`, `subprocess.check_call` detected as
-  `GoroutineSpawn` (P2). OS child processes are concurrent tasks per EC-005.
-- `async with param:` patterns detected as `MutexOp` (P3) or
-  `DatabaseTransaction` (P2), using the `_is_db_context` name heuristic.
-  Closes the known gap documented in `visit_AsyncWith`.
-- `atexit.register()` detected as `GlobalMutation` (P1). Registering a
-  shutdown callback mutates the interpreter-global atexit handler list.
-- `warnings.warn()` detected as `LogWrite` (P2) + `GlobalMutation` (P1).
-  Warnings are a structured filterable developer output channel; they also
-  typically write to `__warningregistry__` in the calling module's globals.
-- `@lru_cache` / `@functools.lru_cache` / `@cache` / `@functools.cache`
-  decorated functions detected as `GlobalMutation` (P1). The memoization
-  cache is persistent global-like state shared across all callers.
-
-### Changed
-- `with param:` (synchronous) connection detection now uses the shared
-  `_is_db_context` helper, aligning sync and async heuristics. Compound
-  names like `db_conn` now correctly classify as `DatabaseTransaction`.
-  Existing fixture param names (`connection`, `conn`, `lock`) are unaffected.
-  Note: `session` is excluded from the heuristic — `with session:` now
-  produces `MutexOp` (previously `DatabaseTransaction` via the old inline set).
-
-### Specs
-- `openspec/changes/python-native-detection/specs/`
-
----
-
-### Added (prior)
-- Strategy 3 pairing via Astroid transitive call graph inference
-  (`inference_method: "call_graph_transitive"`, confidence 0.75)
-- `"no_test_coverage"` contract coverage reason code for functions
-  with effects but no paired test (GazeCRAP remains null per Go
-  porting contract — "no test = no coverage data, not 0%")
-- `--tests` option on `gazepy crap` command
-- `AssessResult` return type from `assess()` with `.reports`
-  (test-keyed) and `.untested` (production-function-keyed) fields
-- `build_contract_coverage_map()` in `quality/pipeline.py`
-
-### Changed
-- `assess()` now returns `AssessResult` instead of
-  `list[QualityReport]`. Direct Python callers must update:
-  `reports = assess(...)` → `result = assess(...); reports = result.reports`
-
-### Known Limitations
-- Private (underscore-prefixed) functions do not receive
-  `contract_coverage_reason` enrichment in `gazepy crap --tests`
-  output (deduplication of the double detect_and_classify() call is
-  deferred to a follow-up change; assess() now defaults to
-  include_unexported=True as of this release)
-- Astroid 3.x compatibility is asserted but CI-verified at 4.1.2
-  only (astroid>=3.0,<5 — CI-verified at 4.1.2)
-- `MANAGER.clear_cache()` evicts astroid's process-global AST
-  cache on each `assess()` call; tools sharing the process that
-  also use astroid (e.g. pylint) will have their cache cleared
-
-- Spec: `openspec/changes/archive/quality-pairing-astroid/`
+  `report` commands.
 
 ## [0.4.1] — 2026-06-15
 

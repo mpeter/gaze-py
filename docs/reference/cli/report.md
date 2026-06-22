@@ -10,11 +10,9 @@ gazepy report [OPTIONS] [PATH]
 
 ## Description
 
-Combines CRAP scoring, quality assessment, and document scanning into a single report payload. Without `--ai`, emits the JSON payload to stdout. With `--ai`, calls the specified provider subprocess and returns a narrative report.
+Combines CRAP scoring, quality assessment, and document scanning into a single report payload. When no AI provider is configured, emits the JSON payload to stdout. When an AI provider is configured (via `.gaze.yaml` or environment variables), calls the provider over HTTP and returns a narrative report.
 
 When `--coverprofile` is not provided, gaze-py runs `pytest --cov` automatically.
-
-> **Note:** `--ai` and `--model` require the O1+O2 capability layer. These options accept arguments but the AI report generation pipeline is not available in the base `gaze-py` package.
 
 ## Options
 
@@ -24,16 +22,36 @@ When `--coverprofile` is not provided, gaze-py runs `pytest --cov` automatically
 | `--coverprofile PATH` | auto-run pytest | Path to a pre-generated `coverage.py` JSON report |
 | `--max-crapload INTEGER` | `0` (no limit) | CI gate: exit 1 when CRAPload exceeds this value |
 | `--max-gaze-crapload INTEGER` | `0` (no limit) | CI gate: exit 1 when GazeCRAPload exceeds this value |
-| `--min-contract-coverage FLOAT` | — | Minimum contract coverage percentage (requires O1) |
+| `--min-contract-coverage FLOAT` | — | Minimum contract coverage percentage (requires quality assessment) |
 | `--tests TEXT` | auto-discovered | Test directory or file |
-| `--ai TEXT` | — | AI provider for report generation (requires O1+O2) |
-| `--model TEXT` | — | AI model to use for report generation |
-| `--ai-timeout INTEGER` | — | Timeout in seconds for AI provider calls |
+
+## AI Provider Configuration
+
+Configure an AI provider in `.gaze.yaml` under the `ai:` key:
+
+```yaml
+ai:
+  provider: ollama          # or: vertex
+  model: llama3.2:3b
+  timeout: 120
+  base_url: http://localhost:11434   # Ollama default
+```
+
+Or via environment variables:
+
+| Variable | Description |
+|---|---|
+| `GAZEPY_AI_PROVIDER` | Provider name (`ollama`, `vertex`) |
+| `GAZEPY_AI_MODEL` | Model identifier |
+| `GAZEPY_AI_TIMEOUT` | Request timeout in seconds |
+| `GAZEPY_AI_BASE_URL` | Provider base URL (Ollama) |
+
+Without a configured provider, `gazepy report` emits the raw analysis JSON to stdout.
 
 ## Examples
 
 ```bash
-# JSON report payload to stdout
+# JSON report payload to stdout (no AI provider configured)
 gazepy report src/ --format json
 
 # With pre-generated coverage
