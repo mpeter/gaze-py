@@ -21,7 +21,13 @@ from gaze_py.quality.coverage import compute_contract_coverage
 from gaze_py.quality.mapper import build_call_bindings, map_assertions_to_effects
 from gaze_py.quality.models import TestFunc
 from gaze_py.quality.pairing import _build_astroid_graph, find_test_functions, pair_to_targets
-from gaze_py.taxonomy.models import ContractCoverageResult, FunctionTarget, QualityReport
+from gaze_py.taxonomy.models import (
+    AssertionKind,
+    ContractCoverageResult,
+    FunctionTarget,
+    OverSpecification,
+    QualityReport,
+)
 
 
 @dataclass(frozen=True)
@@ -121,7 +127,7 @@ def assess(
     # Step 5: collect untested production functions (D6 in design.md).
     # seen_names is the set of non-None target_function.function values from paired reports.
     seen_names: set[str] = {
-        r.target_function.function for r in reports if isinstance(r.target_function, FunctionTarget)
+        r.target_function.function for r in reports if r.target_function is not None
     }
 
     if target_func is None:
@@ -205,11 +211,15 @@ def _process_test_func(
     over_spec_count = coverage.over_specification_count if coverage is not None else 0
     over_spec_ratio = over_spec_count / total_assertions if total_assertions > 0 else 0.0
 
-    # Compute assertion detection confidence.
-    # All detected assertions are pattern-matched by detect_assertions().
-    assertion_confidence = 100
-
-    from gaze_py.taxonomy.models import OverSpecification
+    # Compute assertion detection confidence per T113:
+    # mapped / total * 100, where "mapped" = assertions with a known kind
+    # (kind != AssertionKind.UNKNOWN). When total == 0, confidence is 100
+    # (no assertions means nothing was missed).
+    if total_assertions == 0:
+        assertion_confidence = 100
+    else:
+        mapped_count = sum(1 for a in assertions if a.kind != AssertionKind.UNKNOWN)
+        assertion_confidence = round(mapped_count / total_assertions * 100)
 
     return QualityReport(
         test_function=test_func.name,
@@ -321,14 +331,8 @@ def build_contract_coverage_map(
     for report in result.reports + result.untested:
         if report.target_function is None or report.contract_coverage is None:
             continue
-        # target_function is now FunctionTarget | None; extract the function name.
-        name = (
-            report.target_function.function
-            if isinstance(report.target_function, FunctionTarget)
-            else None
-        )
-        if name is None:
-            continue
+        # target_function is FunctionTarget | None; already checked None above.
+        name = report.target_function.function
         ccr = report.contract_coverage
         if name not in coverage_map:
             coverage_map[name] = ccr

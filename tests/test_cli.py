@@ -235,6 +235,16 @@ def test_analyze_function_target_receiver_method_vs_module(tmp_path: Path) -> No
     assert g is not None, "g not found"
     assert "-> int" in g.signature, f"Expected '-> int' in signature, got {g.signature!r}"
 
+    # Positional-only parameter case (Python 3.8+): signature must contain '/'
+    posonly_file = tmp_path / "posonly_case.py"
+    posonly_file.write_text("def h(x: int, /, y: str) -> None:\n    pass\n")
+    targets5 = FileDetector.detect(posonly_file, root=root)
+    h = next((t for t in targets5 if t.function == "h"), None)
+    assert h is not None, "h not found"
+    assert "/" in h.signature, (
+        f"Expected '/' separator in signature for positional-only param, got {h.signature!r}"
+    )
+
 
 def test_schema_command_uses_results_key() -> None:
     """T127: gazepy schema output uses 'results' key, not 'functions'."""
@@ -298,18 +308,20 @@ def test_quality_json_envelope() -> None:
         )
 
     # T126: contract_coverage sub-fields
-    for r in data["quality_reports"]:
-        cc = r.get("contract_coverage")
-        if cc is not None:
-            assert "covered_count" in cc, "contract_coverage must have covered_count"
-            assert "total_contractual" in cc, "contract_coverage must have total_contractual"
-            assert cc.get("discarded_returns") == [], (
-                f"discarded_returns must be [] (OC-003), got {cc.get('discarded_returns')!r}"
-            )
-            assert cc.get("discarded_return_hints") == [], (
-                "discarded_return_hints must be [] (OC-003), "
-                f"got {cc.get('discarded_return_hints')!r}"
-            )
+    reports_with_cc = [r for r in data["quality_reports"] if r.get("contract_coverage") is not None]
+    assert len(reports_with_cc) > 0, (
+        "T126 precondition: at least one quality_report must have non-null contract_coverage"
+    )
+    for r in reports_with_cc:
+        cc = r["contract_coverage"]
+        assert "covered_count" in cc, "contract_coverage must have covered_count"
+        assert "total_contractual" in cc, "contract_coverage must have total_contractual"
+        assert cc.get("discarded_returns") == [], (
+            f"discarded_returns must be [] (OC-003), got {cc.get('discarded_returns')!r}"
+        )
+        assert cc.get("discarded_return_hints") == [], (
+            f"discarded_return_hints must be [] (OC-003), got {cc.get('discarded_return_hints')!r}"
+        )
 
 
 def test_quality_over_specification_ratio_zero_assertions() -> None:
@@ -332,8 +344,14 @@ def test_quality_over_specification_ratio_zero_assertions() -> None:
     )
     data = json.loads(result.output)
     for r in data["quality_reports"]:
-        ratio = r.get("over_specification", {}).get("ratio", -1.0)
-        assert ratio >= 0.0, f"ratio must be >= 0.0, got {ratio!r}"
+        assert r.get("assertion_count") == 0, (
+            f"Expected assertion_count=0 (test_simple doesn't test undertested), "
+            f"got {r.get('assertion_count')!r}"
+        )
+        ratio = r.get("over_specification", {}).get("ratio")
+        assert ratio == 0.0, (
+            f"T125: ratio must be exactly 0.0 when assertion_count=0, got {ratio!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1114,7 +1132,10 @@ def test_crap_baseline_missing_file_exits_2(tmp_path: Path) -> None:
 
 
 def test_crap_format_json(tmp_path: Path) -> None:
-    """crap --format=json exits 0 and emits valid JSON with functions and summary."""
+    """crap --format=json exits 0 and emits valid JSON with results and summary.
+
+    T122b (crap): regression guard — top-level must be 'results' not 'functions'.
+    """
     source = tmp_path / "foo.py"
     source.write_text("def foo():\n    return 1\n")
     cov: dict[str, object] = {"files": {"foo.py": {"summary": {"percent_covered": 80.0}}}}
@@ -1127,7 +1148,9 @@ def test_crap_format_json(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
-    assert "results" in data
+    # T122b regression guard — 'results' key present, 'functions' key absent.
+    assert "results" in data, "T122b: top-level key must be 'results'"
+    assert "functions" not in data, "T122b: old 'functions' key must not be present"
     assert "summary" in data
     assert data["summary"]["crapload"] is not None
 
@@ -2233,7 +2256,7 @@ def test_crap_without_tests_gaze_crap_null(tmp_path: Path) -> None:
     for fn in data["results"]:
         assert fn.get("gaze_crap") is None, (
             f"Expected gaze_crap=null without --tests, got {fn.get('gaze_crap')!r} "
-            f"for function {fn.get('name')!r}"
+            f"for function {fn.get('target', {}).get('function')!r}"
         )
 
 
@@ -2503,9 +2526,8 @@ def test_compute_quadrant_counts_returns_none_when_no_labels() -> None:
 # ---------------------------------------------------------------------------
 # Task 5.2 — report command + max-gaze-crapload + prompt loading tests
 # ---------------------------------------------------------------------------
-
-_QUALITY_SRC = Path(__file__).parent / "testdata" / "quality" / "src"
-_QUALITY_TESTS = Path(__file__).parent / "testdata" / "quality" / "tests"
+# Note: _QUALITY_SRC and _QUALITY_TESTS are defined at module level above
+# (line 1174–1175) — no redefinition needed here.
 
 
 def test_max_gaze_crapload_exits_1_when_exceeded(tmp_path: Path) -> None:

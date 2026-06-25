@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from gaze_py.analysis.detector import FileDetector
+from gaze_py.analysis.detector import FileDetector, _build_signature, _format_annotation
 from gaze_py.taxonomy.effects import SideEffectType
 from gaze_py.taxonomy.exceptions import GazeParseError
 
@@ -1417,3 +1417,42 @@ def test_lru_cache_effect_on_definition_not_call_site(tmp_path: Path) -> None:
         assert not any(e.type == SideEffectType.GlobalMutation for e in caller_fn.effects), (
             f"{caller} should not have GlobalMutation (callers have no GlobalMutation sources)"
         )
+
+
+# ---------------------------------------------------------------------------
+# _build_signature and _format_annotation error paths (M-8)
+# CR-004: tested directly because injecting a malformed ast.FunctionDef
+# through the public FileDetector.detect() API is not feasible.
+# ---------------------------------------------------------------------------
+
+
+def test_build_signature_fallback_on_malformed_args() -> None:
+    """_build_signature falls back to 'def f(...)' when args node is malformed."""
+    import ast
+
+    node = ast.parse("def f(x: int) -> str: pass").body[0]
+    assert isinstance(node, ast.FunctionDef)
+    # Force an AttributeError inside _build_signature by removing args.
+    node.args = None  # type: ignore[assignment]
+    result = _build_signature(node, "f")
+    assert result == "def f(...)", f"Expected fallback signature, got {result!r}"
+
+
+def test_build_signature_async_prefix() -> None:
+    """_build_signature emits 'async def' for AsyncFunctionDef nodes."""
+    import ast
+
+    node = ast.parse("async def fetch(url: str) -> bytes: pass").body[0]
+    assert isinstance(node, ast.AsyncFunctionDef)
+    result = _build_signature(node, "fetch")
+    assert result.startswith("async def "), (
+        f"Expected 'async def' prefix for async function, got {result!r}"
+    )
+    assert "url: str" in result
+    assert "-> bytes" in result
+
+
+def test_format_annotation_returns_empty_string_on_none() -> None:
+    """_format_annotation returns '' for None input (no annotation)."""
+    result = _format_annotation(None)
+    assert result == "", f"Expected '' for None annotation, got {result!r}"

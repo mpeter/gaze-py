@@ -429,6 +429,7 @@ def crap(
         finally:
             Path(tmp).unlink(missing_ok=True)
 
+    start_time = time.monotonic()
     result = _run_crap(src, coverage_data, config=config)
     _enrich_with_quality(result, src, tests_path, coverage_data, config=config)
 
@@ -723,11 +724,7 @@ def _emit_quality_text(reports: Sequence[QualityReport], *, src_path: Path) -> N
     click.echo(sep)
 
     for report in reports:
-        fn_label = (
-            report.target_function.function
-            if isinstance(report.target_function, FunctionTarget)
-            else "?"
-        )
+        fn_label = report.target_function.function if report.target_function is not None else "?"
         test_label = f" (← {report.test_function})"
         fn_col = f"{fn_label}{test_label}"
 
@@ -796,7 +793,7 @@ def _check_min_contract_coverage(reports: Sequence[QualityReport], threshold: fl
         if report.contract_coverage is not None and report.contract_coverage.percentage is not None:
             fn_name = (
                 report.target_function.function
-                if isinstance(report.target_function, FunctionTarget)
+                if report.target_function is not None
                 else report.test_function
             )
             coverages.append((fn_name, report.contract_coverage.percentage))
@@ -1944,6 +1941,132 @@ def _emit(
         click.echo(analysis_to_json(result, start_time=start_time))
     else:
         click.echo(to_text(result))
+
+
+def _resolve_baseline_path(
+    flag_path: str | None,
+    config: GazeConfig,
+    project_root: Path,
+) -> tuple[Path | None, bool]:
+    """Resolve the baseline file path from flag, config, or auto-discovery.
+
+    Resolution order (T216):
+    1. ``--baseline`` flag (explicit — error when file missing or is a dir)
+    2. ``config.baseline.file`` when not None (explicit — same rules)
+    3. Auto-discovery: ``project_root / ".gaze" / "baseline.json"``
+       — silent skip when absent or directory
+
+    Args:
+        flag_path: Value of the ``--baseline`` CLI flag. None if not passed.
+        config: Loaded GazeConfig.
+        project_root: Project root directory (nearest pyproject.toml).
+
+    Returns:
+        Tuple of (resolved_path_or_None, is_explicit).
+        is_explicit=True means a missing/bad file should cause exit 2.
+    """
+    # (1) --baseline flag takes priority
+    if flag_path is not None:
+        return Path(flag_path), True
+
+    # (2) config.baseline.file when explicitly set (non-None)
+    if config.baseline.file is not None:
+        return Path(config.baseline.file), True
+
+    # (3) Auto-discovery
+    candidate = project_root / ".gaze" / "baseline.json"
+    if candidate.exists() and candidate.is_file():
+        return candidate, False
+
+    # Not found — silent skip
+    return None, False
+
+
+def _run_baseline_comparison(
+    result: AnalysisResult,
+    flag_path: str | None,
+    config: GazeConfig,
+    output_format: str,
+) -> None:
+    """Load baseline, compare, emit comparison output, and apply gate.
+
+    Emits comparison output to stdout (before the normal _emit call is
+    bypassed when a comparison is active). Applies exit 1 gate when
+    comparison.passed is False. Warnings from compare() go to stderr.
+
+    Args:
+        result: The current CRAP AnalysisResult.
+        flag_path: Raw ``--baseline`` flag value (may be None).
+        config: Loaded GazeConfig.
+        output_format: "json" or "text".
+    """
+    from gaze_py.crap.compare import CompareOptions, compare, load_baseline  # noqa: PLC0415
+    from gaze_py.report.json_formatter import (  # noqa: PLC0415
+        comparison_to_json,
+        comparison_to_text,
+    )
+
+    project_root = _find_project_root()
+    baseline_path, is_explicit = _resolve_baseline_path(flag_path, config, project_root)
+
+    if baseline_path is None:
+        return  # No baseline — silent skip
+
+    # Load baseline
+    try:
+        baseline_entries = load_baseline(baseline_path)
+    except ValueError as exc:
+        if is_explicit:
+            click.echo(f"Error: {exc}", err=True)
+            raise SystemExit(2) from exc
+        else:
+            # Auto-discovered file gone or corrupt — warn and skip
+            click.echo(f"Warning: skipping auto-discovered baseline: {exc}", err=True)
+            return
+
+    # Build current entries list from result
+    import json as _json  # noqa: PLC0415
+
+    from gaze_py.report.json_formatter import analysis_to_json  # noqa: PLC0415
+
+    current_json = analysis_to_json(result)
+    current_data = _json.loads(current_json)
+    current_entries = current_data.get("results", [])
+    crap_summary = current_data.get("summary", {})
+
+    # Resolve CompareOptions — new_function_threshold: None → crap_threshold
+    threshold = (
+        config.baseline.new_function_threshold
+        if config.baseline.new_function_threshold is not None
+        else config.crap_threshold
+    )
+    opts = CompareOptions(
+        epsilon=config.baseline.epsilon,
+        new_function_threshold=threshold,
+    )
+
+    cmp_result = compare(baseline_entries, current_entries, opts)
+
+    # Emit warnings to stderr
+    for warning in cmp_result.warnings:
+        click.echo(warning, err=True)
+
+    # Emit comparison output (replaces normal _emit for this invocation)
+    if output_format == "json":
+        click.echo(comparison_to_json(cmp_result, crap_summary))
+    else:
+        from gaze_py.report.text_formatter import to_text  # noqa: PLC0415
+
+        click.echo(comparison_to_text(to_text(result), cmp_result))
+
+    # Gate: exit 1 when comparison failed
+    if not cmp_result.summary.passed:
+        raise SystemExit(1)
+
+    # Suppress normal _emit — comparison already emitted output
+    # (achieved by monkey-patching result.summary to signal caller;
+    # simpler: just raise SystemExit(0) to short-circuit after output)
+    raise SystemExit(0)
 
 
 def _find_project_root() -> Path:
