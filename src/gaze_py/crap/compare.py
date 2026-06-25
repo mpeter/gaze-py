@@ -236,7 +236,10 @@ def score_key(entry: JsonEntry) -> str:
         Composite key string.
     """
     t = entry["target"]
-    assert isinstance(t, dict), f"score_key: expected target dict, got {type(t).__name__}"
+    if not isinstance(t, dict):
+        raise TypeError(
+            f"score_key: expected target dict, got {type(t).__name__}"
+        )
     return str(t["package"]) + ":" + str(t["function"])
 
 
