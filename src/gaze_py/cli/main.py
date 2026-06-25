@@ -49,7 +49,13 @@ from gaze_py.crap.scorer import (
     quadrant,
     recommended_actions,
 )
-from gaze_py.report.json_formatter import SCHEMA, analysis_to_json, quality_to_json
+from gaze_py.report.json_formatter import (
+    SCHEMA,
+    analysis_to_json,
+    comparison_to_json,
+    comparison_to_text,
+    quality_to_json,
+)
 from gaze_py.report.text_formatter import to_text
 from gaze_py.taxonomy.exceptions import GazeConfigError, GazeParseError
 from gaze_py.taxonomy.models import (
@@ -204,6 +210,50 @@ def analyze(
 
 
 # ---------------------------------------------------------------------------
+# Baseline path resolution (T216)
+# ---------------------------------------------------------------------------
+
+
+def resolve_baseline_path(
+    flag_path: str | None,
+    config: GazeConfig,
+    project_root: Path,
+) -> tuple[Path | None, bool]:
+    """Resolve the baseline file path from flag, config, or auto-discovery.
+
+    Resolution order:
+    1. ``--baseline`` flag → explicit path (``is_explicit=True``).
+    2. ``config.baseline.file`` set → explicit path (``is_explicit=True``).
+    3. Auto-discovery: ``project_root / ".gaze" / "baseline.json"`` — returns
+       ``(path, False)`` when it exists as a regular file, ``(None, False)``
+       when absent or a directory.
+
+    Args:
+        flag_path: Raw value of the ``--baseline`` CLI flag, or ``None``.
+        config: Loaded GazeConfig (may have ``baseline.file`` set).
+        project_root: Directory to use as the root for auto-discovery.
+
+    Returns:
+        Tuple of ``(resolved_path_or_None, is_explicit)``.
+        ``is_explicit=True`` when the path came from a flag or config key
+        (caller should exit 2 on load failure).
+        ``is_explicit=False`` when auto-discovered (caller should warn and
+        skip on load failure).
+    """
+    if flag_path is not None:
+        return (Path(flag_path), True)
+
+    if config.baseline.file is not None:
+        return (Path(config.baseline.file), True)
+
+    # Auto-discovery: .gaze/baseline.json relative to project root.
+    candidate = project_root / ".gaze" / "baseline.json"
+    if candidate.is_file():
+        return (candidate, False)
+    return (None, False)
+
+
+# ---------------------------------------------------------------------------
 # crap command
 # ---------------------------------------------------------------------------
 
@@ -277,7 +327,12 @@ def analyze(
     "--baseline",
     type=click.Path(exists=False),
     default=None,
-    help="Baseline file for delta reporting (stub: not yet implemented).",
+    help=(
+        "Path to a baseline JSON file produced by a previous "
+        "'gazepy crap --format=json' run. When provided, compares current "
+        "CRAP scores against the baseline and exits 1 on regressions. "
+        "Auto-discovered from .gaze/baseline.json when not specified."
+    ),
 )
 @click.option(
     "--tests",
@@ -308,14 +363,6 @@ def crap(
 
     CI gate: --max-crapload exits 1 when the crapload count exceeds the limit.
     """
-    # --baseline stub — exit 1 (not 2) with clear message.
-    if baseline is not None:
-        click.echo(
-            "Error: --baseline is not yet implemented in gazepy.",
-            err=True,
-        )
-        raise SystemExit(1)
-
     # PATH validation — must happen before subprocess or analysis.
     src = Path(path).resolve()
     if not src.exists():
@@ -378,6 +425,21 @@ def crap(
 
     result = _run_crap(src, coverage_data, config=config)
     _enrich_with_quality(result, src, tests_path, coverage_data, config=config)
+
+    # --baseline comparison (T217/T218).
+    project_root = src if src.is_dir() else src.parent
+    baseline_path, is_explicit = resolve_baseline_path(baseline, config, project_root)
+
+    if baseline_path is not None:
+        _run_baseline_comparison(
+            result=result,
+            baseline_path=baseline_path,
+            is_explicit=is_explicit,
+            output_format=output_format,
+            config=config,
+        )
+        return  # comparison path handles all output and gates
+
     _emit(result, output_format)
 
     # CI threshold enforcement — after emitting output.
@@ -993,6 +1055,88 @@ def report(
     # Gates fire after output (HIGH-1 fix: payload always written before exit).
     _enforce_crap_gates(result, max_crapload=max_crapload, max_gaze_crapload=max_gaze_crapload)
     _enforce_min_contract_coverage_from_result(result, min_contract_coverage)
+
+
+# ---------------------------------------------------------------------------
+# Baseline comparison helper (T217/T218)
+# ---------------------------------------------------------------------------
+
+
+def _run_baseline_comparison(
+    result: AnalysisResult,
+    *,
+    baseline_path: Path,
+    is_explicit: bool,
+    output_format: str,
+    config: GazeConfig,
+) -> None:
+    """Load baseline, compare, emit output, and apply the pass/fail gate.
+
+    Handles all error paths for baseline loading:
+    - Explicit path (``--baseline`` flag or ``config.baseline.file``): exits 2
+      on ``ValueError``.
+    - Auto-discovered path: emits a stderr warning and returns (no exit 2).
+
+    Emits comparison output and raises ``SystemExit(1)`` when the comparison
+    fails (regressions or new violations found).
+
+    Args:
+        result: Current CRAP analysis result.
+        baseline_path: Resolved path to the baseline JSON file.
+        is_explicit: True when the path came from a flag or config key.
+        output_format: One of ``"json"`` or ``"text"``.
+        config: Loaded GazeConfig with baseline options.
+    """
+    from gaze_py.crap.compare import CompareOptions, compare, load_baseline
+
+    # Load baseline — error handling differs by explicit vs auto-discovered.
+    try:
+        baseline_entries = load_baseline(baseline_path)
+    except ValueError as e:
+        if is_explicit:
+            click.echo(str(e), err=True)
+            raise SystemExit(2) from e
+        # Auto-discovered: warn and skip comparison (do NOT exit 2).
+        click.echo(
+            f"Warning: auto-discovered baseline could not be loaded — skipping comparison. ({e})",
+            err=True,
+        )
+        _emit(result, output_format)
+        return
+
+    # T218: wire CompareOptions — explicit is not None check for epsilon=0.0 safety.
+    new_fn_threshold = (
+        config.baseline.new_function_threshold
+        if config.baseline.new_function_threshold is not None
+        else config.crap_threshold
+    )
+    opts = CompareOptions(
+        epsilon=config.baseline.epsilon,
+        new_function_threshold=new_fn_threshold,
+    )
+
+    # Build current entries list from the analysis result JSON.
+    current_json = analysis_to_json(result)
+    current_data = json.loads(current_json)
+    current_entries: list[dict] = current_data.get("results", [])  # type: ignore[type-arg]
+    crap_summary: dict = current_data.get("summary", {})  # type: ignore[type-arg]
+
+    cmp_result = compare(baseline_entries, current_entries, opts)
+
+    # Emit warnings to stderr (T205: warnings are stderr-only).
+    for warning in cmp_result.warnings:
+        click.echo(warning, err=True)
+
+    # Emit comparison output.
+    if output_format == "json":
+        click.echo(comparison_to_json(cmp_result, crap_summary))
+    else:
+        crap_text = to_text(result)
+        click.echo(comparison_to_text(crap_text, cmp_result))
+
+    # Gate: exit 1 when comparison failed (regressions or new violations).
+    if not cmp_result.summary.passed:
+        raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------
