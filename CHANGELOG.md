@@ -4,6 +4,38 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **JSON output schema — `functions` → `results`** (OC-002 / FR-001): The
+  top-level key in `gazepy analyze` and `gazepy crap` JSON output has been
+  renamed from `"functions"` to `"results"`. Any consumer parsing `data["functions"]`
+  must be updated to `data["results"]`.
+
+- **`FunctionTarget` now nested under `"target"` wrapper** (OC-002 / FR-002):
+  Each result entry no longer exposes `name`, `file_path`, `line`, etc. at the
+  top level. They are now wrapped in a `"target"` sub-object with keys
+  `package`, `function`, `receiver`, `signature`, `location`.
+
+  Before:
+  ```json
+  {"name": "parse", "file_path": "src/parser.py", "line": 12, ...}
+  ```
+  After:
+  ```json
+  {"target": {"package": "src/parser.py", "function": "parse", "receiver": null,
+              "signature": "def parse(text: str) -> int", "location": "src/parser.py:12"},
+   "side_effects": [...], "metadata": {...}, ...}
+  ```
+
+- **`"metadata"` object injected per result entry** (OC-002 / FR-003): Each
+  result entry now includes a `"metadata"` sub-object with `gaze_version`,
+  `warnings`, `duration_ms`, and `timestamp` (RFC3339 Z format). Consumers
+  that iterate result entries by key index must account for the new key.
+
+- **Quality JSON output uses `quality_reports`/`quality_summary` envelope**
+  (OC-002 / FR-004): `gazepy quality` JSON output top-level keys changed from
+  a bare array to `{"quality_reports": [...], "quality_summary": {...}}`.
+
 ### Added
 - `RecoverBehavior` (P3) detection: `try/except` blocks that suppress or
   recover from exceptions (return fallback, assign default, bare `pass`).

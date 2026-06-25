@@ -1834,7 +1834,9 @@ class FileDetector:
                 complexity=1,
                 package=rel_path,
                 receiver=None,
-                signature="def <module>()",
+                # sentinel value matching the 'function' field convention;
+                # no valid Python syntax exists for module-level scope.
+                signature="<module>",
                 caller_count=0,
                 effects=[effect for _, effect in sentinel_pairs],
             )
@@ -2009,11 +2011,13 @@ def _build_signature(fn_node: ast.FunctionDef | ast.AsyncFunctionDef, name: str)
         # return annotation
         ret = _format_annotation(fn_node.returns)
         params = ", ".join(parts)
+        prefix = "async def" if isinstance(fn_node, ast.AsyncFunctionDef) else "def"
         if ret:
-            return f"def {name}({params}) -> {ret}"
-        return f"def {name}({params})"
+            return f"{prefix} {name}({params}) -> {ret}"
+        return f"{prefix} {name}({params})"
     except Exception:  # noqa: BLE001
-        return f"def {name}(...)"
+        prefix = "async def" if isinstance(fn_node, ast.AsyncFunctionDef) else "def"
+        return f"{prefix} {name}(...)"
 
 
 def _has_nonlocal(fn_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:

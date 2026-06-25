@@ -17,7 +17,10 @@ import json
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from gaze_py.crap.compare import ComparisonResult
 
 import gaze_py
 from gaze_py.taxonomy.models import (
@@ -220,6 +223,8 @@ def analysis_to_json(
             "side_effects": effects_list,
             "metadata": {
                 "gaze_version": gaze_version,
+                # warnings is reserved for future use; always [] in this version.
+                # Analysis warnings are currently emitted to stderr only.
                 "warnings": [],
                 "duration_ms": duration_ms,
                 "timestamp": timestamp,
@@ -322,11 +327,9 @@ def quality_to_json(reports: Sequence[QualityReport], *, indent: int = 2) -> str
 
     for qr in reports:
         # Serialize target_function as target dict or null.
-        target_fn: dict[str, object] | None
-        if isinstance(qr.target_function, FunctionTarget):
-            target_fn = _target_dict(qr.target_function)
-        else:
-            target_fn = None
+        target_fn: dict[str, object] | None = (
+            _target_dict(qr.target_function) if qr.target_function is not None else None
+        )
 
         # Serialize contract_coverage with new fields.
         cc_dict: dict[str, object] | None
@@ -393,3 +396,164 @@ def quality_to_json(reports: Sequence[QualityReport], *, indent: int = 2) -> str
     }
 
     return json.dumps(payload, default=_json_default, indent=indent)
+
+
+# ---------------------------------------------------------------------------
+# Baseline comparison output (Story 2)
+# ---------------------------------------------------------------------------
+
+
+def comparison_to_json(
+    comparison_result: ComparisonResult,
+    crap_summary: dict,  # type: ignore[type-arg]
+    *,
+    indent: int | None = 2,
+) -> str:
+    """Serialize a ComparisonResult to JSON.
+
+    Envelope: {"results": [...enriched...], "new_functions": [...],
+               "removed_functions": [...], "comparison": {...}, "summary": {...}}
+
+    Each matched entry in ``results`` carries the standard result fields plus
+    baseline_crap, crap_delta, baseline_gaze_crap, gaze_crap_delta, status.
+    ``new_functions`` and ``removed_functions`` carry the raw result dict plus
+    status.
+
+    Args:
+        comparison_result: Output of compare.compare().
+        crap_summary: The "summary" dict from the current gazepy crap run.
+        indent: JSON indentation level.
+
+    Returns:
+        JSON string.
+    """
+
+    enriched: list[dict] = []  # type: ignore[type-arg]
+    for delta in comparison_result.deltas:
+        entry = dict(delta.current)
+        entry["baseline_crap"] = delta.baseline.get("crap")
+        entry["crap_delta"] = delta.crap_delta
+        entry["baseline_gaze_crap"] = delta.baseline.get("gaze_crap")
+        entry["gaze_crap_delta"] = delta.gaze_crap_delta
+        entry["status"] = delta.status.value
+        enriched.append(entry)
+
+    new_fns: list[dict] = []  # type: ignore[type-arg]
+    for entry in comparison_result.new_functions:
+        e = dict(entry)
+        e["status"] = (
+            "new_violation"
+            if ((entry.get("crap") or 0.0) > comparison_result.summary.new_function_threshold)
+            else "new"
+        )
+        new_fns.append(e)
+
+    removed_fns: list[dict] = []  # type: ignore[type-arg]
+    for entry in comparison_result.removed_functions:
+        e = dict(entry)
+        e["status"] = "removed"
+        removed_fns.append(e)
+
+    s = comparison_result.summary
+    comparison_dict: dict[str, object] = {
+        "regressions": s.regressions,
+        "improvements": s.improvements,
+        "unchanged": s.unchanged,
+        "new_functions": s.new_functions,
+        "new_violations": s.new_violations,
+        "removed_functions": s.removed_functions,
+        "passed": s.passed,
+        "epsilon": s.epsilon,
+        "new_function_threshold": s.new_function_threshold,
+    }
+
+    payload: dict[str, object] = {
+        "results": enriched,
+        "new_functions": new_fns,
+        "removed_functions": removed_fns,
+        "comparison": comparison_dict,
+        "summary": crap_summary,
+    }
+    return json.dumps(payload, default=_json_default, indent=indent)
+
+
+def comparison_to_text(crap_text: str, comparison_result: ComparisonResult) -> str:
+    """Append a baseline comparison block to existing CRAP text output.
+
+    Format::
+
+        --- Baseline Comparison: PASS ---   (or FAIL)
+        Regressions: N | Improvements: N | New violations: N | Removed: N
+        ...per-section tables (empty sections omitted)...
+
+    Args:
+        crap_text: Existing text from analysis_to_text().
+        comparison_result: Output of compare.compare().
+
+    Returns:
+        Combined text string.
+    """
+    s = comparison_result.summary
+    verdict = "PASS" if s.passed else "FAIL"
+    lines: list[str] = [
+        "",
+        f"--- Baseline Comparison: {verdict} ---",
+        (
+            f"Regressions: {s.regressions}  Improvements: {s.improvements}  "
+            f"Unchanged: {s.unchanged}  New violations: {s.new_violations}  "
+            f"New: {s.new_functions}  Removed: {s.removed_functions}"
+        ),
+    ]
+
+    # Regressions table
+    regressions = [d for d in comparison_result.deltas if d.status.value == "regression"]
+    if regressions:
+        lines.append("")
+        lines.append("Regressions:")
+        for d in regressions:
+            fn = d.current.get("target", {}).get("function", "?")
+            pkg = d.current.get("target", {}).get("package", "")
+            lines.append(
+                f"  {pkg}:{fn}  CRAP {d.baseline.get('crap', '?'):.1f}"
+                f" → {d.current.get('crap', '?'):.1f}"
+                f" (+{d.crap_delta:.1f})"
+            )
+
+    # Improvements table
+    improvements = [d for d in comparison_result.deltas if d.status.value == "improvement"]
+    if improvements:
+        lines.append("")
+        lines.append("Improvements:")
+        for d in improvements:
+            fn = d.current.get("target", {}).get("function", "?")
+            pkg = d.current.get("target", {}).get("package", "")
+            lines.append(
+                f"  {pkg}:{fn}  CRAP {d.baseline.get('crap', '?'):.1f}"
+                f" → {d.current.get('crap', '?'):.1f}"
+                f" ({d.crap_delta:.1f})"
+            )
+
+    # New violations list
+    new_violations = [
+        e
+        for e in comparison_result.new_functions
+        if (e.get("crap") or 0.0) > s.new_function_threshold
+    ]
+    if new_violations:
+        lines.append("")
+        lines.append("New violations (above threshold):")
+        for e in new_violations:
+            fn = e.get("target", {}).get("function", "?")
+            pkg = e.get("target", {}).get("package", "")
+            lines.append(f"  {pkg}:{fn}  CRAP {e.get('crap', '?'):.1f}")
+
+    # Removed list
+    if comparison_result.removed_functions:
+        lines.append("")
+        lines.append("Removed functions:")
+        for e in comparison_result.removed_functions:
+            fn = e.get("target", {}).get("function", "?")
+            pkg = e.get("target", {}).get("package", "")
+            lines.append(f"  {pkg}:{fn}")
+
+    return crap_text + "\n".join(lines)

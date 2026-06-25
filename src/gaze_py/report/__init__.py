@@ -2,9 +2,9 @@
 
 Submodules:
 
-- ``json_formatter``: Serializes ``AnalysisResult`` to JSON (``to_json()``,
-  ``quality_to_json()``). Uses ``dataclasses.asdict()`` + a custom
-  ``_json_default`` encoder (CR-005 deviation from AP-003).
+- ``json_formatter``: Serializes ``AnalysisResult`` to JSON
+  (``analysis_to_json()``, ``quality_to_json()``). Uses ``dataclasses.asdict()``
+  + a custom ``_json_default`` encoder (CR-005 deviation from AP-003).
 - ``text_formatter``: Serializes ``AnalysisResult`` to plain text
   (``to_text()``). No rich dependency (CR-006 exception to CS-009).
 - ``ai``: Defines the ``Synthesizer`` Protocol and three concrete

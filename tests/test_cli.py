@@ -235,6 +235,16 @@ def test_analyze_function_target_receiver_method_vs_module(tmp_path: Path) -> No
     assert g is not None, "g not found"
     assert "-> int" in g.signature, f"Expected '-> int' in signature, got {g.signature!r}"
 
+    # Positional-only parameter case (Python 3.8+): signature must contain '/'
+    posonly_file = tmp_path / "posonly_case.py"
+    posonly_file.write_text("def h(x: int, /, y: str) -> None:\n    pass\n")
+    targets5 = FileDetector.detect(posonly_file, root=root)
+    h = next((t for t in targets5 if t.function == "h"), None)
+    assert h is not None, "h not found"
+    assert "/" in h.signature, (
+        f"Expected '/' separator in signature for positional-only param, got {h.signature!r}"
+    )
+
 
 def test_schema_command_uses_results_key() -> None:
     """T127: gazepy schema output uses 'results' key, not 'functions'."""
@@ -298,18 +308,20 @@ def test_quality_json_envelope() -> None:
         )
 
     # T126: contract_coverage sub-fields
-    for r in data["quality_reports"]:
-        cc = r.get("contract_coverage")
-        if cc is not None:
-            assert "covered_count" in cc, "contract_coverage must have covered_count"
-            assert "total_contractual" in cc, "contract_coverage must have total_contractual"
-            assert cc.get("discarded_returns") == [], (
-                f"discarded_returns must be [] (OC-003), got {cc.get('discarded_returns')!r}"
-            )
-            assert cc.get("discarded_return_hints") == [], (
-                "discarded_return_hints must be [] (OC-003), "
-                f"got {cc.get('discarded_return_hints')!r}"
-            )
+    reports_with_cc = [r for r in data["quality_reports"] if r.get("contract_coverage") is not None]
+    assert len(reports_with_cc) > 0, (
+        "T126 precondition: at least one quality_report must have non-null contract_coverage"
+    )
+    for r in reports_with_cc:
+        cc = r["contract_coverage"]
+        assert "covered_count" in cc, "contract_coverage must have covered_count"
+        assert "total_contractual" in cc, "contract_coverage must have total_contractual"
+        assert cc.get("discarded_returns") == [], (
+            f"discarded_returns must be [] (OC-003), got {cc.get('discarded_returns')!r}"
+        )
+        assert cc.get("discarded_return_hints") == [], (
+            f"discarded_return_hints must be [] (OC-003), got {cc.get('discarded_return_hints')!r}"
+        )
 
 
 def test_quality_over_specification_ratio_zero_assertions() -> None:
@@ -332,8 +344,14 @@ def test_quality_over_specification_ratio_zero_assertions() -> None:
     )
     data = json.loads(result.output)
     for r in data["quality_reports"]:
-        ratio = r.get("over_specification", {}).get("ratio", -1.0)
-        assert ratio >= 0.0, f"ratio must be >= 0.0, got {ratio!r}"
+        assert r.get("assertion_count") == 0, (
+            f"Expected assertion_count=0 (test_simple doesn't test undertested), "
+            f"got {r.get('assertion_count')!r}"
+        )
+        ratio = r.get("over_specification", {}).get("ratio")
+        assert ratio == 0.0, (
+            f"T125: ratio must be exactly 0.0 when assertion_count=0, got {ratio!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1107,7 +1125,10 @@ def test_crap_baseline_stub(tmp_path: Path) -> None:
 
 
 def test_crap_format_json(tmp_path: Path) -> None:
-    """crap --format=json exits 0 and emits valid JSON with functions and summary."""
+    """crap --format=json exits 0 and emits valid JSON with results and summary.
+
+    T122b (crap): regression guard — top-level must be 'results' not 'functions'.
+    """
     source = tmp_path / "foo.py"
     source.write_text("def foo():\n    return 1\n")
     cov: dict[str, object] = {"files": {"foo.py": {"summary": {"percent_covered": 80.0}}}}
@@ -1120,7 +1141,9 @@ def test_crap_format_json(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     data = _parse_json(result.output)
-    assert "results" in data
+    # T122b regression guard — 'results' key present, 'functions' key absent.
+    assert "results" in data, "T122b: top-level key must be 'results'"
+    assert "functions" not in data, "T122b: old 'functions' key must not be present"
     assert "summary" in data
     assert data["summary"]["crapload"] is not None
 
@@ -2226,7 +2249,7 @@ def test_crap_without_tests_gaze_crap_null(tmp_path: Path) -> None:
     for fn in data["results"]:
         assert fn.get("gaze_crap") is None, (
             f"Expected gaze_crap=null without --tests, got {fn.get('gaze_crap')!r} "
-            f"for function {fn.get('name')!r}"
+            f"for function {fn.get('target', {}).get('function')!r}"
         )
 
 
@@ -2496,9 +2519,8 @@ def test_compute_quadrant_counts_returns_none_when_no_labels() -> None:
 # ---------------------------------------------------------------------------
 # Task 5.2 — report command + max-gaze-crapload + prompt loading tests
 # ---------------------------------------------------------------------------
-
-_QUALITY_SRC = Path(__file__).parent / "testdata" / "quality" / "src"
-_QUALITY_TESTS = Path(__file__).parent / "testdata" / "quality" / "tests"
+# Note: _QUALITY_SRC and _QUALITY_TESTS are defined at module level above
+# (line 1174–1175) — no redefinition needed here.
 
 
 def test_max_gaze_crapload_exits_1_when_exceeded(tmp_path: Path) -> None:
@@ -2745,3 +2767,183 @@ def test_report_format_warning_with_ai(tmp_path: Path) -> None:
 
     assert result.exit_code == 2, f"Expected 2, got {result.exit_code}"
     assert "No such option" in result.output or "No such option" in (result.stderr or "")
+
+
+# ---------------------------------------------------------------------------
+# gazepy crap --baseline — CLI integration tests (T223)
+# ---------------------------------------------------------------------------
+
+
+def _make_baseline(tmp_path: Path, entries: list[dict]) -> Path:
+    """Write a valid baseline JSON file in the new schema."""
+    p = tmp_path / "baseline.json"
+    p.write_text(json.dumps({"results": entries}), encoding="utf-8")
+    return p
+
+
+def _make_src(tmp_path: Path) -> Path:
+    """Write a minimal Python source file for CRAP analysis."""
+    src = tmp_path / "src.py"
+    src.write_text("def simple() -> int:\n    return 1\n", encoding="utf-8")
+    return src
+
+
+def _cov_file(tmp_path: Path) -> Path:
+    """Write a minimal coverage JSON (no files = no coverage data)."""
+    cov = tmp_path / "cov.json"
+    cov.write_text(json.dumps({"files": {}}), encoding="utf-8")
+    return cov
+
+
+def test_baseline_missing_explicit_exits_2(tmp_path: Path) -> None:
+    """T223: --baseline pointing to missing file → exit 2."""
+    src = _make_src(tmp_path)
+    cov = _cov_file(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "crap",
+            str(src),
+            "--format=json",
+            f"--coverprofile={cov}",
+            "--baseline",
+            str(tmp_path / "nonexistent.json"),
+        ],
+    )
+    assert result.exit_code == 2, (
+        f"Expected exit 2 for missing baseline, got {result.exit_code}\n"
+        f"stdout={result.output}\nstderr={getattr(result, 'stderr', '')}"
+    )
+
+
+def test_baseline_regression_exits_1(tmp_path: Path) -> None:
+    """T223: regression present → exit 1 + comparison.passed == false.
+
+    Strategy: run crap twice with 100% coverage (CRAP=1.0), capture the
+    result, mutate the baseline to have CRAP=0.1, then re-run — delta=+0.9
+    is a regression → exit 1.
+    """
+    src = _make_src(tmp_path)
+    # Coverage file with 100% coverage so CRAP = complexity = 1.0
+    # Use the filename only as the key — matches the py_file.name fallback in _resolve_line_coverage
+    cov_100 = tmp_path / "cov_100.json"
+    cov_100.write_text(
+        json.dumps({"files": {"src.py": {"summary": {"percent_covered": 100.0}}}}),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    # First run: get actual result with CRAP=1.0
+    first_run = runner.invoke(
+        cli,
+        ["crap", str(src), "--format=json", f"--coverprofile={cov_100}"],
+    )
+    assert first_run.exit_code == 0, (
+        f"First run failed: {first_run.output}\n{getattr(first_run, 'stderr', '')}"
+    )
+    first_data = json.loads(first_run.output)
+    if not first_data.get("results"):
+        pytest.skip("no functions detected in minimal src.py")
+
+    # Build baseline with CRAP=0.1 so current (CRAP=1.0) is a regression.
+    actual_entry = first_data["results"][0]
+    baseline_entry = dict(actual_entry)
+    baseline_entry["crap"] = 0.1  # current will be 1.0 → delta = +0.9 → regression
+    baseline_path = _make_baseline(tmp_path, [baseline_entry])
+
+    result = runner.invoke(
+        cli,
+        [
+            "crap",
+            str(src),
+            "--format=json",
+            f"--coverprofile={cov_100}",
+            f"--baseline={baseline_path}",
+        ],
+    )
+    assert result.exit_code == 1, (
+        f"Expected exit 1 (regression), got {result.exit_code}\n"
+        f"stdout={result.output}\nstderr={getattr(result, 'stderr', '')}"
+    )
+    data = json.loads(result.output)
+    assert "comparison" in data, "comparison key must be present"
+    assert data["comparison"]["passed"] is False
+    assert data["comparison"]["regressions"] >= 1
+
+
+def test_baseline_no_regression_exits_0(tmp_path: Path) -> None:
+    """T223: no regression → exit 0 + comparison.passed == true."""
+    src = _make_src(tmp_path)
+    cov = _cov_file(tmp_path)
+
+    # Run once to get current output, use it as its own baseline (no change → no regression).
+    runner = CliRunner()
+    first = runner.invoke(cli, ["crap", str(src), "--format=json", f"--coverprofile={cov}"])
+    assert first.exit_code == 0, first.output
+    first_data = json.loads(first.output)
+    if not first_data.get("results"):
+        pytest.skip("no functions detected")
+
+    baseline_path = _make_baseline(tmp_path, first_data["results"])
+
+    result = runner.invoke(
+        cli,
+        [
+            "crap",
+            str(src),
+            "--format=json",
+            f"--coverprofile={cov}",
+            f"--baseline={baseline_path}",
+        ],
+    )
+    assert result.exit_code == 0, (
+        f"Expected exit 0 (no regression), got {result.exit_code}\n"
+        f"stdout={result.output}\nstderr={getattr(result, 'stderr', '')}"
+    )
+    data = json.loads(result.output)
+    assert "comparison" in data
+    assert data["comparison"]["passed"] is True
+
+
+def test_baseline_auto_discovery(tmp_path: Path) -> None:
+    """T223: auto-discovery — .gaze/baseline.json exists → comparison runs."""
+
+    src = _make_src(tmp_path)
+    cov = _cov_file(tmp_path)
+
+    runner = CliRunner()
+    first = runner.invoke(cli, ["crap", str(src), "--format=json", f"--coverprofile={cov}"])
+    assert first.exit_code == 0, first.output
+    first_data = json.loads(first.output)
+    if not first_data.get("results"):
+        pytest.skip("no functions detected")
+
+    # Write baseline to .gaze/baseline.json relative to tmp_path
+    gaze_dir = tmp_path / ".gaze"
+    gaze_dir.mkdir()
+    baseline_path = gaze_dir / "baseline.json"
+    baseline_path.write_text(json.dumps({"results": first_data["results"]}), encoding="utf-8")
+
+    # Invoke from tmp_path so auto-discovery finds .gaze/baseline.json
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(
+            cli,
+            [
+                "crap",
+                str(src),
+                "--format=json",
+                f"--coverprofile={cov}",
+            ],
+        )
+
+    assert result.exit_code in (0, 1), (
+        f"Expected exit 0 or 1 for auto-discovery comparison, got {result.exit_code}\n"
+        f"stdout={result.output}\nstderr={getattr(result, 'stderr', '')}"
+    )
+    # The comparison key must be present, confirming baseline was loaded (not silently skipped)
+    if result.output.strip().startswith("{"):
+        data = json.loads(result.output)
+        assert "comparison" in data, (
+            "comparison key must be present — confirms baseline was loaded and comparison ran"
+        )

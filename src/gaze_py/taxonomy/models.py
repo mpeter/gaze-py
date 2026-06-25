@@ -122,14 +122,16 @@ class Metadata:
 
     Attributes:
         gaze_version: gaze-py version string (from gaze_py.__version__).
-        warnings: Non-fatal warnings from the analysis run.
+        warnings: Non-fatal warnings from the analysis run. Reserved for future
+            use — always an empty tuple in this version. Analysis warnings are
+            currently emitted to stderr only and are not threaded into the pipeline.
         duration_ms: Wall-clock milliseconds from run start to serialization.
         timestamp: ISO 8601 UTC timestamp in YYYY-MM-DDTHH:mm:SSZ format,
             matching Go's time.RFC3339 (seconds precision, Z suffix).
     """
 
     gaze_version: str
-    warnings: list[str]
+    warnings: tuple[str, ...]
     duration_ms: int
     timestamp: str
 
@@ -367,15 +369,15 @@ class OverSpecification:
         ratio: Incidental assertions / total assertions (0.0–1.0).
             0.0 when total assertions is 0.
         incidental_assertions: Mappings to incidental effects.
-            Empty list — gaze-py does not yet populate this field (OC-003).
+            Empty tuple — gaze-py does not yet populate this field (OC-003).
         suggestions: Actionable advice per incidental assertion.
-            Empty list — Go generates these from AI; gaze-py emits [] (OC-003).
+            Empty tuple — Go generates these from AI; gaze-py emits [] (OC-003).
     """
 
     count: int
     ratio: float
-    incidental_assertions: list[object] = field(default_factory=list)
-    suggestions: list[str] = field(default_factory=list)
+    incidental_assertions: tuple[object, ...] = ()
+    suggestions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
