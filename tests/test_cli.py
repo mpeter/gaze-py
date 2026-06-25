@@ -1103,7 +1103,9 @@ def test_crap_baseline_missing_file_exits_2(tmp_path: Path) -> None:
         ["crap", str(tmp_path), f"--baseline={missing}", f"--coverprofile={cov_file}"],
     )
     assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}"
-    assert "baseline" in result.stderr.lower() or "not found" in result.stderr.lower()
+    # L-1: result.stderr may be None when mix_stderr=True (default) — use `or ""`.
+    combined = result.output + (result.stderr or "")
+    assert "baseline" in combined.lower() or "not found" in combined.lower()
 
 
 # ---------------------------------------------------------------------------

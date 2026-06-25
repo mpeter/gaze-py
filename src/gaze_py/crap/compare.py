@@ -12,6 +12,13 @@ import enum
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeAlias
+
+# ---------------------------------------------------------------------------
+# Type aliases — avoids bare dict[] annotations throughout (CS-005 / H-3)
+# ---------------------------------------------------------------------------
+
+JsonEntry: TypeAlias = dict[str, object]
 
 # ---------------------------------------------------------------------------
 # Status enum
@@ -37,7 +44,7 @@ class FunctionStatus(enum.StrEnum):
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class CompareOptions:
     """Options for the baseline comparison algorithm.
 
@@ -68,8 +75,8 @@ class FunctionDelta:
         status: Classification of this function's change.
     """
 
-    baseline: dict  # type: ignore[type-arg]
-    current: dict  # type: ignore[type-arg]
+    baseline: JsonEntry
+    current: JsonEntry
     crap_delta: float
     gaze_crap_delta: float | None
     status: FunctionStatus
@@ -116,8 +123,8 @@ class ComparisonResult:
     """
 
     deltas: list[FunctionDelta] = field(default_factory=list)
-    new_functions: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
-    removed_functions: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
+    new_functions: list[JsonEntry] = field(default_factory=list)
+    removed_functions: list[JsonEntry] = field(default_factory=list)
     summary: ComparisonSummary = field(default_factory=ComparisonSummary)
     warnings: list[str] = field(default_factory=list)
 
@@ -127,7 +134,7 @@ class ComparisonResult:
 # ---------------------------------------------------------------------------
 
 
-def load_baseline(path: Path) -> list[dict]:  # type: ignore[type-arg]
+def load_baseline(path: Path) -> list[JsonEntry]:
     """Deserialize a prior ``gazepy crap --format=json`` output as a baseline.
 
     Args:
@@ -216,7 +223,7 @@ def _validate_baseline_entry(i: int, entry: object, regen_hint: str) -> None:
             raise ValueError(f"baseline entry {i}: missing target.{key}; {regen_hint}")
 
 
-def score_key(entry: dict) -> str:  # type: ignore[type-arg]
+def score_key(entry: JsonEntry) -> str:
     """Build the composite lookup key for matching functions.
 
     Uses ``target.package + ":" + target.function`` — equivalent to
@@ -229,6 +236,7 @@ def score_key(entry: dict) -> str:  # type: ignore[type-arg]
         Composite key string.
     """
     t = entry["target"]
+    assert isinstance(t, dict), f"score_key: expected target dict, got {type(t).__name__}"
     return str(t["package"]) + ":" + str(t["function"])
 
 
@@ -273,8 +281,8 @@ def classify_delta(
 
 
 def compare(
-    baseline: list[dict],  # type: ignore[type-arg]
-    current: list[dict],  # type: ignore[type-arg]
+    baseline: list[JsonEntry],
+    current: list[JsonEntry],
     opts: CompareOptions,
 ) -> ComparisonResult:
     """Compare baseline and current CRAP results per-function.
@@ -293,7 +301,7 @@ def compare(
         summary counts, and any warnings.
     """
     # Build lookup map from baseline entries.
-    baseline_map: dict[str, dict] = {score_key(e): e for e in baseline}  # type: ignore[type-arg]
+    baseline_map: dict[str, JsonEntry] = {score_key(e): e for e in baseline}
 
     result = ComparisonResult()
     matched: set[str] = set()
@@ -309,17 +317,29 @@ def compare(
 
         matched.add(key)
 
-        crap_cur = cur.get("crap") or 0.0
-        crap_base = base.get("crap") or 0.0
+        # OC-003: None means "not computed" — treat as 0.0 for delta math only.
+        # Use explicit isinstance check, not `or 0.0`, to avoid treating crap=0.0 as missing.
+        crap_cur_raw = cur.get("crap")
+        crap_base_raw = base.get("crap")
+        crap_cur: float = float(crap_cur_raw) if isinstance(crap_cur_raw, (int, float)) else 0.0
+        crap_base: float = float(crap_base_raw) if isinstance(crap_base_raw, (int, float)) else 0.0
         crap_delta = crap_cur - crap_base
 
         # GazeCRAP delta — skip when baseline had no data (null/zero).
         gaze_cur = cur.get("gaze_crap")
         gaze_base = base.get("gaze_crap")
-        has_gaze_delta = gaze_base is not None and gaze_base > 0 and gaze_cur is not None
+        has_gaze_delta = (
+            isinstance(gaze_base, (int, float))
+            and gaze_base > 0
+            and isinstance(gaze_cur, (int, float))
+        )
         gaze_delta: float | None = None
-        if has_gaze_delta and gaze_cur is not None and gaze_base is not None:
-            gaze_delta = gaze_cur - gaze_base
+        if (
+            has_gaze_delta
+            and isinstance(gaze_cur, (int, float))
+            and isinstance(gaze_base, (int, float))
+        ):
+            gaze_delta = float(gaze_cur) - float(gaze_base)
 
         status = classify_delta(crap_delta, gaze_delta, has_gaze_delta, opts.epsilon)
 
@@ -347,11 +367,11 @@ def compare(
             f"file renames cause false positives in baseline comparison."
         )
 
-    result.summary = _build_comparison_summary(result, opts)
+    result.summary = build_comparison_summary(result, opts)
     return result
 
 
-def _build_comparison_summary(result: ComparisonResult, opts: CompareOptions) -> ComparisonSummary:
+def build_comparison_summary(result: ComparisonResult, opts: CompareOptions) -> ComparisonSummary:
     """Compute aggregate counts from comparison result.
 
     Args:
@@ -361,11 +381,16 @@ def _build_comparison_summary(result: ComparisonResult, opts: CompareOptions) ->
 
     Returns:
         ComparisonSummary with counts and pass/fail gate.
+
+    Raises:
+        ValueError: When ``opts.new_function_threshold`` is None, indicating
+            the CLI wiring layer failed to resolve None → crap_threshold (T218).
     """
-    assert opts.new_function_threshold is not None, (
-        "_build_comparison_summary called before new_function_threshold was resolved; "
-        "resolve None → crap_threshold in the CLI wiring layer (T218)"
-    )
+    if opts.new_function_threshold is None:
+        raise ValueError(
+            "build_comparison_summary called before new_function_threshold was resolved; "
+            "resolve None → crap_threshold in the CLI wiring layer (T218)"
+        )
     threshold = opts.new_function_threshold
 
     summary = ComparisonSummary(
@@ -383,7 +408,9 @@ def _build_comparison_summary(result: ComparisonResult, opts: CompareOptions) ->
             summary.unchanged += 1
 
     for entry in result.new_functions:
-        crap = entry.get("crap") or 0.0
+        # OC-003: explicit isinstance check — crap=0.0 is valid and must not be treated as missing.
+        crap_raw = entry.get("crap")
+        crap: float = float(crap_raw) if isinstance(crap_raw, (int, float)) else 0.0
         if crap > threshold:
             summary.new_violations += 1
         else:

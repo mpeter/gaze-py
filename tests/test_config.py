@@ -20,6 +20,10 @@ import pytest
 from gaze_py.config.loader import GazeConfig, load_config
 from gaze_py.taxonomy.exceptions import GazeConfigError
 
+# Named constants for baseline defaults — satisfies PLR2004.
+_DEFAULT_BASELINE_EPSILON = 0.0
+_DEFAULT_BASELINE_NEW_FN_THRESHOLD = None
+
 # Default threshold values from GazeConfig — used as named constants to satisfy PLR2004.
 _DEFAULT_CONTRACTUAL = 80
 _DEFAULT_INCIDENTAL = 50
@@ -424,3 +428,70 @@ class TestAiFields:
         assert cfg.crap_threshold == 20.0  # noqa: PLR2004
         assert cfg.ai_provider == "ollama"
         assert cfg.ai_timeout == 30  # noqa: PLR2004
+
+
+class TestBaselineConfig:
+    """H-6: baseline: YAML block round-trip and validation tests."""
+
+    def test_baseline_epsilon_round_trip(self, tmp_path: Path) -> None:
+        """baseline.epsilon is read from YAML and stored on cfg.baseline.epsilon."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("baseline:\n  epsilon: 0.5\n")
+        cfg = load_config(tmp_path)
+        assert cfg.baseline.epsilon == 0.5  # noqa: PLR2004
+
+    def test_baseline_epsilon_default(self, tmp_path: Path) -> None:
+        """baseline.epsilon defaults to 0.0 when absent from YAML."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("scoring:\n  crap_threshold: 15.0\n")
+        cfg = load_config(tmp_path)
+        assert cfg.baseline.epsilon == _DEFAULT_BASELINE_EPSILON
+
+    def test_baseline_new_function_threshold_explicit(self, tmp_path: Path) -> None:
+        """baseline.new_function_threshold is read from YAML."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("baseline:\n  new_function_threshold: 20.0\n")
+        cfg = load_config(tmp_path)
+        assert cfg.baseline.new_function_threshold == 20.0  # noqa: PLR2004
+
+    def test_baseline_new_function_threshold_null(self, tmp_path: Path) -> None:
+        """baseline.new_function_threshold: null → None (uses crap_threshold at runtime)."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("baseline:\n  new_function_threshold: null\n")
+        cfg = load_config(tmp_path)
+        assert cfg.baseline.new_function_threshold is None
+
+    def test_baseline_new_function_threshold_absent(self, tmp_path: Path) -> None:
+        """baseline.new_function_threshold absent → None (default)."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("baseline:\n  epsilon: 0.1\n")
+        cfg = load_config(tmp_path)
+        assert cfg.baseline.new_function_threshold is _DEFAULT_BASELINE_NEW_FN_THRESHOLD
+
+    def test_baseline_file_round_trip(self, tmp_path: Path) -> None:
+        """baseline.file is read from YAML and stored on cfg.baseline.file."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("baseline:\n  file: .gaze/baseline.json\n")
+        cfg = load_config(tmp_path)
+        assert cfg.baseline.file == ".gaze/baseline.json"
+
+    def test_baseline_epsilon_negative_raises(self, tmp_path: Path) -> None:
+        """baseline.epsilon < 0 raises GazeConfigError."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("baseline:\n  epsilon: -0.1\n")
+        with pytest.raises(GazeConfigError, match="baseline.epsilon"):
+            load_config(tmp_path)
+
+    def test_baseline_new_function_threshold_zero_raises(self, tmp_path: Path) -> None:
+        """baseline.new_function_threshold <= 0 raises GazeConfigError."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("baseline:\n  new_function_threshold: 0\n")
+        with pytest.raises(GazeConfigError, match="baseline.new_function_threshold"):
+            load_config(tmp_path)
+
+    def test_baseline_new_function_threshold_negative_raises(self, tmp_path: Path) -> None:
+        """baseline.new_function_threshold < 0 raises GazeConfigError."""
+        config_file = tmp_path / ".gaze.yaml"
+        config_file.write_text("baseline:\n  new_function_threshold: -5.0\n")
+        with pytest.raises(GazeConfigError, match="baseline.new_function_threshold"):
+            load_config(tmp_path)

@@ -15,11 +15,16 @@ import pytest
 
 from gaze_py.crap.compare import (
     CompareOptions,
+    ComparisonResult,
     FunctionStatus,
+    build_comparison_summary,
     classify_delta,
     compare,
     load_baseline,
+    score_key,
 )
+from gaze_py.report.json_formatter import comparison_to_json
+from gaze_py.report.text_formatter import comparison_to_text
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -158,7 +163,7 @@ def test_compare_no_regression_passes() -> None:
 
 
 def test_compare_large_unmatched_emits_warning() -> None:
-    """T221f: > 50% baseline unmatched → warnings list is non-empty with 'unmatched'."""
+    """T221f: > 50% baseline unmatched → exactly one warning with 'unmatched' and 'file renames'."""
     # 3 baseline entries, none matched in current → 3/3 = 100% unmatched
     baseline = [
         _entry("src/a.py", "fn1"),
@@ -170,8 +175,9 @@ def test_compare_large_unmatched_emits_warning() -> None:
 
     result = compare(baseline, current, opts)
 
-    assert len(result.warnings) > 0
+    assert len(result.warnings) == 1
     assert "unmatched" in result.warnings[0]
+    assert "file renames" in result.warnings[0]
 
 
 # ---------------------------------------------------------------------------
@@ -211,10 +217,10 @@ def test_load_baseline_old_schema(tmp_path: Path) -> None:
 
 
 def test_load_baseline_results_null(tmp_path: Path) -> None:
-    """T222e: results=null → ValueError."""
+    """T222e: results=null → ValueError with 'must be a list' in message."""
     p = tmp_path / "baseline.json"
     p.write_text(json.dumps({"results": None}), encoding="utf-8")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="must be a list"):
         load_baseline(p)
 
 
@@ -320,8 +326,6 @@ def test_compare_new_function_threshold_none_falls_back_to_crap_threshold() -> N
 
 def test_comparison_to_text_pass() -> None:
     """T226: PASS verdict when passed=True."""
-    from gaze_py.report.json_formatter import comparison_to_text
-
     baseline = [_entry("src/foo.py", "fn", crap=5.0)]
     current = [_entry("src/foo.py", "fn", crap=4.0)]  # improvement
     opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
@@ -333,23 +337,22 @@ def test_comparison_to_text_pass() -> None:
 
 
 def test_comparison_to_text_fail() -> None:
-    """T226: FAIL verdict when passed=False."""
-    from gaze_py.report.json_formatter import comparison_to_text
-
+    """T226: FAIL verdict when passed=False; regression table shows function name and delta."""
     baseline = [_entry("src/foo.py", "fn", crap=5.0)]
-    current = [_entry("src/foo.py", "fn", crap=15.0)]  # regression
+    current = [_entry("src/foo.py", "fn", crap=15.0)]  # regression: delta = +10.0
     opts = CompareOptions(epsilon=0.0, new_function_threshold=20.0)
     cmp = compare(baseline, current, opts)
 
     text = comparison_to_text("CRAP output\n", cmp)
     assert "FAIL" in text
     assert "Regressions:" in text
+    # M-8: assert regression table content — function name and delta value.
+    assert "fn" in text
+    assert "+10.00" in text
 
 
 def test_comparison_to_text_omits_empty_sections() -> None:
-    """T226: empty section headers (Improvements:, New violations:) are omitted."""
-    from gaze_py.report.json_formatter import comparison_to_text
-
+    """T226: empty section headers (Improvements:, New violations:, Removed:) are omitted."""
     baseline = [_entry("src/foo.py", "fn", crap=5.0)]
     current = [_entry("src/foo.py", "fn", crap=5.0)]  # unchanged
     opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
@@ -359,3 +362,176 @@ def test_comparison_to_text_omits_empty_sections() -> None:
     # Section headers appear on their own line — distinguish from counts-line words
     assert "\nImprovements:" not in text, "empty Improvements section should be omitted"
     assert "\nNew violations" not in text, "empty New violations section should be omitted"
+    # M-9: also verify Removed functions section is omitted when empty.
+    assert "\nRemoved functions:" not in text, "empty Removed functions section should be omitted"
+
+
+# ---------------------------------------------------------------------------
+# M-10: score_key() direct test
+# ---------------------------------------------------------------------------
+
+
+def test_score_key_builds_composite_key() -> None:
+    """M-10: score_key returns 'package:function' composite key."""
+    entry = _entry("src/foo.py", "compute", crap=5.0)
+    result = score_key(entry)
+    assert result == "src/foo.py:compute"
+
+
+# ---------------------------------------------------------------------------
+# M-5: build_comparison_summary() direct test
+# ---------------------------------------------------------------------------
+
+
+def test_build_comparison_summary_direct() -> None:
+    """M-5: build_comparison_summary() is importable and computes correct counts.
+
+    Testing build_comparison_summary directly because compare() always calls it
+    internally; direct testing verifies the ValueError path for None threshold
+    without constructing a full compare() invocation.
+    """
+    baseline = [_entry("src/foo.py", "fn", crap=5.0)]
+    current = [_entry("src/foo.py", "fn", crap=10.0)]
+    opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
+    cmp = compare(baseline, current, opts)
+
+    # Call build_comparison_summary directly on the result (before summary is re-set).
+    summary = build_comparison_summary(cmp, opts)
+    assert summary.regressions == 1
+    assert summary.improvements == 0
+    assert summary.unchanged == 0
+    assert not summary.passed
+
+
+def test_build_comparison_summary_raises_on_none_threshold() -> None:
+    """M-5: build_comparison_summary raises ValueError when threshold is None."""
+    cmp = ComparisonResult()
+    opts = CompareOptions(epsilon=0.0, new_function_threshold=None)
+    with pytest.raises(ValueError, match="new_function_threshold"):
+        build_comparison_summary(cmp, opts)
+
+
+# ---------------------------------------------------------------------------
+# H-5: comparison_to_json() field-level contract tests
+# ---------------------------------------------------------------------------
+
+
+class TestComparisonToJson:
+    """H-5: comparison_to_json() field-level contract tests."""
+
+    def _make_crap_summary(self) -> dict[str, object]:
+        """Build a minimal CRAP summary dict for testing."""
+        return {
+            "function_count": 1,
+            "crap_threshold": 15.0,
+            "gaze_crap_threshold": 15.0,
+        }
+
+    def test_top_level_keys_present(self) -> None:
+        """comparison_to_json() output has all required top-level keys."""
+        baseline = [_entry("src/foo.py", "fn", crap=5.0)]
+        current = [_entry("src/foo.py", "fn", crap=8.0)]
+        opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
+        cmp = compare(baseline, current, opts)
+
+        result = comparison_to_json(cmp, self._make_crap_summary())
+        data = json.loads(result)
+
+        assert "results" in data
+        assert "new_functions" in data
+        assert "removed_functions" in data
+        assert "comparison" in data
+        assert "summary" in data
+        # T214: warnings are stderr-only — must NOT appear in JSON output.
+        assert "warnings" not in data
+
+    def test_results_entry_has_enrichment_fields(self) -> None:
+        """results[0] has baseline_crap, crap_delta, and status enrichment fields."""
+        # current=8.0 > baseline=5.0 → REGRESSION, delta = +3.0
+        baseline = [_entry("src/foo.py", "fn", crap=5.0)]
+        current = [_entry("src/foo.py", "fn", crap=8.0)]
+        opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
+        cmp = compare(baseline, current, opts)
+
+        result = comparison_to_json(cmp, self._make_crap_summary())
+        data = json.loads(result)
+
+        assert len(data["results"]) == 1
+        entry = data["results"][0]
+        assert "baseline_crap" in entry
+        assert "crap_delta" in entry
+        assert "status" in entry
+        assert entry["baseline_crap"] == 5.0
+        assert entry["crap_delta"] == pytest.approx(3.0)
+        assert entry["status"] == FunctionStatus.REGRESSION.value
+
+    def test_comparison_dict_has_all_keys(self) -> None:
+        """comparison dict has all required keys per spec."""
+        baseline = [_entry("src/foo.py", "fn", crap=5.0)]
+        current = [_entry("src/foo.py", "fn", crap=5.0)]
+        opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
+        cmp = compare(baseline, current, opts)
+
+        result = comparison_to_json(cmp, self._make_crap_summary())
+        data = json.loads(result)
+
+        comparison = data["comparison"]
+        for key in (
+            "passed",
+            "regressions",
+            "improvements",
+            "unchanged",
+            "new_functions",
+            "new_violations",
+            "removed_functions",
+            "epsilon",
+            "new_function_threshold",
+        ):
+            assert key in comparison, f"comparison dict missing key: {key!r}"
+
+    def test_new_functions_have_status_field(self) -> None:
+        """new_functions entries have status field set to 'new' or 'new_violation'."""
+        baseline: list[dict] = []
+        # Below threshold → NEW
+        current_new = [_entry("src/foo.py", "new_fn", crap=8.0)]
+        opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
+        cmp = compare(baseline, current_new, opts)
+
+        result = comparison_to_json(cmp, self._make_crap_summary())
+        data = json.loads(result)
+
+        assert len(data["new_functions"]) == 1
+        assert data["new_functions"][0]["status"] == FunctionStatus.NEW.value
+
+    def test_new_violation_status_when_above_threshold(self) -> None:
+        """new_functions entries above threshold have status 'new_violation'."""
+        baseline: list[dict] = []
+        current_violation = [_entry("src/foo.py", "bad_fn", crap=20.0)]
+        opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
+        cmp = compare(baseline, current_violation, opts)
+
+        result = comparison_to_json(cmp, self._make_crap_summary())
+        data = json.loads(result)
+
+        assert len(data["new_functions"]) == 1
+        assert data["new_functions"][0]["status"] == FunctionStatus.NEW_VIOLATION.value
+
+    def test_warnings_not_in_json_output(self) -> None:
+        """T214: warnings are stderr-only and must NOT appear in JSON output."""
+        # Trigger a warning by having > 50% unmatched baseline entries.
+        baseline = [
+            _entry("src/a.py", "fn1"),
+            _entry("src/a.py", "fn2"),
+            _entry("src/a.py", "fn3"),
+        ]
+        current: list[dict] = []
+        opts = CompareOptions(epsilon=0.0, new_function_threshold=15.0)
+        cmp = compare(baseline, current, opts)
+
+        # Verify a warning was actually generated.
+        assert len(cmp.warnings) == 1
+
+        result = comparison_to_json(cmp, self._make_crap_summary())
+        data = json.loads(result)
+
+        assert "warnings" not in data

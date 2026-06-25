@@ -39,6 +39,7 @@ from gaze_py.analysis.files import collect_py_files
 from gaze_py.analysis.runner import detect_and_classify
 from gaze_py.cli.scaffold import run as _scaffold_run
 from gaze_py.config.loader import GazeConfig, load_config, load_config_explicit
+from gaze_py.crap.compare import CompareOptions, compare, load_baseline
 from gaze_py.crap.scorer import (
     crap as compute_crap,
 )
@@ -53,10 +54,9 @@ from gaze_py.report.json_formatter import (
     SCHEMA,
     analysis_to_json,
     comparison_to_json,
-    comparison_to_text,
     quality_to_json,
 )
-from gaze_py.report.text_formatter import to_text
+from gaze_py.report.text_formatter import comparison_to_text, to_text
 from gaze_py.taxonomy.exceptions import GazeConfigError, GazeParseError
 from gaze_py.taxonomy.models import (
     AnalysisResult,
@@ -247,9 +247,15 @@ def resolve_baseline_path(
         return (Path(config.baseline.file), True)
 
     # Auto-discovery: .gaze/baseline.json relative to project root.
+    # H-4: check for directory BEFORE is_file() — a directory at the expected
+    # path must be treated as an explicit error (exit 2), not a silent skip.
+    # Return is_explicit=True so the caller exits 2 on load failure.
     candidate = project_root / ".gaze" / "baseline.json"
-    if candidate.is_file():
-        return (candidate, False)
+    if candidate.exists():
+        if candidate.is_dir():
+            return (candidate, True)  # is_explicit=True → caller exits 2
+        if candidate.is_file():
+            return (candidate, False)
     return (None, False)
 
 
@@ -1087,8 +1093,6 @@ def _run_baseline_comparison(
         output_format: One of ``"json"`` or ``"text"``.
         config: Loaded GazeConfig with baseline options.
     """
-    from gaze_py.crap.compare import CompareOptions, compare, load_baseline
-
     # Load baseline — error handling differs by explicit vs auto-discovered.
     try:
         baseline_entries = load_baseline(baseline_path)
@@ -1118,8 +1122,8 @@ def _run_baseline_comparison(
     # Build current entries list from the analysis result JSON.
     current_json = analysis_to_json(result)
     current_data = json.loads(current_json)
-    current_entries: list[dict] = current_data.get("results", [])  # type: ignore[type-arg]
-    crap_summary: dict = current_data.get("summary", {})  # type: ignore[type-arg]
+    current_entries: list[dict[str, object]] = current_data.get("results", [])
+    crap_summary: dict[str, object] = current_data.get("summary", {})
 
     cmp_result = compare(baseline_entries, current_entries, opts)
 
