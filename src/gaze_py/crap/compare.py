@@ -237,9 +237,7 @@ def score_key(entry: JsonEntry) -> str:
     """
     t = entry["target"]
     if not isinstance(t, dict):
-        raise TypeError(
-            f"score_key: expected target dict, got {type(t).__name__}"
-        )
+        raise TypeError(f"score_key: expected target dict, got {type(t).__name__}")
     return str(t["package"]) + ":" + str(t["function"])
 
 

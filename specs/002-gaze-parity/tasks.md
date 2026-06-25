@@ -120,21 +120,21 @@
 
 ## Story 3: Stale content / docs cleanup — branch `opsx/parity-cleanup`
 
-- [ ] T301 Delete stale comment in `main.py`: `# report command (not yet implemented — requires O2)` (search by content, not line number — line may have shifted)
-- [ ] T302 Rewrite `docs/reference/cli/report.md`: remove `--ai`/`--ai-timeout` option rows, remove "requires O1+O2" note, add `.gaze.yaml` `ai:` section config reference, add `GAZEPY_AI_*` env var table, correct description to "direct HTTP" (not "subprocess")
-- [ ] T303 Consolidate `CHANGELOG.md [Unreleased]` → `## [0.7.0]`: one each of `### Added`, `### Changed`, `### Removed`, `### Breaking Changes` (omitting empty sections); no duplicate headers; no `Spec:` references (including the missing entries listed below); `### Breaking Changes` includes JSON schema migration notice (FR-001, FR-004) with before/after examples; missing entries to add (all without `Spec:` references): docs tree, `_matches_cache_decorator` refactor, python-native detection patterns, AI HTTP adapters
-- [ ] T304 Bump `pyproject.toml` `version` → `0.7.0`
-- [ ] T305 Bump `src/gaze_py/__init__.py` `__version__` → `0.7.0`
-- [ ] T306 Remove `pip` ecosystem entry from `.github/dependabot.yml` (retain `github-actions`); per constitution v1.1.3 SYNC IMPACT REPORT
-- [ ] T307 Run `uv run ruff check . && uv run ruff format --check . && uv run mypy src/` — all clean
+- [x] T301 Delete stale comment in `main.py`: `# report command (not yet implemented — requires O2)` (search by content, not line number — line may have shifted)
+- [x] T302 Rewrite `docs/reference/cli/report.md`: remove `--ai`/`--ai-timeout` option rows, remove "requires O1+O2" note, add `.gaze.yaml` `ai:` section config reference, add `GAZEPY_AI_*` env var table, correct description to "direct HTTP" (not "subprocess")
+- [x] T303 Consolidate `CHANGELOG.md [Unreleased]` → `## [0.7.0]`: one each of `### Added`, `### Changed`, `### Removed`, `### Breaking Changes` (omitting empty sections); no duplicate headers; no `Spec:` references (including the missing entries listed below); `### Breaking Changes` includes JSON schema migration notice (FR-001, FR-004) with before/after examples; missing entries to add (all without `Spec:` references): docs tree, `_matches_cache_decorator` refactor, python-native detection patterns, AI HTTP adapters
+- [x] T304 Bump `pyproject.toml` `version` → `0.7.0`
+- [x] T305 Bump `src/gaze_py/__init__.py` `__version__` → `0.7.0`
+- [x] T306 Remove `pip` ecosystem entry from `.github/dependabot.yml` (retain `github-actions`); per constitution v1.1.3 SYNC IMPACT REPORT
+- [x] T307 Run `uv run ruff check . && uv run ruff format --check . && uv run mypy src/` — all clean
 - [ ] T308 Open PR `opsx/parity-cleanup` → CI green → merge
 
 ---
 
 ## Story 4: Release v0.7.0
 
-- [ ] T300.5 Verify PyPI history: `curl -sf https://pypi.org/pypi/gaze-py/json | python3 -c "import sys,json; vers=json.load(sys.stdin)['releases']; print(sorted(vers.keys()))"` (use `-f` to fail on HTTP error; if curl fails treat as "no versions published" and document); confirm no version ≥ 0.5.0 published; if found, escalate to 1.0.0 and update all version references
-- [ ] T401 Update `release.yml`: (a) add a `test` job that runs `uv run pytest --cov=gaze_py --cov-fail-under=85` using `astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0` with `version: "0.11.21"` — identical pin to existing jobs; (b) make `publish` job `needs: [preflight, test]`; (c) **reorder `publish` job steps**: run PyPI publish BEFORE pushing the git tag (swap current steps 2 and 3) so a failed publish does not leave an orphaned tag that permanently blocks retry via the tag-uniqueness preflight check; (d) verify with `yq '.jobs.publish.needs' .github/workflows/release.yml` that both `preflight` and `test` are listed; (e) add `gh release create` step after smoke test using CHANGELOG section for notes
+- [x] T300.5 Verify PyPI history: `curl -sf https://pypi.org/pypi/gaze-py/json | python3 -c "import sys,json; vers=json.load(sys.stdin)['releases']; print(sorted(vers.keys()))"` (use `-f` to fail on HTTP error; if curl fails treat as "no versions published" and document); confirm no version ≥ 0.5.0 published; if found, escalate to 1.0.0 and update all version references
+- [x] T401 Update `release.yml`: (a) add a `test` job that runs `uv run pytest --cov=gaze_py --cov-fail-under=85` using `astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0` with `version: "0.11.21"` — identical pin to existing jobs; (b) make `publish` job `needs: [preflight, test]`; (c) **reorder `publish` job steps**: run PyPI publish BEFORE pushing the git tag (swap current steps 2 and 3) so a failed publish does not leave an orphaned tag that permanently blocks retry via the tag-uniqueness preflight check; (d) verify with `yq '.jobs.publish.needs' .github/workflows/release.yml` that both `preflight` and `test` are listed; (e) add `gh release create` step after smoke test using CHANGELOG section for notes
 - [ ] T402 Confirm `main` has S1 + S2 + S3 all merged; confirm `pyproject.toml` = `0.7.0`, `__init__.py` `__version__` = `0.7.0`; **T403 is blocked by T401 — do not trigger the release workflow until T401 is merged to main**
 - [ ] T403 Trigger `release.yml` (blocked by T401): GitHub Actions → Release → Run workflow → tag `v0.7.0`
 - [ ] T404 Approve `pypi` environment gate when prompted
