@@ -3,6 +3,8 @@
 **Spec**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md)
 
 <!-- spec-review: passed -->
+<!-- code-review: passed (Story 1 — retroactive; 4 Divisors APPROVE after fixes) -->
+<!-- code-review: passed (Story 2 — 4 Divisors APPROVE after 2 iterations; 18+1 findings fixed) -->
 
 ---
 
