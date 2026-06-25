@@ -24,6 +24,26 @@ _THRESHOLD_MIN: int = 0
 
 
 @dataclass
+class BaselineConfig:
+    """Configuration for the --baseline comparison feature.
+
+    Attributes:
+        file: Path to the baseline JSON file. None = auto-discovery
+            (checks .gaze/baseline.json relative to project root).
+            Non-None = explicit path (error when missing).
+        epsilon: Minimum CRAP / GazeCRAP delta to trigger classification.
+            Deltas within [-epsilon, +epsilon] are UNCHANGED. Must be >= 0.
+        new_function_threshold: CRAP score above which a new function is a
+            violation. None = use crap_threshold at runtime. Must be > 0
+            when set.
+    """
+
+    file: str | None = None
+    epsilon: float = 0.0
+    new_function_threshold: float | None = None
+
+
+@dataclass
 class GazeConfig:
     """Configuration values loaded from .gaze.yaml.
 
@@ -65,6 +85,7 @@ class GazeConfig:
     incidental_threshold: int = 50
     crap_threshold: float = 15.0
     gaze_crap_threshold: float = 15.0
+    baseline: BaselineConfig = field(default_factory=BaselineConfig)
     doc_scan_exclude: list[str] = field(
         default_factory=lambda: [
             "vendor/**",
@@ -273,6 +294,7 @@ def _build_config(raw: dict[str, object], path: Path) -> GazeConfig:
         cfg.doc_scan_timeout = _to_float(doc_scan["timeout"], "doc_scan.timeout", path)
 
     _apply_ai_block(cfg, raw, path)
+    _apply_baseline_block(cfg, raw, path)
 
     _validate(cfg, path)
     return cfg
@@ -307,6 +329,31 @@ def _apply_ai_block(cfg: GazeConfig, raw: dict[str, object], path: Path) -> None
         cfg.ai_timeout = _to_int(ai["timeout"], "ai.timeout", path)
 
 
+def _apply_baseline_block(cfg: GazeConfig, raw: dict[str, object], path: Path) -> None:
+    """Populate baseline fields on cfg from the raw YAML ``baseline:`` block.
+
+    Args:
+        cfg: GazeConfig to mutate in-place.
+        raw: Top-level parsed YAML dict.
+        path: Config file path (used in error messages).
+
+    Raises:
+        GazeConfigError: When baseline values fail validation.
+    """
+    baseline_raw = raw.get("baseline", {})
+    baseline: dict[str, object] = baseline_raw if isinstance(baseline_raw, dict) else {}
+    if "file" in baseline:
+        val = baseline["file"]
+        cfg.baseline.file = str(val) if val is not None else None
+    if "epsilon" in baseline:
+        cfg.baseline.epsilon = _to_float(baseline["epsilon"], "baseline.epsilon", path)
+    if "new_function_threshold" in baseline:
+        val = baseline["new_function_threshold"]
+        cfg.baseline.new_function_threshold = (
+            _to_float(val, "baseline.new_function_threshold", path) if val is not None else None
+        )
+
+
 def _validate(cfg: GazeConfig, path: Path) -> None:
     """Validate all threshold values are within sane ranges.
 
@@ -334,6 +381,15 @@ def _validate(cfg: GazeConfig, path: Path) -> None:
     if cfg.doc_scan_timeout <= 0:
         raise GazeConfigError(
             f"doc_scan.timeout must be positive, got {cfg.doc_scan_timeout} in {path}"
+        )
+    if cfg.baseline.epsilon < 0:
+        raise GazeConfigError(
+            f"baseline.epsilon must be >= 0, got {cfg.baseline.epsilon} in {path}"
+        )
+    if cfg.baseline.new_function_threshold is not None and cfg.baseline.new_function_threshold <= 0:
+        raise GazeConfigError(
+            f"baseline.new_function_threshold must be > 0, "
+            f"got {cfg.baseline.new_function_threshold} in {path}"
         )
     if cfg.ai_timeout <= 0:
         raise GazeConfigError(f"ai.timeout must be > 0, got {cfg.ai_timeout} in {path}")

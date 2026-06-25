@@ -1105,18 +1105,25 @@ def test_crap_coverprofile_malformed(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_crap_baseline_stub(tmp_path: Path) -> None:
-    """crap --baseline exits 1 (not 2) with 'not yet implemented' in stderr."""
+def test_crap_baseline_missing_file_exits_2(tmp_path: Path) -> None:
+    """T223: crap --baseline with missing file exits 2 with error on stderr."""
     source = tmp_path / "foo.py"
     source.write_text("def foo():\n    return 1\n")
+    missing = tmp_path / "nonexistent_baseline.json"
+
+    # Use empty coverprofile to avoid spawning pytest subprocess.
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
 
     runner = CliRunner()
     result = runner.invoke(
         cli,
-        ["crap", str(tmp_path), "--baseline=/tmp/baseline.json"],
+        ["crap", str(tmp_path), f"--baseline={missing}", f"--coverprofile={cov_file}"],
     )
-    assert result.exit_code == 1, f"Expected exit 1, got {result.exit_code}"
-    assert "not yet implemented" in result.stderr
+    assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}"
+    # L-1: result.stderr may be None when mix_stderr=True (default) — use `or ""`.
+    combined = result.output + (result.stderr or "")
+    assert "baseline" in combined.lower() or "not found" in combined.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -2770,180 +2777,179 @@ def test_report_format_warning_with_ai(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# gazepy crap --baseline — CLI integration tests (T223)
+# T223: CLI integration tests for --baseline (Story 2)
 # ---------------------------------------------------------------------------
 
 
-def _make_baseline(tmp_path: Path, entries: list[dict]) -> Path:
-    """Write a valid baseline JSON file in the new schema."""
-    p = tmp_path / "baseline.json"
-    p.write_text(json.dumps({"results": entries}), encoding="utf-8")
-    return p
+def _make_baseline_json(entries: list[dict]) -> str:  # type: ignore[type-arg]
+    """Wrap entries in the new-schema baseline envelope."""
+    return json.dumps({"results": entries})
 
 
-def _make_src(tmp_path: Path) -> Path:
-    """Write a minimal Python source file for CRAP analysis."""
-    src = tmp_path / "src.py"
-    src.write_text("def simple() -> int:\n    return 1\n", encoding="utf-8")
-    return src
+def _make_crap_entry(pkg: str, fn: str, crap: float) -> dict:  # type: ignore[type-arg]
+    """Build a minimal crap result entry for baseline fixtures.
 
-
-def _cov_file(tmp_path: Path) -> Path:
-    """Write a minimal coverage JSON (no files = no coverage data)."""
-    cov = tmp_path / "cov.json"
-    cov.write_text(json.dumps({"files": {}}), encoding="utf-8")
-    return cov
-
-
-def test_baseline_missing_explicit_exits_2(tmp_path: Path) -> None:
-    """T223: --baseline pointing to missing file → exit 2."""
-    src = _make_src(tmp_path)
-    cov = _cov_file(tmp_path)
-    runner = CliRunner()
-    result = runner.invoke(
-        cli,
-        [
-            "crap",
-            str(src),
-            "--format=json",
-            f"--coverprofile={cov}",
-            "--baseline",
-            str(tmp_path / "nonexistent.json"),
-        ],
-    )
-    assert result.exit_code == 2, (
-        f"Expected exit 2 for missing baseline, got {result.exit_code}\n"
-        f"stdout={result.output}\nstderr={getattr(result, 'stderr', '')}"
-    )
-
-
-def test_baseline_regression_exits_1(tmp_path: Path) -> None:
-    """T223: regression present → exit 1 + comparison.passed == false.
-
-    Strategy: run crap twice with 100% coverage (CRAP=1.0), capture the
-    result, mutate the baseline to have CRAP=0.1, then re-run — delta=+0.9
-    is a regression → exit 1.
+    ``pkg`` should match the ``target.package`` value that ``gazepy crap``
+    produces — typically the filename relative to the analysis root (e.g.
+    ``"src.py"`` when analyzing a directory containing ``src.py``).
     """
-    src = _make_src(tmp_path)
-    # Coverage file with 100% coverage so CRAP = complexity = 1.0
-    # Use the filename only as the key — matches the py_file.name fallback in _resolve_line_coverage
-    cov_100 = tmp_path / "cov_100.json"
-    cov_100.write_text(
-        json.dumps({"files": {"src.py": {"summary": {"percent_covered": 100.0}}}}),
+    return {
+        "target": {"package": pkg, "function": fn},
+        "crap": crap,
+        "gaze_crap": None,
+    }
+
+
+def test_crap_baseline_regression_exits_1(tmp_path: Path) -> None:
+    """T223: regression (CRAP increased) → exit 1 + comparison.passed == false in JSON."""
+    source = tmp_path / "src.py"
+    source.write_text("def compute():\n    return 1\n", encoding="utf-8")
+
+    # 0% coverage → CRAP = complexity^2 = 2.0 for complexity=1.
+    # This ensures a non-null CRAP value for the regression comparison.
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(
+        json.dumps({"files": {"src.py": {"summary": {"percent_covered": 0.0}}}}),
         encoding="utf-8",
     )
 
+    # Baseline: compute had CRAP=0.0 → current CRAP=2.0 is a regression.
+    # package must match the relative path that gazepy crap produces ("src.py").
+    baseline_entries = [_make_crap_entry("src.py", "compute", crap=0.0)]
+    baseline_file = tmp_path / "baseline.json"
+    baseline_file.write_text(_make_baseline_json(baseline_entries), encoding="utf-8")
+
     runner = CliRunner()
-    # First run: get actual result with CRAP=1.0
-    first_run = runner.invoke(
-        cli,
-        ["crap", str(src), "--format=json", f"--coverprofile={cov_100}"],
-    )
-    assert first_run.exit_code == 0, (
-        f"First run failed: {first_run.output}\n{getattr(first_run, 'stderr', '')}"
-    )
-    first_data = json.loads(first_run.output)
-    if not first_data.get("results"):
-        pytest.skip("no functions detected in minimal src.py")
-
-    # Build baseline with CRAP=0.1 so current (CRAP=1.0) is a regression.
-    actual_entry = first_data["results"][0]
-    baseline_entry = dict(actual_entry)
-    baseline_entry["crap"] = 0.1  # current will be 1.0 → delta = +0.9 → regression
-    baseline_path = _make_baseline(tmp_path, [baseline_entry])
-
     result = runner.invoke(
         cli,
         [
             "crap",
-            str(src),
+            str(tmp_path),
             "--format=json",
-            f"--coverprofile={cov_100}",
-            f"--baseline={baseline_path}",
+            f"--baseline={baseline_file}",
+            f"--coverprofile={cov_file}",
         ],
     )
-    assert result.exit_code == 1, (
-        f"Expected exit 1 (regression), got {result.exit_code}\n"
-        f"stdout={result.output}\nstderr={getattr(result, 'stderr', '')}"
-    )
+    assert result.exit_code == 1, f"Expected exit 1, got {result.exit_code}"
     data = json.loads(result.output)
-    assert "comparison" in data, "comparison key must be present"
+    assert "comparison" in data, f"'comparison' key missing: {list(data.keys())}"
     assert data["comparison"]["passed"] is False
-    assert data["comparison"]["regressions"] >= 1
 
 
-def test_baseline_no_regression_exits_0(tmp_path: Path) -> None:
-    """T223: no regression → exit 0 + comparison.passed == true."""
-    src = _make_src(tmp_path)
-    cov = _cov_file(tmp_path)
+def test_crap_baseline_no_regression_exits_0(tmp_path: Path) -> None:
+    """T223: no regression → exit 0 + comparison.passed == true in JSON."""
+    source = tmp_path / "src.py"
+    source.write_text("def compute():\n    return 1\n", encoding="utf-8")
 
-    # Run once to get current output, use it as its own baseline (no change → no regression).
+    # Use empty coverprofile to avoid spawning pytest subprocess.
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    # Baseline: compute had CRAP=999.0 → current will always be an improvement.
+    # package must match the relative path that gazepy crap produces ("src.py").
+    baseline_entries = [_make_crap_entry("src.py", "compute", crap=999.0)]
+    baseline_file = tmp_path / "baseline.json"
+    baseline_file.write_text(_make_baseline_json(baseline_entries), encoding="utf-8")
+
     runner = CliRunner()
-    first = runner.invoke(cli, ["crap", str(src), "--format=json", f"--coverprofile={cov}"])
-    assert first.exit_code == 0, first.output
-    first_data = json.loads(first.output)
-    if not first_data.get("results"):
-        pytest.skip("no functions detected")
-
-    baseline_path = _make_baseline(tmp_path, first_data["results"])
-
     result = runner.invoke(
         cli,
         [
             "crap",
-            str(src),
+            str(tmp_path),
             "--format=json",
-            f"--coverprofile={cov}",
-            f"--baseline={baseline_path}",
+            f"--baseline={baseline_file}",
+            f"--coverprofile={cov_file}",
         ],
     )
-    assert result.exit_code == 0, (
-        f"Expected exit 0 (no regression), got {result.exit_code}\n"
-        f"stdout={result.output}\nstderr={getattr(result, 'stderr', '')}"
-    )
+    assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}"
     data = json.loads(result.output)
     assert "comparison" in data
     assert data["comparison"]["passed"] is True
 
 
-def test_baseline_auto_discovery(tmp_path: Path) -> None:
-    """T223: auto-discovery — .gaze/baseline.json exists → comparison runs."""
+def test_crap_baseline_auto_discovery(tmp_path: Path) -> None:
+    """T223: auto-discovery reads .gaze/baseline.json from project_root."""
+    source = tmp_path / "src.py"
+    source.write_text("def compute():\n    return 1\n", encoding="utf-8")
 
-    src = _make_src(tmp_path)
-    cov = _cov_file(tmp_path)
+    # Use empty coverprofile to avoid spawning pytest subprocess.
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
 
-    runner = CliRunner()
-    first = runner.invoke(cli, ["crap", str(src), "--format=json", f"--coverprofile={cov}"])
-    assert first.exit_code == 0, first.output
-    first_data = json.loads(first.output)
-    if not first_data.get("results"):
-        pytest.skip("no functions detected")
-
-    # Write baseline to .gaze/baseline.json relative to tmp_path
+    # Write baseline to the auto-discovery location.
+    # package must match the relative path that gazepy crap produces ("src.py").
     gaze_dir = tmp_path / ".gaze"
     gaze_dir.mkdir()
-    baseline_path = gaze_dir / "baseline.json"
-    baseline_path.write_text(json.dumps({"results": first_data["results"]}), encoding="utf-8")
+    baseline_entries = [_make_crap_entry("src.py", "compute", crap=999.0)]
+    (gaze_dir / "baseline.json").write_text(_make_baseline_json(baseline_entries), encoding="utf-8")
 
-    # Invoke from tmp_path so auto-discovery finds .gaze/baseline.json
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(
-            cli,
-            [
-                "crap",
-                str(src),
-                "--format=json",
-                f"--coverprofile={cov}",
-            ],
-        )
-
-    assert result.exit_code in (0, 1), (
-        f"Expected exit 0 or 1 for auto-discovery comparison, got {result.exit_code}\n"
-        f"stdout={result.output}\nstderr={getattr(result, 'stderr', '')}"
+    runner = CliRunner()
+    # No --baseline flag — auto-discovery should find .gaze/baseline.json.
+    result = runner.invoke(
+        cli,
+        ["crap", str(tmp_path), "--format=json", f"--coverprofile={cov_file}"],
     )
-    # The comparison key must be present, confirming baseline was loaded (not silently skipped)
-    if result.output.strip().startswith("{"):
-        data = json.loads(result.output)
-        assert "comparison" in data, (
-            "comparison key must be present — confirms baseline was loaded and comparison ran"
-        )
+    # Auto-discovery ran → comparison key present in output.
+    assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}"
+    data = json.loads(result.output)
+    assert "comparison" in data, (
+        f"'comparison' key missing — auto-discovery may not have fired: {list(data.keys())}"
+    )
+
+
+def test_crap_baseline_auto_discovery_corrupt_warns_and_skips(tmp_path: Path) -> None:
+    """T223: auto-discovered corrupt baseline → stderr warning, no exit 2, normal output."""
+    source = tmp_path / "src.py"
+    source.write_text("def compute():\n    return 1\n", encoding="utf-8")
+
+    # Use empty coverprofile to avoid spawning pytest subprocess.
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    gaze_dir = tmp_path / ".gaze"
+    gaze_dir.mkdir()
+    (gaze_dir / "baseline.json").write_text("{ not valid json }", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["crap", str(tmp_path), "--format=json", f"--coverprofile={cov_file}"],
+    )
+    # Must NOT exit 2 — auto-discovered corrupt file is a warning, not a fatal error.
+    assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}"
+    # Warning may appear in stderr or mixed into output depending on Click version.
+    combined = result.output + (result.stderr or "")
+    assert "Warning" in combined or "warning" in combined.lower()
+    # Normal CRAP output emitted (no comparison key since comparison was skipped).
+    data = _parse_json(result.output)
+    assert "results" in data
+
+
+def test_crap_baseline_text_format_pass(tmp_path: Path) -> None:
+    """T223/T226: --format=text with passing baseline emits PASS verdict."""
+    source = tmp_path / "src.py"
+    source.write_text("def compute():\n    return 1\n", encoding="utf-8")
+
+    # Use empty coverprofile to avoid spawning pytest subprocess.
+    cov_file = tmp_path / "cov.json"
+    cov_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+
+    # package must match the relative path that gazepy crap produces ("src.py").
+    baseline_entries = [_make_crap_entry("src.py", "compute", crap=999.0)]
+    baseline_file = tmp_path / "baseline.json"
+    baseline_file.write_text(_make_baseline_json(baseline_entries), encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "crap",
+            str(tmp_path),
+            "--format=text",
+            f"--baseline={baseline_file}",
+            f"--coverprofile={cov_file}",
+        ],
+    )
+    assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}"
+    assert "--- Baseline Comparison: PASS ---" in result.output
