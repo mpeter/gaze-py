@@ -476,10 +476,13 @@ def test_engine_combines_docstring_and_project_docs(
         target="my_func",
     )
     target = FunctionTarget(
-        name="my_func",
+        function="my_func",
         file_path="src/example.py",
         line=1,
         complexity=1,
+        package="src/example.py",
+        receiver=None,
+        signature="def my_func()",
         effects=[effect],
     )
 

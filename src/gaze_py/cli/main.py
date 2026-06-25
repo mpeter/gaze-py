@@ -25,6 +25,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -48,7 +49,7 @@ from gaze_py.crap.scorer import (
     quadrant,
     recommended_actions,
 )
-from gaze_py.report.json_formatter import SCHEMA, quality_to_json, to_json
+from gaze_py.report.json_formatter import SCHEMA, analysis_to_json, quality_to_json
 from gaze_py.report.text_formatter import to_text
 from gaze_py.taxonomy.exceptions import GazeConfigError, GazeParseError
 from gaze_py.taxonomy.models import (
@@ -176,6 +177,7 @@ def analyze(
     # --verbose implies --classify
     run_classify = classify or verbose
 
+    start_time = time.monotonic()
     targets = _run_detect_classify(
         src_path.resolve(),
         config=config,
@@ -197,8 +199,8 @@ def analyze(
         crap_threshold=config.crap_threshold,
         gaze_crap_threshold=config.gaze_crap_threshold,
     )
-    result = AnalysisResult(functions=targets, summary=summary)
-    _emit(result, output_format)
+    result = AnalysisResult(results=targets, summary=summary)
+    _emit(result, output_format, start_time=start_time)
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +277,12 @@ def analyze(
     "--baseline",
     type=click.Path(exists=False),
     default=None,
-    help="Baseline file for delta reporting (stub: not yet implemented).",
+    help=(
+        "Path to a prior 'gazepy crap --format=json' output for delta comparison. "
+        "When omitted, auto-discovers .gaze/baseline.json relative to the project root "
+        "(silently skipped when absent). "
+        "Exit 1 when regressions or new violations are found."
+    ),
 )
 @click.option(
     "--tests",
@@ -306,14 +313,6 @@ def crap(
 
     CI gate: --max-crapload exits 1 when the crapload count exceeds the limit.
     """
-    # --baseline stub — exit 1 (not 2) with clear message.
-    if baseline is not None:
-        click.echo(
-            "Error: --baseline is not yet implemented in gazepy.",
-            err=True,
-        )
-        raise SystemExit(1)
-
     # PATH validation — must happen before subprocess or analysis.
     src = Path(path).resolve()
     if not src.exists():
@@ -374,9 +373,14 @@ def crap(
         finally:
             Path(tmp).unlink(missing_ok=True)
 
+    start_time = time.monotonic()
     result = _run_crap(src, coverage_data, config=config)
     _enrich_with_quality(result, src, tests_path, coverage_data, config=config)
-    _emit(result, output_format)
+
+    # --baseline comparison — resolve path, load, compare, emit.
+    _run_baseline_comparison(result, baseline, config, output_format)
+
+    _emit(result, output_format, start_time=start_time)
 
     # CI threshold enforcement — after emitting output.
     if (
@@ -653,7 +657,7 @@ def _emit_quality_text(reports: Sequence[QualityReport], *, src_path: Path) -> N
     click.echo(sep)
 
     for report in reports:
-        fn_label = report.target_function or "?"
+        fn_label = report.target_function.function if report.target_function is not None else "?"
         test_label = f" (← {report.test_function})"
         fn_col = f"{fn_label}{test_label}"
 
@@ -720,7 +724,11 @@ def _check_min_contract_coverage(reports: Sequence[QualityReport], threshold: fl
     coverages: list[tuple[str, float]] = []
     for report in reports:
         if report.contract_coverage is not None and report.contract_coverage.percentage is not None:
-            fn_name = report.target_function or report.test_function
+            fn_name = (
+                report.target_function.function
+                if report.target_function is not None
+                else report.test_function
+            )
             coverages.append((fn_name, report.contract_coverage.percentage))
 
     if not coverages:
@@ -1107,8 +1115,8 @@ def _enforce_min_contract_coverage_from_result(
         return
 
     coverages = [
-        (t.name, t.score.contract_coverage)
-        for t in result.functions
+        (t.function, t.score.contract_coverage)
+        for t in result.results
         if t.score is not None and t.score.contract_coverage is not None
     ]
     if not coverages:
@@ -1212,9 +1220,7 @@ def _assemble_report_payload(result: AnalysisResult) -> str:
     Returns:
         JSON string representation of the analysis result.
     """
-    from gaze_py.report.json_formatter import to_json
-
-    return to_json(result)
+    return analysis_to_json(result)
 
 
 def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
@@ -1641,10 +1647,10 @@ def _run_detect_classify(
 
         for target in targets:
             # Apply --include-unexported filter.
-            if not include_unexported and target.name.startswith("_"):
+            if not include_unexported and target.function.startswith("_"):
                 continue
             # Apply --function name filter.
-            if function_filter is not None and target.name != function_filter:
+            if function_filter is not None and target.function != function_filter:
                 continue
             all_targets.append(target)
 
@@ -1717,8 +1723,8 @@ def _enrich_with_quality(
 
     # include_unexported defaults to True — matches _run_crap() at line 1762.
     coverage_map = build_contract_coverage_map(src, resolved_tests, config)
-    for target in result.functions:
-        ccr = coverage_map.get(target.name)
+    for target in result.results:
+        ccr = coverage_map.get(target.function)
         if ccr is not None:
             # "no_test_coverage": percentage=None → else branch →
             # gaze_crap stays null per Go contract (D5).
@@ -1729,7 +1735,7 @@ def _enrich_with_quality(
                 quality_result=ccr,
             )
     # Re-build summary to reflect updated contract_coverage data.
-    result.summary = _build_summary(result.functions, config=config, coverage_data=coverage_data)
+    result.summary = _build_summary(result.results, config=config, coverage_data=coverage_data)
 
 
 def _run_crap(
@@ -1766,20 +1772,154 @@ def _run_crap(
         _score_target(target, line_coverage_frac=line_coverage_frac, config=config)
 
     summary = _build_summary(targets, config=config, coverage_data=coverage_data)
-    return AnalysisResult(functions=targets, summary=summary)
+    return AnalysisResult(results=targets, summary=summary)
 
 
-def _emit(result: AnalysisResult, output_format: str) -> None:
+def _emit(
+    result: AnalysisResult,
+    output_format: str,
+    *,
+    start_time: float | None = None,
+) -> None:
     """Emit the analysis result in the requested format.
 
     Args:
         result: The AnalysisResult to emit.
         output_format: One of "json" or "text".
+        start_time: time.monotonic() captured before analysis ran. Used to
+            compute duration_ms in the metadata block. When None, duration_ms
+            is 0.
     """
     if output_format == "json":
-        click.echo(to_json(result))
+        click.echo(analysis_to_json(result, start_time=start_time))
     else:
         click.echo(to_text(result))
+
+
+def _resolve_baseline_path(
+    flag_path: str | None,
+    config: GazeConfig,
+    project_root: Path,
+) -> tuple[Path | None, bool]:
+    """Resolve the baseline file path from flag, config, or auto-discovery.
+
+    Resolution order (T216):
+    1. ``--baseline`` flag (explicit — error when file missing or is a dir)
+    2. ``config.baseline.file`` when not None (explicit — same rules)
+    3. Auto-discovery: ``project_root / ".gaze" / "baseline.json"``
+       — silent skip when absent or directory
+
+    Args:
+        flag_path: Value of the ``--baseline`` CLI flag. None if not passed.
+        config: Loaded GazeConfig.
+        project_root: Project root directory (nearest pyproject.toml).
+
+    Returns:
+        Tuple of (resolved_path_or_None, is_explicit).
+        is_explicit=True means a missing/bad file should cause exit 2.
+    """
+    # (1) --baseline flag takes priority
+    if flag_path is not None:
+        return Path(flag_path), True
+
+    # (2) config.baseline.file when explicitly set (non-None)
+    if config.baseline.file is not None:
+        return Path(config.baseline.file), True
+
+    # (3) Auto-discovery
+    candidate = project_root / ".gaze" / "baseline.json"
+    if candidate.exists() and candidate.is_file():
+        return candidate, False
+
+    # Not found — silent skip
+    return None, False
+
+
+def _run_baseline_comparison(
+    result: AnalysisResult,
+    flag_path: str | None,
+    config: GazeConfig,
+    output_format: str,
+) -> None:
+    """Load baseline, compare, emit comparison output, and apply gate.
+
+    Emits comparison output to stdout (before the normal _emit call is
+    bypassed when a comparison is active). Applies exit 1 gate when
+    comparison.passed is False. Warnings from compare() go to stderr.
+
+    Args:
+        result: The current CRAP AnalysisResult.
+        flag_path: Raw ``--baseline`` flag value (may be None).
+        config: Loaded GazeConfig.
+        output_format: "json" or "text".
+    """
+    from gaze_py.crap.compare import CompareOptions, compare, load_baseline  # noqa: PLC0415
+    from gaze_py.report.json_formatter import (  # noqa: PLC0415
+        comparison_to_json,
+        comparison_to_text,
+    )
+
+    project_root = _find_project_root()
+    baseline_path, is_explicit = _resolve_baseline_path(flag_path, config, project_root)
+
+    if baseline_path is None:
+        return  # No baseline — silent skip
+
+    # Load baseline
+    try:
+        baseline_entries = load_baseline(baseline_path)
+    except ValueError as exc:
+        if is_explicit:
+            click.echo(f"Error: {exc}", err=True)
+            raise SystemExit(2) from exc
+        else:
+            # Auto-discovered file gone or corrupt — warn and skip
+            click.echo(f"Warning: skipping auto-discovered baseline: {exc}", err=True)
+            return
+
+    # Build current entries list from result
+    import json as _json  # noqa: PLC0415
+
+    from gaze_py.report.json_formatter import analysis_to_json  # noqa: PLC0415
+
+    current_json = analysis_to_json(result)
+    current_data = _json.loads(current_json)
+    current_entries = current_data.get("results", [])
+    crap_summary = current_data.get("summary", {})
+
+    # Resolve CompareOptions — new_function_threshold: None → crap_threshold
+    threshold = (
+        config.baseline.new_function_threshold
+        if config.baseline.new_function_threshold is not None
+        else config.crap_threshold
+    )
+    opts = CompareOptions(
+        epsilon=config.baseline.epsilon,
+        new_function_threshold=threshold,
+    )
+
+    cmp_result = compare(baseline_entries, current_entries, opts)
+
+    # Emit warnings to stderr
+    for warning in cmp_result.warnings:
+        click.echo(warning, err=True)
+
+    # Emit comparison output (replaces normal _emit for this invocation)
+    if output_format == "json":
+        click.echo(comparison_to_json(cmp_result, crap_summary))
+    else:
+        from gaze_py.report.text_formatter import to_text  # noqa: PLC0415
+
+        click.echo(comparison_to_text(to_text(result), cmp_result))
+
+    # Gate: exit 1 when comparison failed
+    if not cmp_result.summary.passed:
+        raise SystemExit(1)
+
+    # Suppress normal _emit — comparison already emitted output
+    # (achieved by monkey-patching result.summary to signal caller;
+    # simpler: just raise SystemExit(0) to short-circuit after output)
+    raise SystemExit(0)
 
 
 def _find_project_root() -> Path:

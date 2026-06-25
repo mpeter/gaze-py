@@ -48,7 +48,12 @@ def test_simple_fixture_full_coverage() -> None:
     assert len(reports) >= 1
     # Find the report for simple_function.
     report = next(
-        (r for r in reports if r.target_function == "simple_function"),
+        (
+            r
+            for r in reports
+            if isinstance(r.target_function, FunctionTarget)
+            and r.target_function.function == "simple_function"
+        ),
         None,
     )
     assert report is not None, f"No report for simple_function. Reports: {reports}"
@@ -72,7 +77,12 @@ def test_raises_fixture_coverage() -> None:
     reports = result.reports
     assert len(reports) >= 1
     report = next(
-        (r for r in reports if r.target_function == "raises_on_negative"),
+        (
+            r
+            for r in reports
+            if isinstance(r.target_function, FunctionTarget)
+            and r.target_function.function == "raises_on_negative"
+        ),
         None,
     )
     assert report is not None, f"No report for raises_on_negative. Reports: {reports}"
@@ -98,7 +108,12 @@ def test_undertested_fixture_zero_coverage() -> None:
     reports = result.reports
     assert len(reports) >= 1
     report = next(
-        (r for r in reports if r.target_function == "compute_total"),
+        (
+            r
+            for r in reports
+            if isinstance(r.target_function, FunctionTarget)
+            and r.target_function.function == "compute_total"
+        ),
         None,
     )
     assert report is not None, f"No report for compute_total. Reports: {reports}"
@@ -129,7 +144,12 @@ def test_attribute_mutation_fixture_coverage() -> None:
     reports = result.reports
     assert len(reports) >= 1
     report = next(
-        (r for r in reports if r.target_function == "set_label"),
+        (
+            r
+            for r in reports
+            if isinstance(r.target_function, FunctionTarget)
+            and r.target_function.function == "set_label"
+        ),
         None,
     )
     assert report is not None, f"No report for set_label. Reports: {reports}"
@@ -159,7 +179,8 @@ def test_target_func_filtering() -> None:
     assert isinstance(result, AssessResult)
     reports = result.reports
     for report in reports:
-        assert report.target_function == "simple_function"
+        assert isinstance(report.target_function, FunctionTarget)
+        assert report.target_function.function == "simple_function"
 
 
 def test_target_func_no_match() -> None:
@@ -227,7 +248,15 @@ def test_effect_confidence_range_populated_when_all_effects_ambiguous() -> None:
         min_confidence=60,
         max_confidence=85,
     )
-    target = FunctionTarget(name="f", file_path="test.py", line=1, complexity=1)
+    target = FunctionTarget(
+        function="f",
+        file_path="test.py",
+        line=1,
+        complexity=1,
+        package="test.py",
+        receiver=None,
+        signature="def f()",
+    )
     cfg = GazeConfig()
     _score_target(target, line_coverage_frac=None, config=cfg, quality_result=quality_result)
 
@@ -248,7 +277,15 @@ def test_effect_confidence_range_none_for_normal_coverage() -> None:
         unmapped_assertions=0,
         reason=None,
     )
-    target = FunctionTarget(name="f", file_path="test.py", line=1, complexity=1)
+    target = FunctionTarget(
+        function="f",
+        file_path="test.py",
+        line=1,
+        complexity=1,
+        package="test.py",
+        receiver=None,
+        signature="def f()",
+    )
     cfg = GazeConfig()
     _score_target(target, line_coverage_frac=None, config=cfg, quality_result=quality_result)
 
@@ -266,7 +303,15 @@ def test_effect_confidence_range_none_for_no_effects() -> None:
         unmapped_assertions=0,
         reason="no_effects_detected",
     )
-    target = FunctionTarget(name="f", file_path="test.py", line=1, complexity=1)
+    target = FunctionTarget(
+        function="f",
+        file_path="test.py",
+        line=1,
+        complexity=1,
+        package="test.py",
+        receiver=None,
+        signature="def f()",
+    )
     cfg = GazeConfig()
     _score_target(target, line_coverage_frac=None, config=cfg, quality_result=quality_result)
 
@@ -302,7 +347,12 @@ def test_assess_untested_has_no_test_coverage_reason() -> None:
         f"Expected non-empty untested, got empty. reports={result.reports}"
     )
     orphan = next(
-        (r for r in result.untested if r.target_function == "orphan_compute"),
+        (
+            r
+            for r in result.untested
+            if isinstance(r.target_function, FunctionTarget)
+            and r.target_function.function == "orphan_compute"
+        ),
         None,
     )
     assert orphan is not None, f"No untested entry for orphan_compute. untested={result.untested}"
@@ -338,8 +388,16 @@ def test_assess_paired_functions_not_in_untested() -> None:
         config=_default_config(),
     )
     assert result
-    paired_names = {r.target_function for r in result.reports if r.target_function}
-    untested_names = {r.target_function for r in result.untested}
+    paired_names = {
+        r.target_function.function
+        for r in result.reports
+        if isinstance(r.target_function, FunctionTarget)
+    }
+    untested_names = {
+        r.target_function.function
+        for r in result.untested
+        if isinstance(r.target_function, FunctionTarget)
+    }
     overlap = paired_names & untested_names
     assert not overlap, f"Functions appear in both reports and untested: {overlap}"
 
@@ -401,10 +459,12 @@ def test_assess_inferred_target_not_in_source_map(
 
     result = assess(src, tests_dir, config=_default_config())
     assert result
-    # Find report paired to nonexistent_fn
-    paired = [r for r in result.reports if r.target_function == "nonexistent_fn"]
+    # Find report with no target (inferred target not in source map → target_function=None)
+    paired = [
+        r for r in result.reports if r.target_function is None and r.contract_coverage is None
+    ]
     assert paired, (
-        f"Expected report with target_function='nonexistent_fn', "
+        f"Expected report with target_function=None and contract_coverage=None, "
         f"got: {[(r.test_function, r.target_function) for r in result.reports]}"
     )
     assert paired[0].contract_coverage is None
@@ -453,16 +513,25 @@ def test_build_contract_coverage_map_keeps_higher_percentage_for_duplicate_targe
         unmapped_assertions=0,
         reason=None,
     )
+    my_func_target = FunctionTarget(
+        function="my_func",
+        file_path="src.py",
+        line=1,
+        complexity=1,
+        package="src.py",
+        receiver=None,
+        signature="def my_func()",
+    )
     report_low = QualityReport(
         test_function="test_a",
-        target_function="my_func",
+        target_function=my_func_target,
         assertions=(),
         contract_coverage=low_ccr,
         warnings=(),
     )
     report_high = QualityReport(
         test_function="test_b",
-        target_function="my_func",
+        target_function=my_func_target,
         assertions=(),
         contract_coverage=high_ccr,
         warnings=(),
@@ -500,16 +569,25 @@ def test_build_contract_coverage_map_none_does_not_displace_percentage(
         unmapped_assertions=0,
         reason="no_test_coverage",
     )
+    fn_target = FunctionTarget(
+        function="fn",
+        file_path="src.py",
+        line=1,
+        complexity=1,
+        package="src.py",
+        receiver=None,
+        signature="def fn()",
+    )
     r50 = QualityReport(
         test_function="test_a",
-        target_function="fn",
+        target_function=fn_target,
         assertions=(),
         contract_coverage=ccr_50,
         warnings=(),
     )
     r_none = QualityReport(
         test_function="test_b",
-        target_function="fn",
+        target_function=fn_target,
         assertions=(),
         contract_coverage=ccr_none,
         warnings=(),
@@ -541,7 +619,12 @@ def test_quality_report_includes_gap_hints() -> None:
     )
     assert result
     report = next(
-        (r for r in result.reports if r.target_function == "compute_total"),
+        (
+            r
+            for r in result.reports
+            if isinstance(r.target_function, FunctionTarget)
+            and r.target_function.function == "compute_total"
+        ),
         None,
     )
     assert report is not None, f"No report for compute_total. Reports: {result.reports}"

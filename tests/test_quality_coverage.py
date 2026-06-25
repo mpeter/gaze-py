@@ -60,10 +60,13 @@ def _make_target(effects: list[SideEffect]) -> FunctionTarget:
     Uses caller_count=10 to push ReturnValue (P0 tier) into contractual range.
     """
     return FunctionTarget(
-        name="example_fn",
+        function="example_fn",
         file_path="src/example.py",
         line=1,
         complexity=1,
+        package="src/example.py",
+        receiver=None,
+        signature="def example_fn()",
         caller_count=10,  # caller signal pushes toward contractual
         effects=effects,
     )
@@ -132,10 +135,13 @@ def test_no_contractual_effects_all_incidental() -> None:
     """
     effect = _make_effect(SideEffectType.LogWrite)
     target = FunctionTarget(
-        name="example_fn",
+        function="example_fn",
         file_path="src/example.py",
         line=1,
         complexity=1,
+        package="src/example.py",
+        receiver=None,
+        signature="def example_fn()",
         caller_count=0,  # no caller signal → score stays at base
         effects=[effect],
     )
@@ -172,10 +178,13 @@ def test_over_specification() -> None:
         _make_effect(SideEffectType.LogWrite),
     ]
     target = FunctionTarget(
-        name="example_fn",
+        function="example_fn",
         file_path="src/example.py",
         line=1,
         complexity=1,
+        package="src/example.py",
+        receiver=None,
+        signature="def example_fn()",
         caller_count=0,  # no caller signal → scores stay at base+tier_boost
         effects=effects,
     )
@@ -224,10 +233,13 @@ def test_all_effects_ambiguous_populates_confidence_range() -> None:
     effect = _make_effect(SideEffectType.LogWrite)
     # Private name + 0 callers → ambiguous classification from ClassificationEngine
     target = FunctionTarget(
-        name="_private_fn",
+        function="_private_fn",
         file_path="src/example.py",
         line=1,
         complexity=1,
+        package="src/example.py",
+        receiver=None,
+        signature="def _private_fn()",
         caller_count=0,
         effects=[effect],
     )

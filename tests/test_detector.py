@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from gaze_py.analysis.detector import FileDetector
+from gaze_py.analysis.detector import FileDetector, _build_signature, _format_annotation
 from gaze_py.taxonomy.effects import SideEffectType
 from gaze_py.taxonomy.exceptions import GazeParseError
 
@@ -812,8 +812,8 @@ def test_caller_count_reflects_callers_map_value() -> None:
     """
     targets = FileDetector.detect(FIXTURES / "pure_function.py", root=ROOT, callers={"pure": 5})
     assert targets
-    matched = [t for t in targets if t.name == "pure"]
-    assert matched, f"pure not found in targets: {[t.name for t in targets]}"
+    matched = [t for t in targets if t.function == "pure"]
+    assert matched, f"pure not found in targets: {[t.function for t in targets]}"
     assert matched[0].caller_count == 5, (  # noqa: PLR2004
         f"Expected caller_count=5, got {matched[0].caller_count}"
     )
@@ -827,7 +827,7 @@ def test_caller_count_reflects_callers_map_value() -> None:
 def test_recover_behavior_assignment_in_handler() -> None:
     """RecoverBehavior: assignment in except → detected."""
     targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "parse_int_with_fallback")
+    fn = next(t for t in targets if t.function == "parse_int_with_fallback")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
     assert count == 1
 
@@ -835,7 +835,7 @@ def test_recover_behavior_assignment_in_handler() -> None:
 def test_recover_behavior_bare_pass() -> None:
     """RecoverBehavior: bare pass in except → detected (suppression)."""
     targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "suppress_error")
+    fn = next(t for t in targets if t.function == "suppress_error")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
     assert count == 1
 
@@ -843,7 +843,7 @@ def test_recover_behavior_bare_pass() -> None:
 def test_recover_behavior_return_only_in_handler() -> None:
     """RecoverBehavior: return-only handler → detected."""
     targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "return_none_on_error")
+    fn = next(t for t in targets if t.function == "return_none_on_error")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
     assert count == 1
 
@@ -851,21 +851,21 @@ def test_recover_behavior_return_only_in_handler() -> None:
 def test_recover_behavior_not_emitted_for_reraise() -> None:
     """RecoverBehavior: bare re-raise → NOT detected."""
     targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "reraise_is_not_recovery")
+    fn = next(t for t in targets if t.function == "reraise_is_not_recovery")
     assert not any(e.type == SideEffectType.RecoverBehavior for e in fn.effects)
 
 
 def test_recover_behavior_not_emitted_for_transform_reraise() -> None:
     """RecoverBehavior: transform-and-reraise → NOT detected."""
     targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "transform_reraise_is_not_recovery")
+    fn = next(t for t in targets if t.function == "transform_reraise_is_not_recovery")
     assert not any(e.type == SideEffectType.RecoverBehavior for e in fn.effects)
 
 
 def test_recover_behavior_emitted_once_per_function() -> None:
     """RecoverBehavior: two qualifying try blocks → exactly ONE emission."""
     targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "double_try_recovers_once")
+    fn = next(t for t in targets if t.function == "double_try_recovers_once")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
     assert count == 1
 
@@ -873,7 +873,7 @@ def test_recover_behavior_emitted_once_per_function() -> None:
 def test_recover_behavior_flag_resets_between_functions() -> None:
     """RecoverBehavior: per-function isolation — full file detection."""
     targets = FileDetector.detect(FIXTURES / "recover_behavior.py", root=ROOT)
-    by_name = {t.name: t for t in targets}
+    by_name = {t.function: t for t in targets}
     rb = SideEffectType.RecoverBehavior
     assert sum(1 for e in by_name["parse_int_with_fallback"].effects if e.type == rb) == 1
     assert sum(1 for e in by_name["suppress_error"].effects if e.type == rb) == 1
@@ -893,7 +893,7 @@ def test_recover_behavior_except_star(tmp_path: Path) -> None:
     path = tmp_path / "except_star.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.RecoverBehavior)
     assert count == 1
 
@@ -906,7 +906,7 @@ def test_recover_behavior_except_star(tmp_path: Path) -> None:
 def test_wait_group_op_asyncio_gather() -> None:
     """WaitGroupOp: asyncio.gather → detected."""
     targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "gather_tasks")
+    fn = next(t for t in targets if t.function == "gather_tasks")
     assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
 
 
@@ -920,21 +920,21 @@ def test_wait_group_op_asyncio_gather_bare_call(tmp_path: Path) -> None:
     path = tmp_path / "gather_bare.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
 
 
 def test_wait_group_op_asyncio_wait() -> None:
     """WaitGroupOp: asyncio.wait → detected."""
     targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "wait_tasks")
+    fn = next(t for t in targets if t.function == "wait_tasks")
     assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
 
 
 def test_wait_group_op_task_group() -> None:
     """WaitGroupOp: async with asyncio.TaskGroup() → detected."""
     targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "task_group_sync")
+    fn = next(t for t in targets if t.function == "task_group_sync")
     assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
 
 
@@ -948,7 +948,7 @@ def test_wait_group_op_not_emitted_for_sync_with(tmp_path: Path) -> None:
     path = tmp_path / "sync_with.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     assert not any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
 
 
@@ -962,21 +962,21 @@ def test_wait_group_op_not_emitted_for_async_with_lock(tmp_path: Path) -> None:
     path = tmp_path / "async_with_lock.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     assert not any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
 
 
 def test_wait_group_op_futures_wait() -> None:
     """WaitGroupOp: futures.wait() via alias import → detected."""
     targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "futures_wait")
+    fn = next(t for t in targets if t.function == "futures_wait")
     assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
 
 
 def test_wait_group_op_barrier_wait() -> None:
     """WaitGroupOp: threading.Barrier.wait() → detected."""
     targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "barrier_sync")
+    fn = next(t for t in targets if t.function == "barrier_sync")
     assert any(e.type == SideEffectType.WaitGroupOp for e in fn.effects)
 
 
@@ -993,7 +993,7 @@ def test_wait_group_op_multiple_emissions(tmp_path: Path) -> None:
     path = tmp_path / "multi_wait.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "sync_two_ways")
+    fn = next(t for t in targets if t.function == "sync_two_ways")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.WaitGroupOp)
     assert count == 2
 
@@ -1006,7 +1006,7 @@ def test_wait_group_op_multiple_emissions(tmp_path: Path) -> None:
 def test_unsafe_mutation_ptr_subscript() -> None:
     """UnsafeMutation: ptr[0] = ... → detected."""
     targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "write_ptr_subscript")
+    fn = next(t for t in targets if t.function == "write_ptr_subscript")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
     assert count == 1
 
@@ -1014,7 +1014,7 @@ def test_unsafe_mutation_ptr_subscript() -> None:
 def test_unsafe_mutation_buf_subscript() -> None:
     """UnsafeMutation: buf[0] = ... → detected."""
     targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "write_buf_subscript")
+    fn = next(t for t in targets if t.function == "write_buf_subscript")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
     assert count == 1
 
@@ -1022,7 +1022,7 @@ def test_unsafe_mutation_buf_subscript() -> None:
 def test_unsafe_mutation_p_name_subscript() -> None:
     """UnsafeMutation: p_data[0] = ... → detected (validates 'p_' in _CTYPES_PTR_NAMES)."""
     targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "write_p_name_subscript")
+    fn = next(t for t in targets if t.function == "write_p_name_subscript")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
     assert count == 1
 
@@ -1030,7 +1030,7 @@ def test_unsafe_mutation_p_name_subscript() -> None:
 def test_unsafe_mutation_contents_attr() -> None:
     """UnsafeMutation: mem.contents = ... → detected."""
     targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "write_contents")
+    fn = next(t for t in targets if t.function == "write_contents")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
     assert count == 1
 
@@ -1038,7 +1038,7 @@ def test_unsafe_mutation_contents_attr() -> None:
 def test_unsafe_mutation_not_emitted_for_list_write() -> None:
     """UnsafeMutation: items[0] = ... (list) → NOT detected."""
     targets = FileDetector.detect(FIXTURES / "unsafe_mutation.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "safe_list_write")
+    fn = next(t for t in targets if t.function == "safe_list_write")
     assert not any(e.type == SideEffectType.UnsafeMutation for e in fn.effects)
 
 
@@ -1053,7 +1053,7 @@ def test_unsafe_mutation_both_patterns_independent(tmp_path: Path) -> None:
     path = tmp_path / "unsafe_both.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     count = sum(1 for e in fn.effects if e.type == SideEffectType.UnsafeMutation)
     assert count == 2
 
@@ -1066,35 +1066,35 @@ def test_unsafe_mutation_both_patterns_independent(tmp_path: Path) -> None:
 def test_subprocess_popen_is_goroutine_spawn() -> None:
     """subprocess.Popen → GoroutineSpawn."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "spawn_popen")
+    fn = next(t for t in targets if t.function == "spawn_popen")
     assert any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
 
 
 def test_subprocess_run_is_goroutine_spawn() -> None:
     """subprocess.run → GoroutineSpawn."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "spawn_run")
+    fn = next(t for t in targets if t.function == "spawn_run")
     assert any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
 
 
 def test_subprocess_call_is_goroutine_spawn() -> None:
     """subprocess.call → GoroutineSpawn."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "spawn_call")
+    fn = next(t for t in targets if t.function == "spawn_call")
     assert any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
 
 
 def test_subprocess_check_output_is_goroutine_spawn() -> None:
     """subprocess.check_output → GoroutineSpawn."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "spawn_check_output")
+    fn = next(t for t in targets if t.function == "spawn_check_output")
     assert any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
 
 
 def test_subprocess_check_call_is_goroutine_spawn() -> None:
     """subprocess.check_call → GoroutineSpawn."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "spawn_check_call")
+    fn = next(t for t in targets if t.function == "spawn_check_call")
     assert any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
 
 
@@ -1107,7 +1107,7 @@ def test_non_subprocess_run_not_goroutine_spawn(tmp_path: Path) -> None:
     path = tmp_path / "non_subprocess.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     assert not any(e.type == SideEffectType.GoroutineSpawn for e in fn.effects)
 
 
@@ -1119,28 +1119,28 @@ def test_non_subprocess_run_not_goroutine_spawn(tmp_path: Path) -> None:
 def test_async_with_lock_is_mutex_op() -> None:
     """async with lock (param) → MutexOp."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "async_lock")
+    fn = next(t for t in targets if t.function == "async_lock")
     assert any(e.type == SideEffectType.MutexOp for e in fn.effects)
 
 
 def test_async_with_mutex_is_mutex_op() -> None:
     """async with mutex (param) → MutexOp."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "async_mutex")
+    fn = next(t for t in targets if t.function == "async_mutex")
     assert any(e.type == SideEffectType.MutexOp for e in fn.effects)
 
 
 def test_async_with_sem_is_mutex_op() -> None:
     """async with sem (param) → MutexOp (not a connection name → MutexOp by default)."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "async_sem")
+    fn = next(t for t in targets if t.function == "async_sem")
     assert any(e.type == SideEffectType.MutexOp for e in fn.effects)
 
 
 def test_async_with_conn_is_database_transaction() -> None:
     """async with conn (param) → DatabaseTransaction."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "async_conn")
+    fn = next(t for t in targets if t.function == "async_conn")
     assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
 
 
@@ -1151,7 +1151,7 @@ def test_async_with_session_is_mutex_op_not_database_transaction() -> None:
     session_id (a common HTTP/user session identifier). session → MutexOp by default.
     """
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "async_session")
+    fn = next(t for t in targets if t.function == "async_session")
     assert any(e.type == SideEffectType.MutexOp for e in fn.effects)
     assert not any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
 
@@ -1159,28 +1159,28 @@ def test_async_with_session_is_mutex_op_not_database_transaction() -> None:
 def test_async_with_db_conn_is_database_transaction() -> None:
     """async with db_conn (param, word-part 'db' match) → DatabaseTransaction."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "async_db_conn")
+    fn = next(t for t in targets if t.function == "async_db_conn")
     assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
 
 
 def test_async_with_db_conn_not_mutex_op() -> None:
     """async with db_conn → DatabaseTransaction, NOT MutexOp."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "async_db_conn")
+    fn = next(t for t in targets if t.function == "async_db_conn")
     assert not any(e.type == SideEffectType.MutexOp for e in fn.effects)
 
 
 def test_sync_with_db_conn_is_database_transaction() -> None:
     """with db_conn (sync) → DatabaseTransaction via _is_db_context (regression)."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "sync_db_conn")
+    fn = next(t for t in targets if t.function == "sync_db_conn")
     assert any(e.type == SideEffectType.DatabaseTransaction for e in fn.effects)
 
 
 def test_sync_with_ctx_is_not_database_transaction() -> None:
     """with ctx (sync) → MutexOp, NOT DatabaseTransaction (ctx excluded from _is_db_context)."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "sync_ctx_not_db")
+    fn = next(t for t in targets if t.function == "sync_ctx_not_db")
     assert any(e.type == SideEffectType.MutexOp for e in fn.effects), (
         f"Expected MutexOp for 'with ctx:', got: {[e.type for e in fn.effects]}"
     )
@@ -1201,7 +1201,7 @@ def test_async_with_non_param_does_not_emit_mutex(tmp_path: Path) -> None:
     path = tmp_path / "async_local.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     assert not any(e.type == SideEffectType.MutexOp for e in fn.effects)
 
 
@@ -1213,28 +1213,28 @@ def test_async_with_non_param_does_not_emit_mutex(tmp_path: Path) -> None:
 def test_atexit_register_is_global_mutation() -> None:
     """atexit.register → GlobalMutation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "register_shutdown")
+    fn = next(t for t in targets if t.function == "register_shutdown")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
 def test_atexit_register_lambda_is_global_mutation() -> None:
     """atexit.register(lambda) → GlobalMutation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "register_lambda_shutdown")
+    fn = next(t for t in targets if t.function == "register_lambda_shutdown")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
 def test_atexit_register_not_finalizer_registration() -> None:
     """atexit.register → NOT FinalizerRegistration."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "register_shutdown")
+    fn = next(t for t in targets if t.function == "register_shutdown")
     assert not any(e.type == SideEffectType.FinalizerRegistration for e in fn.effects)
 
 
 def test_atexit_register_not_callback_invocation() -> None:
     """atexit.register → NOT CallbackInvocation (registers, does not invoke)."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "register_shutdown")
+    fn = next(t for t in targets if t.function == "register_shutdown")
     assert not any(e.type == SideEffectType.CallbackInvocation for e in fn.effects)
 
 
@@ -1248,7 +1248,7 @@ def test_atexit_unregister_not_global_mutation(tmp_path: Path) -> None:
     path = tmp_path / "atexit_unreg.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "cancel_shutdown")
+    fn = next(t for t in targets if t.function == "cancel_shutdown")
     assert not any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
@@ -1260,21 +1260,21 @@ def test_atexit_unregister_not_global_mutation(tmp_path: Path) -> None:
 def test_warnings_warn_emits_log_write() -> None:
     """warnings.warn → LogWrite."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "emit_warning")
+    fn = next(t for t in targets if t.function == "emit_warning")
     assert any(e.type == SideEffectType.LogWrite for e in fn.effects)
 
 
 def test_warnings_warn_emits_global_mutation() -> None:
     """warnings.warn → GlobalMutation (__warningregistry__)."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "emit_warning")
+    fn = next(t for t in targets if t.function == "emit_warning")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
 def test_warnings_warn_emits_exactly_one_each_with_distinct_ids() -> None:
     """warnings.warn → exactly one LogWrite AND one GlobalMutation, distinct IDs (EC-003)."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "emit_warning")
+    fn = next(t for t in targets if t.function == "emit_warning")
     log_effects = [e for e in fn.effects if e.type == SideEffectType.LogWrite]
     mut_effects = [e for e in fn.effects if e.type == SideEffectType.GlobalMutation]
     assert len(log_effects) == 1, f"Expected 1 LogWrite, got {len(log_effects)}"
@@ -1294,7 +1294,7 @@ def test_warnings_warn_with_stacklevel_emits_both_effects(tmp_path: Path) -> Non
     path = tmp_path / "warn_stacklevel.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "warn_stacklevel")
+    fn = next(t for t in targets if t.function == "warn_stacklevel")
     assert any(e.type == SideEffectType.LogWrite for e in fn.effects)
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
@@ -1302,7 +1302,7 @@ def test_warnings_warn_with_stacklevel_emits_both_effects(tmp_path: Path) -> Non
 def test_warnings_warn_not_finalizer_or_callback() -> None:
     """warnings.warn → NOT FinalizerRegistration or CallbackInvocation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "emit_warning")
+    fn = next(t for t in targets if t.function == "emit_warning")
     assert not any(e.type == SideEffectType.FinalizerRegistration for e in fn.effects)
     assert not any(e.type == SideEffectType.CallbackInvocation for e in fn.effects)
 
@@ -1315,28 +1315,28 @@ def test_warnings_warn_not_finalizer_or_callback() -> None:
 def test_lru_cache_bare_is_global_mutation() -> None:
     """@lru_cache (bare) → GlobalMutation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "cached_compute")
+    fn = next(t for t in targets if t.function == "cached_compute")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
 def test_lru_cache_call_form_is_global_mutation() -> None:
     """@lru_cache(maxsize=128) → GlobalMutation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "cached_fetch")
+    fn = next(t for t in targets if t.function == "cached_fetch")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
 def test_cache_decorator_is_global_mutation() -> None:
     """@cache → GlobalMutation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "cached_memoized")
+    fn = next(t for t in targets if t.function == "cached_memoized")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
 def test_uncached_function_not_global_mutation_from_decorator() -> None:
     """Plain function with no cache decorator → no lru_cache GlobalMutation."""
     targets = FileDetector.detect(FIXTURES / "python_native.py", root=ROOT)
-    fn = next(t for t in targets if t.name == "not_cached")
+    fn = next(t for t in targets if t.function == "not_cached")
     assert not any(e.type == SideEffectType.GlobalMutation for e in fn.effects), (
         f"not_cached has no GlobalMutation sources; got: {[e.type for e in fn.effects]}"
     )
@@ -1353,7 +1353,7 @@ def test_functools_lru_cache_qualified_form(tmp_path: Path) -> None:
     path = tmp_path / "qualified_cache.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
@@ -1368,7 +1368,7 @@ def test_functools_lru_cache_call_form_is_global_mutation(tmp_path: Path) -> Non
     path = tmp_path / "qualified_cache_call.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
@@ -1383,7 +1383,7 @@ def test_functools_cache_qualified_form_is_global_mutation(tmp_path: Path) -> No
     path = tmp_path / "qualified_cache_bare.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    fn = next(t for t in targets if t.name == "f")
+    fn = next(t for t in targets if t.function == "f")
     assert any(e.type == SideEffectType.GlobalMutation for e in fn.effects)
 
 
@@ -1404,7 +1404,7 @@ def test_lru_cache_effect_on_definition_not_call_site(tmp_path: Path) -> None:
     path = tmp_path / "cache_call_site.py"
     path.write_text(source)
     targets = FileDetector.detect(path, root=tmp_path)
-    compute_fn = next(t for t in targets if t.name == "compute")
+    compute_fn = next(t for t in targets if t.function == "compute")
     gm_effects = [e for e in compute_fn.effects if e.type == SideEffectType.GlobalMutation]
     assert len(gm_effects) == 1, (
         f"Expected exactly 1 GlobalMutation on compute, got {len(gm_effects)}"
@@ -1413,7 +1413,46 @@ def test_lru_cache_effect_on_definition_not_call_site(tmp_path: Path) -> None:
         f"Expected 'lru_cache' in description, got: {gm_effects[0].description!r}"
     )
     for caller in ("caller_a", "caller_b", "caller_c"):
-        caller_fn = next(t for t in targets if t.name == caller)
+        caller_fn = next(t for t in targets if t.function == caller)
         assert not any(e.type == SideEffectType.GlobalMutation for e in caller_fn.effects), (
             f"{caller} should not have GlobalMutation (callers have no GlobalMutation sources)"
         )
+
+
+# ---------------------------------------------------------------------------
+# _build_signature and _format_annotation error paths (M-8)
+# CR-004: tested directly because injecting a malformed ast.FunctionDef
+# through the public FileDetector.detect() API is not feasible.
+# ---------------------------------------------------------------------------
+
+
+def test_build_signature_fallback_on_malformed_args() -> None:
+    """_build_signature falls back to 'def f(...)' when args node is malformed."""
+    import ast
+
+    node = ast.parse("def f(x: int) -> str: pass").body[0]
+    assert isinstance(node, ast.FunctionDef)
+    # Force an AttributeError inside _build_signature by removing args.
+    node.args = None  # type: ignore[assignment]
+    result = _build_signature(node, "f")
+    assert result == "def f(...)", f"Expected fallback signature, got {result!r}"
+
+
+def test_build_signature_async_prefix() -> None:
+    """_build_signature emits 'async def' for AsyncFunctionDef nodes."""
+    import ast
+
+    node = ast.parse("async def fetch(url: str) -> bytes: pass").body[0]
+    assert isinstance(node, ast.AsyncFunctionDef)
+    result = _build_signature(node, "fetch")
+    assert result.startswith("async def "), (
+        f"Expected 'async def' prefix for async function, got {result!r}"
+    )
+    assert "url: str" in result
+    assert "-> bytes" in result
+
+
+def test_format_annotation_returns_empty_string_on_none() -> None:
+    """_format_annotation returns '' for None input (no annotation)."""
+    result = _format_annotation(None)
+    assert result == "", f"Expected '' for None annotation, got {result!r}"

@@ -56,9 +56,9 @@ def detect_and_classify(
             continue
 
         for target in targets:
-            if not include_unexported and target.name.startswith("_"):
+            if not include_unexported and target.function.startswith("_"):
                 continue
-            if function_filter is not None and target.name != function_filter:
+            if function_filter is not None and target.function != function_filter:
                 continue
             for effect in target.effects:
                 target.classification = engine.classify(effect, target)

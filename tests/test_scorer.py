@@ -102,10 +102,13 @@ def _make_target(name: str, crap_score: float | None) -> FunctionTarget:
     """Build a FunctionTarget with a given CRAP score."""
     score = Score(crap=crap_score)
     target = FunctionTarget(
-        name=name,
+        function=name,
         file_path="test.py",
         line=1,
         complexity=5,
+        package="test.py",
+        receiver=None,
+        signature=f"def {name}()",
     )
     target.score = score
     return target
@@ -121,7 +124,7 @@ def test_sc003_crapload_returns_targets_above_threshold() -> None:
     ]
     result = crapload(targets, threshold=15.0)
     assert len(result) == 2
-    names = [t.name for t in result]
+    names = [t.function for t in result]
     assert "high" in names
     assert "medium" in names  # >= 15.0 is included
     assert "low" not in names
@@ -147,7 +150,7 @@ def test_sc003_crapload_boundary_inclusive() -> None:
     targets = [_make_target("boundary", 15.0)]
     result = crapload(targets, threshold=15.0)
     assert len(result) == 1
-    assert result[0].name == "boundary"
+    assert result[0].function == "boundary"
 
 
 # ---------------------------------------------------------------------------
@@ -310,10 +313,13 @@ def _make_target_with_strategy(
     """Build a FunctionTarget with a given CRAP score and fix strategy."""
     score = Score(crap=crap_score, fix_strategy=strategy)
     target = FunctionTarget(
-        name=name,
+        function=name,
         file_path=file_path,
         line=1,
         complexity=5,
+        package=file_path,
+        receiver=None,
+        signature=f"def {name}()",
     )
     target.score = score
     return target
@@ -399,7 +405,15 @@ def test_sc003_crapload_skips_unscored_targets() -> None:
     """
     # Construct target WITHOUT assigning .score (score stays as default None).
     # This is distinct from Score(crap=None) which is a different branch.
-    target = FunctionTarget(name="f", file_path="f.py", line=1, complexity=5)
+    target = FunctionTarget(
+        function="f",
+        file_path="f.py",
+        line=1,
+        complexity=5,
+        package="f.py",
+        receiver=None,
+        signature="def f()",
+    )
     # target.score is None (unset), NOT Score(crap=None)
     result = crapload([target], threshold=0.5)
     assert result == []
@@ -411,7 +425,15 @@ def test_sc006_recommended_actions_skips_unscored_targets() -> None:
     score is None (unset) — distinct from Score(fix_strategy=None) which is a
     different branch covered by test_sc006_recommended_actions_excludes_null_strategy.
     """
-    target = FunctionTarget(name="f", file_path="f.py", line=1, complexity=5)
+    target = FunctionTarget(
+        function="f",
+        file_path="f.py",
+        line=1,
+        complexity=5,
+        package="f.py",
+        receiver=None,
+        signature="def f()",
+    )
     # score is None (unset), not Score(fix_strategy=None)
     result = recommended_actions([target])
     assert result == []

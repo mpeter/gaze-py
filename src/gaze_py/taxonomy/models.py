@@ -113,6 +113,29 @@ class Score:
     effect_confidence_range: tuple[int, int] | None = None
 
 
+@dataclass(frozen=True)
+class Metadata:
+    """Analysis run metadata injected at serialization time.
+
+    Populated by the JSON formatter — not stored in the model pipeline.
+    This avoids circular imports and keeps models pure.
+
+    Attributes:
+        gaze_version: gaze-py version string (from gaze_py.__version__).
+        warnings: Non-fatal warnings from the analysis run. Reserved for future
+            use — always an empty tuple in this version. Analysis warnings are
+            currently emitted to stderr only and are not threaded into the pipeline.
+        duration_ms: Wall-clock milliseconds from run start to serialization.
+        timestamp: ISO 8601 UTC timestamp in YYYY-MM-DDTHH:mm:SSZ format,
+            matching Go's time.RFC3339 (seconds precision, Z suffix).
+    """
+
+    gaze_version: str
+    warnings: tuple[str, ...]
+    duration_ms: int
+    timestamp: str
+
+
 @dataclass
 class FunctionTarget:
     """A single analyzed function with its detected effects and scores.
@@ -121,11 +144,21 @@ class FunctionTarget:
     classify → score).
 
     Attributes:
-        name: Simple function name (not qualified).
+        function: Simple function name (not qualified). Named ``function``
+            (not ``name``) so dataclasses.asdict() serializes as ``"function"``
+            per FR-002 / OC-002.
         file_path: Project-relative path to the source file.
         line: Line number where the function is defined (1-indexed).
         complexity: McCabe cyclomatic complexity computed by
             analysis/complexity.py.
+        package: Project-relative file path (Python equivalent of Go's
+            import path). Populated at construction time in detector.py.
+        receiver: Class name for methods (e.g., ``"FileDetector"``), or
+            ``None`` for module-level functions. Populated at construction.
+        signature: Full function signature reconstructed from the AST
+            ``arguments`` node (e.g., ``"def parse(text: str) -> int"``).
+            Falls back to ``"def <name>(...)"`` only when annotation
+            reconstruction raises. Populated at construction.
         caller_count: Number of distinct caller modules (from the pre-pass
             caller map). Defaults to 0 when no caller map is provided.
         effects: All detected side effects for this function.
@@ -134,10 +167,13 @@ class FunctionTarget:
         score: Scoring metrics, or None before scoring runs.
     """
 
-    name: str
+    function: str
     file_path: str
     line: int
     complexity: int
+    package: str
+    receiver: str | None
+    signature: str
     caller_count: int = 0
     effects: list[SideEffect] = field(default_factory=list)
     classification: ClassificationResult | None = None
@@ -188,11 +224,13 @@ class AnalysisResult:
     """Top-level result of a gaze-py analysis run.
 
     Attributes:
-        functions: One FunctionTarget per analyzed function, in file order.
+        results: One FunctionTarget per analyzed function, in file order.
+            Named ``results`` (not ``functions``) per FR-001 / OC-002 to
+            match the Go gaze reference implementation's JSON field name.
         summary: Aggregate statistics for the run.
     """
 
-    functions: list[FunctionTarget]
+    results: list[FunctionTarget]
     summary: Summary
 
 
@@ -269,6 +307,8 @@ class ContractCoverageResult:
             Callers passing this to gaze_crap() or quadrant() MUST divide by 100.
         covered_effects: Count of contractual effects with ≥1 mapped assertion.
         total_contractual: Total contractual effects on the target function.
+        covered_count: Alias for covered_effects — serialized as
+            ``covered_count`` in JSON per FR-006 / OC-002.
         over_specification_count: Assertions that map to incidental effects.
         unmapped_assertions: Assertions that did not map to any effect.
         reason: Reason code when percentage is None:
@@ -291,6 +331,11 @@ class ContractCoverageResult:
         gap_hints: Python assertion snippets, one per gap. Parallel to
             gaps — len(gaps) == len(gap_hints) is an enforced
             postcondition. Empty when gaps is empty.
+        discarded_returns: Contractual return/error effects whose values
+            were explicitly discarded. Empty tuple — gaze-py does not yet
+            detect explicit discard patterns (OC-003 compliant).
+        discarded_return_hints: Assertion snippets for discarded returns.
+            Parallel to discarded_returns. Empty tuple (OC-003 compliant).
     """
 
     percentage: float | None
@@ -303,6 +348,36 @@ class ContractCoverageResult:
     max_confidence: int | None = None
     gaps: tuple[SideEffect, ...] = ()
     gap_hints: tuple[str, ...] = ()
+    discarded_returns: tuple[SideEffect, ...] = ()
+    discarded_return_hints: tuple[str, ...] = ()
+
+    @property
+    def covered_count(self) -> int:
+        """Alias for covered_effects — serialized as covered_count per FR-006."""
+        return self.covered_effects
+
+
+@dataclass(frozen=True)
+class OverSpecification:
+    """Over-specification score for a test-target pair.
+
+    Measures how many incidental side effects the test asserts on,
+    indicating refactoring fragility.
+
+    Attributes:
+        count: Number of incidental side effects asserted on.
+        ratio: Incidental assertions / total assertions (0.0–1.0).
+            0.0 when total assertions is 0.
+        incidental_assertions: Mappings to incidental effects.
+            Empty tuple — gaze-py does not yet populate this field (OC-003).
+        suggestions: Actionable advice per incidental assertion.
+            Empty tuple — Go generates these from AI; gaze-py emits [] (OC-003).
+    """
+
+    count: int
+    ratio: float
+    incidental_assertions: tuple[object, ...] = ()
+    suggestions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -315,18 +390,58 @@ class QualityReport:
             no paired test (part of AssessResult.untested). Only appears
             in quality output via AssessResult.untested, never in the
             quality CLI command output.
-        target_function: Name of the target function (None if unmatched).
+        target_function: The FunctionTarget being tested, or None if
+            unmatched. Type changed from str|None to FunctionTarget|None
+            per FR-005 / OC-002 to match Go gaze reference output.
         assertions: Detected assertion sites in the test function.
         contract_coverage: Coverage result (None if no target found).
         warnings: Non-fatal warnings from pairing or mapping.
         complexity: McCabe cyclomatic complexity of the production target,
             or None when no target was found. Used to compute GazeCRAP in
             text output.
+        test_location: Source location of the test function (file:line),
+            or empty string when not available.
+        over_specification: Over-specification score for this pair.
+        ambiguous_effects: Side effects excluded from metrics due to
+            ambiguous classification.
+        assertion_count: Total detected assertion sites in the test function.
+        assertion_detection_confidence: Fraction of assertions successfully
+            pattern-matched (0–100). 100 when assertion_count is 0.
     """
 
     test_function: str
-    target_function: str | None
+    target_function: FunctionTarget | None
     assertions: tuple[AssertionSite, ...]
     contract_coverage: ContractCoverageResult | None
     warnings: tuple[str, ...]
     complexity: int | None = None
+    test_location: str = ""
+    over_specification: OverSpecification = field(
+        default_factory=lambda: OverSpecification(count=0, ratio=0.0)
+    )
+    ambiguous_effects: tuple[SideEffect, ...] = ()
+    assertion_count: int = 0
+    assertion_detection_confidence: int = 100
+
+
+@dataclass
+class QualitySummary:
+    """Aggregate quality metrics for a quality assessment run.
+
+    Attributes:
+        total_tests: Number of test functions analyzed.
+        average_contract_coverage: Mean coverage across all paired tests,
+            or None when no paired tests exist.
+        total_over_specifications: Sum of over_specification.count across
+            all paired tests.
+        worst_coverage_tests: Test function names with the lowest contract
+            coverage (bottom 5). Empty when no paired tests exist.
+        assertion_detection_confidence: Mean of per-report
+            assertion_detection_confidence values, rounded to nearest int.
+    """
+
+    total_tests: int
+    average_contract_coverage: float | None
+    total_over_specifications: int
+    worst_coverage_tests: list[str]
+    assertion_detection_confidence: int

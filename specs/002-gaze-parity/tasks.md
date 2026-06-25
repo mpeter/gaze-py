@@ -3,6 +3,7 @@
 **Spec**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md)
 
 <!-- spec-review: passed -->
+<!-- code-review: passed (Story 1 — retroactive; 4 Divisors, all APPROVE after fixes) -->
 
 ---
 
@@ -10,56 +11,56 @@
 
 ### Phase 1.1: New and updated model types
 
-- [ ] T101 Add `Metadata` frozen dataclass to `models.py`: `gaze_version: str`, `warnings: list[str]`, `duration_ms: int`, `timestamp: str`
-- [ ] T102 Add `package: str`, `receiver: str | None`, `signature: str` to `FunctionTarget` (no defaults — populated at construction; all existing call sites in `detector.py` updated in T108/T109); also rename `FunctionTarget.name` → `FunctionTarget.function` in the Python model (required so `dataclasses.asdict()` serializes as `"function"` per FR-002 and so `score_key()` in T207 can access `entry["target"]["function"]` without `KeyError`); update all internal callers of `.name` → `.function`; update `FunctionTarget` and `AnalysisResult` docstrings to document new fields and the `functions` → `results` rename respectively
-- [ ] T103 Add `OverSpecification` frozen dataclass: `count: int`, `ratio: float`, `incidental_assertions: list`, `suggestions: list[str]`
-- [ ] T104 Add `QualitySummary` dataclass: `total_tests: int`, `average_contract_coverage: float | None`, `total_over_specifications: int`, `worst_coverage_tests: list[str]` (test function names, bottom 5 by coverage), `assertion_detection_confidence: int` (mean of per-report values rounded)
-- [ ] T105 Add `covered_count: int`, `total_contractual: int` to `ContractCoverageResult`
-- [ ] T106 Add `discarded_returns: tuple[SideEffect, ...]`, `discarded_return_hints: tuple[str, ...]` to `ContractCoverageResult` (empty tuples — OC-003 compliant)
-- [ ] T107 Add `test_location: str`, `over_specification: OverSpecification`, `ambiguous_effects: tuple[SideEffect, ...]`, `assertion_count: int`, `assertion_detection_confidence: int` to `QualityReport`
-- [ ] T107b Change `QualityReport.target_function` from `str | None` to `FunctionTarget | None`; update all quality pipeline code that sets this field (pairing, mapper, assess modules)
-- [ ] T108 Rename `AnalysisResult.functions` → `AnalysisResult.results` in the Python model; update all internal callers (cli, formatters, tests)
+- [x] - [x] T101 Add `Metadata` frozen dataclass to `models.py`: `gaze_version: str`, `warnings: list[str]`, `duration_ms: int`, `timestamp: str`
+- [x] - [x] T102 Add `package: str`, `receiver: str | None`, `signature: str` to `FunctionTarget` (no defaults — populated at construction; all existing call sites in `detector.py` updated in T108/T109); also rename `FunctionTarget.name` → `FunctionTarget.function` in the Python model (required so `dataclasses.asdict()` serializes as `"function"` per FR-002 and so `score_key()` in T207 can access `entry["target"]["function"]` without `KeyError`); update all internal callers of `.name` → `.function`; update `FunctionTarget` and `AnalysisResult` docstrings to document new fields and the `functions` → `results` rename respectively
+- [x] - [x] T103 Add `OverSpecification` frozen dataclass: `count: int`, `ratio: float`, `incidental_assertions: list`, `suggestions: list[str]`
+- [x] - [x] T104 Add `QualitySummary` dataclass: `total_tests: int`, `average_contract_coverage: float | None`, `total_over_specifications: int`, `worst_coverage_tests: list[str]` (test function names, bottom 5 by coverage), `assertion_detection_confidence: int` (mean of per-report values rounded)
+- [x] - [x] T105 Add `covered_count: int`, `total_contractual: int` to `ContractCoverageResult`
+- [x] - [x] T106 Add `discarded_returns: tuple[SideEffect, ...]`, `discarded_return_hints: tuple[str, ...]` to `ContractCoverageResult` (empty tuples — OC-003 compliant)
+- [x] - [x] T107 Add `test_location: str`, `over_specification: OverSpecification`, `ambiguous_effects: tuple[SideEffect, ...]`, `assertion_count: int`, `assertion_detection_confidence: int` to `QualityReport`
+- [x] T107b Change `QualityReport.target_function` from `str | None` to `FunctionTarget | None`; update all quality pipeline code that sets this field (pairing, mapper, assess modules)
+- [x] - [x] T108 Rename `AnalysisResult.functions` → `AnalysisResult.results` in the Python model; update all internal callers (cli, formatters, tests)
 
 ### Phase 1.2: Populate new fields in the pipeline
 
-- [ ] T109 Populate `FunctionTarget.package` (= `file_path`), `receiver` (enclosing class name for methods, `None` for module-level), `signature` (AST reconstruction) in `detector.py` at construction time; update all `FunctionTarget(...)` call sites to pass the three new fields
-- [ ] T110 Implement `signature` reconstruction from AST `arguments` node: handle positional params, `*args`, `**kwargs`, positional-only (`/`), keyword-only (`*`), return annotation; fall back to `f"def {name}(...)"` ONLY when annotation reconstruction raises (not for variadic params)
-- [ ] T111 Populate `QualityReport.test_location` from test function AST node `lineno` in the quality pipeline
-- [ ] T112 Populate `QualityReport.over_specification`: `count` from existing `over_specification_count`, `ratio = count / assertion_count` (0.0 when 0), `incidental_assertions = []`, `suggestions = []`
-- [ ] T113 Populate `QualityReport.assertion_count` and `assertion_detection_confidence` (mapped / total * 100, 100 when 0 assertions)
-- [ ] T114 Populate `ContractCoverageResult.covered_count` and `total_contractual` from existing effect-counting logic in mapper
+- [x] - [x] T109 Populate `FunctionTarget.package` (= `file_path`), `receiver` (enclosing class name for methods, `None` for module-level), `signature` (AST reconstruction) in `detector.py` at construction time; update all `FunctionTarget(...)` call sites to pass the three new fields
+- [x] T110 Implement `signature` reconstruction from AST `arguments` node: handle positional params, `*args`, `**kwargs`, positional-only (`/`), keyword-only (`*`), return annotation; fall back to `f"def {name}(...)"` ONLY when annotation reconstruction raises (not for variadic params)
+- [x] T111 Populate `QualityReport.test_location` from test function AST node `lineno` in the quality pipeline
+- [x] T112 Populate `QualityReport.over_specification`: `count` from existing `over_specification_count`, `ratio = count / assertion_count` (0.0 when 0), `incidental_assertions = []`, `suggestions = []`
+- [x] T113 Populate `QualityReport.assertion_count` and `assertion_detection_confidence` (mapped / total * 100, 100 when 0 assertions)
+- [x] T114 Populate `ContractCoverageResult.covered_count` and `total_contractual` from existing effect-counting logic in mapper
 
 ### Phase 1.3: JSON formatter
 
-- [ ] T115 Update `analysis_to_json()` in `json_formatter.py`: emit `{"results": [...], "summary": {...}}`; each result as `{"target": <FunctionTarget dict>, "side_effects": [...], "metadata": <Metadata dict>, <scoring fields...>}`
-- [ ] T116 Inject `Metadata` at serialization time: `gaze_version` from `gaze_py.__version__`, `duration_ms` from run timer (caller-supplied `time.monotonic()` delta), `timestamp` from `datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")`, `warnings = []`
-- [ ] T117 Update `quality_to_json()`: emit `{"quality_reports": [...], "quality_summary": <QualitySummary dict>}`; `target_function` is a `FunctionTarget` dict (not a bare string)
-- [ ] T118 Update `SCHEMA` constant in `json_formatter.py` to reflect `results`-keyed structure with `target`, `side_effects`, `metadata` per entry
+- [x] T115 Update `analysis_to_json()` in `json_formatter.py`: emit `{"results": [...], "summary": {...}}`; each result as `{"target": <FunctionTarget dict>, "side_effects": [...], "metadata": <Metadata dict>, <scoring fields...>}`
+- [x] T116 Inject `Metadata` at serialization time: `gaze_version` from `gaze_py.__version__`, `duration_ms` from run timer (caller-supplied `time.monotonic()` delta), `timestamp` from `datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")`, `warnings = []`
+- [x] T117 Update `quality_to_json()`: emit `{"quality_reports": [...], "quality_summary": <QualitySummary dict>}`; `target_function` is a `FunctionTarget` dict (not a bare string)
+- [x] T118 Update `SCHEMA` constant in `json_formatter.py` to reflect `results`-keyed structure with `target`, `side_effects`, `metadata` per entry
 
 ### Phase 1.4: CLI wiring
 
-- [ ] T119 Update `main.py` serialization call sites: thread run-start `time.monotonic()` into `analysis_to_json()` for `duration_ms`; update all references to `result.functions` → `result.results`
+- [x] T119 Update `main.py` serialization call sites: thread run-start `time.monotonic()` into `analysis_to_json()` for `duration_ms`; update all references to `result.functions` → `result.results`
 
 ### Phase 1.5: Tests
 
-- [ ] T120 Update all `test_cli.py` assertions referencing `"functions"` top-level key → `"results"` (34 occurrences)
-- [ ] T121 Update `test_output.py` (7 occurrences), `test_report_ai.py`, `test_config.py`, and any other files with old schema key assertions
-- [ ] T122 Add tests: assert `results[0]["target"]` has all five sub-keys (`package`, `function`, `receiver`, `signature`, `location`) with correct types (`str`, `str`, `str|None`, `str`, `str`)
-- [ ] T122b Add schema regression guard test: parse `gazepy analyze` JSON output and assert top-level key is `"results"` (not `"functions"`), `results[0]` has `"target"` key (not flat), `results[0]["target"]` has `"package"` key, `results[0]` has `"metadata"` key, `results[0]["metadata"]` has `"gaze_version"` key — this test would catch a revert to the old schema for all three structural changes
-- [ ] T123 Add tests: assert `results[0]["metadata"]["gaze_version"]` == `gaze_py.__version__`; `duration_ms` is a non-negative int; `timestamp` matches `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`
-- [ ] T124 Add tests: assert `quality_reports` and `quality_summary` top-level keys on quality JSON output; `quality_summary` has `total_tests`, `average_contract_coverage`, `worst_coverage_tests` (list of str), `assertion_detection_confidence` (int)
-- [ ] T125 Add tests: `over_specification`, `assertion_count`, `assertion_detection_confidence`, `test_location` present in each quality report; `over_specification.ratio` is a float in [0.0, 1.0]; include parametrized case `assertion_count = 0` → `ratio = 0.0` (no `ZeroDivisionError`)
-- [ ] T126 Add tests: `covered_count`, `total_contractual`, `discarded_returns` (empty list), `discarded_return_hints` (empty list) present in `contract_coverage`
-- [ ] T126b Add tests for `FunctionTarget` new fields: parametrize using `ast.parse()` on inline source strings (not testdata files — avoids coupling to production file content); cases: (a) `'class Foo:\n    def bar(self): pass'` → method → `receiver == "Foo"`, `function == "bar"`; (b) `'def baz(): pass'` → module-level → `receiver is None`; (c) `'def f(*args, **kwargs): pass'` → `signature` contains `*args` and `**kwargs` (not fallback `"def f(...)"`); (d) `'def g() -> int: pass'` → `"-> int"` in `signature`
-- [ ] T127 Add test: `gazepy schema` output contains `"results"` key and does not contain `"functions"` key
-- [ ] T128 Run full test suite: `uv run pytest --cov=gaze_py --cov-fail-under=85`
-- [ ] T129 Run lint/type gate: `uv run ruff check . && uv run ruff format --check . && uv run mypy src/`
+- [x] T120 Update all `test_cli.py` assertions referencing `"functions"` top-level key → `"results"` (34 occurrences)
+- [x] T121 Update `test_output.py` (7 occurrences), `test_report_ai.py`, `test_config.py`, and any other files with old schema key assertions
+- [x] T122 Add tests: assert `results[0]["target"]` has all five sub-keys (`package`, `function`, `receiver`, `signature`, `location`) with correct types (`str`, `str`, `str|None`, `str`, `str`)
+- [x] T122b Add schema regression guard test: parse `gazepy analyze` JSON output and assert top-level key is `"results"` (not `"functions"`), `results[0]` has `"target"` key (not flat), `results[0]["target"]` has `"package"` key, `results[0]` has `"metadata"` key, `results[0]["metadata"]` has `"gaze_version"` key — this test would catch a revert to the old schema for all three structural changes
+- [x] T123 Add tests: assert `results[0]["metadata"]["gaze_version"]` == `gaze_py.__version__`; `duration_ms` is a non-negative int; `timestamp` matches `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`
+- [x] T124 Add tests: assert `quality_reports` and `quality_summary` top-level keys on quality JSON output; `quality_summary` has `total_tests`, `average_contract_coverage`, `worst_coverage_tests` (list of str), `assertion_detection_confidence` (int)
+- [x] T125 Add tests: `over_specification`, `assertion_count`, `assertion_detection_confidence`, `test_location` present in each quality report; `over_specification.ratio` is a float in [0.0, 1.0]; include parametrized case `assertion_count = 0` → `ratio = 0.0` (no `ZeroDivisionError`)
+- [x] T126 Add tests: `covered_count`, `total_contractual`, `discarded_returns` (empty list), `discarded_return_hints` (empty list) present in `contract_coverage`
+- [x] T126b Add tests for `FunctionTarget` new fields: parametrize using `ast.parse()` on inline source strings (not testdata files — avoids coupling to production file content); cases: (a) `'class Foo:\n    def bar(self): pass'` → method → `receiver == "Foo"`, `function == "bar"`; (b) `'def baz(): pass'` → module-level → `receiver is None`; (c) `'def f(*args, **kwargs): pass'` → `signature` contains `*args` and `**kwargs` (not fallback `"def f(...)"`); (d) `'def g() -> int: pass'` → `"-> int"` in `signature`
+- [x] T127 Add test: `gazepy schema` output contains `"results"` key and does not contain `"functions"` key
+- [x] T128 Run full test suite: `uv run pytest --cov=gaze_py --cov-fail-under=85`
+- [x] T129 Run lint/type gate: `uv run ruff check . && uv run ruff format --check . && uv run mypy src/`
 
 ### Phase 1.6: Docs + CI
 
-- [ ] T130 Update `docs/reference/cli/analyze.md` and `docs/reference/cli/crap.md` output format descriptions to reflect `results`-keyed schema with `target`/`metadata` wrapper
-- [ ] T131 Update `docs/reference/cli/quality.md` output format description to reflect `quality_reports`/`quality_summary` envelope
-- [ ] T132 Open PR `opsx/schema-compat` → CI green → merge
+- [x] T130 Update `docs/reference/cli/analyze.md` and `docs/reference/cli/crap.md` output format descriptions to reflect `results`-keyed schema with `target`/`metadata` wrapper
+- [x] T131 Update `docs/reference/cli/quality.md` output format description to reflect `quality_reports`/`quality_summary` envelope
+- [x] T132 Open PR `opsx/schema-compat` → CI green → merge
 
 ---
 
@@ -118,14 +119,14 @@
 
 ## Story 3: Stale content / docs cleanup — branch `opsx/parity-cleanup`
 
-- [x] T301 Delete stale comment in `main.py`: `# report command (not yet implemented — requires O2)` (search by content, not line number — line may have shifted)
-- [x] T302 Rewrite `docs/reference/cli/report.md`: remove `--ai`/`--ai-timeout` option rows, remove "requires O1+O2" note, add `.gaze.yaml` `ai:` section config reference, add `GAZEPY_AI_*` env var table, correct description to "direct HTTP" (not "subprocess")
-- [x] T303 Consolidate `CHANGELOG.md [Unreleased]` → `## [0.7.0]`: one each of `### Added`, `### Changed`, `### Removed`, `### Breaking Changes` (omitting empty sections); no duplicate headers; no `Spec:` references (including the missing entries listed below); `### Breaking Changes` includes JSON schema migration notice (FR-001, FR-004) with before/after examples; missing entries to add (all without `Spec:` references): docs tree, `_matches_cache_decorator` refactor, python-native detection patterns, AI HTTP adapters
-- [x] T304 Bump `pyproject.toml` `version` → `0.7.0`
-- [x] T305 Bump `src/gaze_py/__init__.py` `__version__` → `0.7.0`
-- [x] T306 Remove `pip` ecosystem entry from `.github/dependabot.yml` (retain `github-actions`); per constitution v1.1.3 SYNC IMPACT REPORT
-- [x] T307 Run `uv run ruff check . && uv run ruff format --check . && uv run mypy src/` — all clean
-- [x] T308 Open PR `opsx/parity-cleanup` → CI green → merge
+- [ ] T301 Delete stale comment in `main.py`: `# report command (not yet implemented — requires O2)` (search by content, not line number — line may have shifted)
+- [ ] T302 Rewrite `docs/reference/cli/report.md`: remove `--ai`/`--ai-timeout` option rows, remove "requires O1+O2" note, add `.gaze.yaml` `ai:` section config reference, add `GAZEPY_AI_*` env var table, correct description to "direct HTTP" (not "subprocess")
+- [ ] T303 Consolidate `CHANGELOG.md [Unreleased]` → `## [0.7.0]`: one each of `### Added`, `### Changed`, `### Removed`, `### Breaking Changes` (omitting empty sections); no duplicate headers; no `Spec:` references (including the missing entries listed below); `### Breaking Changes` includes JSON schema migration notice (FR-001, FR-004) with before/after examples; missing entries to add (all without `Spec:` references): docs tree, `_matches_cache_decorator` refactor, python-native detection patterns, AI HTTP adapters
+- [ ] T304 Bump `pyproject.toml` `version` → `0.7.0`
+- [ ] T305 Bump `src/gaze_py/__init__.py` `__version__` → `0.7.0`
+- [ ] T306 Remove `pip` ecosystem entry from `.github/dependabot.yml` (retain `github-actions`); per constitution v1.1.3 SYNC IMPACT REPORT
+- [ ] T307 Run `uv run ruff check . && uv run ruff format --check . && uv run mypy src/` — all clean
+- [ ] T308 Open PR `opsx/parity-cleanup` → CI green → merge
 
 ---
 

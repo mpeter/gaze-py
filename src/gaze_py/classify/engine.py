@@ -111,7 +111,7 @@ class ClassificationEngine:
 
         # Signal 2: API visibility.
         sig = visibility_signal(
-            target.name,
+            target.function,
             return_type_hint=return_type_hint,
             receiver_name=receiver_name,
         )
@@ -124,7 +124,7 @@ class ClassificationEngine:
             signals.append(sig)
 
         # Signal 4: Naming convention.
-        sig = naming_signal(target.name, effect.type)
+        sig = naming_signal(target.function, effect.type)
         if sig is not None:
             signals.append(sig)
 

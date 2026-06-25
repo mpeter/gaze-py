@@ -72,10 +72,13 @@ def _make_target(
     must pass name= explicitly.
     """
     return FunctionTarget(
-        name=name,
+        function=name,
         file_path="test.py",
         line=1,
         complexity=1,
+        package="test.py",
+        receiver=None,
+        signature=f"def {name}()",
         caller_count=caller_count,
     )
 

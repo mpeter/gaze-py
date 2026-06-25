@@ -21,7 +21,13 @@ from gaze_py.quality.coverage import compute_contract_coverage
 from gaze_py.quality.mapper import build_call_bindings, map_assertions_to_effects
 from gaze_py.quality.models import TestFunc
 from gaze_py.quality.pairing import _build_astroid_graph, find_test_functions, pair_to_targets
-from gaze_py.taxonomy.models import ContractCoverageResult, FunctionTarget, QualityReport
+from gaze_py.taxonomy.models import (
+    AssertionKind,
+    ContractCoverageResult,
+    FunctionTarget,
+    OverSpecification,
+    QualityReport,
+)
 
 
 @dataclass(frozen=True)
@@ -90,7 +96,7 @@ def assess(
     )
 
     # Build a lookup map: function name → FunctionTarget.
-    target_map: dict[str, FunctionTarget] = {t.name: t for t in source_targets}
+    target_map: dict[str, FunctionTarget] = {t.function: t for t in source_targets}
 
     # Step 2: discover test functions.
     test_funcs = _collect_test_functions(tests_path)
@@ -119,8 +125,10 @@ def assess(
             reports.append(report)
 
     # Step 5: collect untested production functions (D6 in design.md).
-    # seen_names is the set of non-None target_function values from paired reports.
-    seen_names: set[str] = {r.target_function for r in reports if r.target_function is not None}
+    # seen_names is the set of non-None target_function.function values from paired reports.
+    seen_names: set[str] = {
+        r.target_function.function for r in reports if r.target_function is not None
+    }
 
     if target_func is None:
         # Unfiltered run: compute untested reports for all unpaired source functions.
@@ -174,6 +182,7 @@ def _process_test_func(
             assertions=tuple(assertions),
             contract_coverage=None,
             warnings=("No production target found for this test function.",),
+            test_location=f"{test_func.filename}:{test_func.lineno}",
         )
 
     production_target = target_map.get(pair.target_name)
@@ -181,10 +190,11 @@ def _process_test_func(
         # Target name was inferred but not found in the source map.
         return QualityReport(
             test_function=test_func.name,
-            target_function=pair.target_name,
+            target_function=None,
             assertions=tuple(assertions),
             contract_coverage=None,
             warnings=(f"Inferred target '{pair.target_name}' not found in source analysis.",),
+            test_location=f"{test_func.filename}:{test_func.lineno}",
         )
 
     # Build call bindings (which variable holds the return value).
@@ -196,13 +206,32 @@ def _process_test_func(
     # Compute contract coverage.
     coverage = compute_contract_coverage(production_target, mapped, config=config)
 
+    # Compute over-specification score.
+    total_assertions = len(assertions)
+    over_spec_count = coverage.over_specification_count if coverage is not None else 0
+    over_spec_ratio = over_spec_count / total_assertions if total_assertions > 0 else 0.0
+
+    # Compute assertion detection confidence per T113:
+    # mapped / total * 100, where "mapped" = assertions with a known kind
+    # (kind != AssertionKind.UNKNOWN). When total == 0, confidence is 100
+    # (no assertions means nothing was missed).
+    if total_assertions == 0:
+        assertion_confidence = 100
+    else:
+        mapped_count = sum(1 for a in assertions if a.kind != AssertionKind.UNKNOWN)
+        assertion_confidence = round(mapped_count / total_assertions * 100)
+
     return QualityReport(
         test_function=test_func.name,
-        target_function=pair.target_name,
+        target_function=production_target,
         assertions=tuple(assertions),
         contract_coverage=coverage,
         warnings=(),
         complexity=production_target.complexity,
+        test_location=f"{test_func.filename}:{test_func.lineno}",
+        over_specification=OverSpecification(count=over_spec_count, ratio=over_spec_ratio),
+        assertion_count=total_assertions,
+        assertion_detection_confidence=assertion_confidence,
     )
 
 
@@ -229,13 +258,13 @@ def _untested_reports(
     """
     results: list[QualityReport] = []
     for target in source_targets:
-        if target.name in seen_names:
+        if target.function in seen_names:
             continue
         coverage = compute_contract_coverage(target, [], config=config, no_test_coverage=True)
         results.append(
             QualityReport(
                 test_function="",
-                target_function=target.name,
+                target_function=target,
                 assertions=(),
                 contract_coverage=coverage,
                 warnings=("No test targets this function.",),
@@ -302,7 +331,8 @@ def build_contract_coverage_map(
     for report in result.reports + result.untested:
         if report.target_function is None or report.contract_coverage is None:
             continue
-        name = report.target_function
+        # target_function is FunctionTarget | None; already checked None above.
+        name = report.target_function.function
         ccr = report.contract_coverage
         if name not in coverage_map:
             coverage_map[name] = ccr
