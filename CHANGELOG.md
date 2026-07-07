@@ -2,6 +2,13 @@
 
 All notable changes to gaze-py are documented here.
 
+## [0.7.1] — 2026-07-07
+
+### Fixed
+
+- Re-release patch: `v0.7.0` git tag was pushed without triggering the PyPI
+  publish workflow. No functional changes from `0.7.0`.
+
 ## [0.7.0] — 2026-06-25
 
 ### Breaking Changes
