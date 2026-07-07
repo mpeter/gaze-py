@@ -101,19 +101,18 @@ def _make_http_open_sequence(
 
 def _make_gcloud_ok(
     token: str = "tok",
-    expiry: str = "2099-01-01T12:00:00Z",
 ) -> MagicMock:
     """Build a _gcloud mock that returns a successful token response.
 
+    gcloud auth print-access-token returns a plain token string (not JSON).
+
     Args:
         token: The access token string.
-        expiry: ISO 8601 token expiry string.
 
     Returns:
-        A callable mock returning CompletedProcess with token JSON.
+        A callable mock returning CompletedProcess with the plain token string.
     """
-    stdout = json.dumps({"token": token, "token_expiry": expiry})
-    return MagicMock(return_value=CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=""))
+    return MagicMock(return_value=CompletedProcess(args=[], returncode=0, stdout=token, stderr=""))
 
 
 def _make_vertex_200(text: str = "synthesized text") -> tuple[int, bytes, None]:
@@ -494,8 +493,8 @@ class TestVertexSynthesizerSynthesize:
     def test_token_cache_hit_skips_gcloud(self) -> None:
         """synthesize() does not call _gcloud when cached token is still valid."""
         http_open = _make_http_open_sequence([_make_vertex_200(), _make_vertex_200()])
-        gcloud = _make_gcloud_ok(expiry="2099-01-01T12:00:00Z")
-        # clock returns 0.0 — far below expiry - 60
+        gcloud = _make_gcloud_ok()
+        # clock returns 0.0 — token expires at 0 + _TOKEN_TTL; 0 < TTL - 60 → still valid
         clock = MagicMock(return_value=0.0)
         synth = self._make_synth(http_open, gcloud=gcloud, clock=clock)
 
@@ -508,9 +507,12 @@ class TestVertexSynthesizerSynthesize:
     def test_token_cache_expiry_refetches_token(self) -> None:
         """synthesize() calls _gcloud again when cached token is expired."""
         http_open = _make_http_open_sequence([_make_vertex_200(), _make_vertex_200()])
-        # expiry is epoch 0 (1970); clock returns 1000 — past expiry - 60
-        gcloud = _make_gcloud_ok(expiry="1970-01-01T00:00:00Z")
-        clock = MagicMock(return_value=1000.0)
+        gcloud = _make_gcloud_ok()
+        # Clock advances past _TOKEN_TTL between calls: first call sets expiry at
+        # t=0 + TTL; second call sees t=TTL+100 which is >= expiry-60, so stale.
+        from gaze_py.report.ai import _TOKEN_TTL
+
+        clock = MagicMock(side_effect=[0.0, _TOKEN_TTL + 100, _TOKEN_TTL + 100])
         synth = self._make_synth(http_open, gcloud=gcloud, clock=clock)
 
         synth.synthesize("first")
@@ -583,7 +585,7 @@ class TestVertexSynthesizerSynthesize:
         assert call_args is not None
         cmd = call_args.args[0]
         assert isinstance(cmd, list)
-        assert cmd == ["gcloud", "auth", "print-access-token", "--format=json"]
+        assert cmd == ["gcloud", "auth", "print-access-token"]
         assert call_args.kwargs.get("shell", False) is False
 
 

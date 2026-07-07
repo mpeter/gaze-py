@@ -27,7 +27,6 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
 import click
@@ -314,25 +313,7 @@ _VERTEX_MAX_RETRIES = 5  # 1 original + 5 retries = 6 total attempts
 _BACKOFF_BASE = 1.0  # seconds
 _BACKOFF_MAX = 60.0  # seconds
 _BACKOFF_JITTER = 0.25  # ±25%
-
-
-def _parse_iso8601_epoch(ts: str) -> float:
-    """Parse an ISO 8601 timestamp string to a UTC epoch float.
-
-    Args:
-        ts: ISO 8601 timestamp string (e.g. "2024-01-01T12:00:00Z" or with offset).
-
-    Returns:
-        UTC epoch as a float (seconds since 1970-01-01T00:00:00Z).
-
-    Raises:
-        ValueError: If the string cannot be parsed as ISO 8601.
-    """
-    # Python 3.11+ fromisoformat handles Z suffix and offsets
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.timestamp()
+_TOKEN_TTL = 55 * 60  # gcloud tokens are valid 60 min; cache for 55
 
 
 class VertexSynthesizer:
@@ -418,7 +399,7 @@ class VertexSynthesizer:
 
         Raises:
             click.ClickException: If gcloud is not on PATH, exits non-zero,
-                or returns malformed JSON.
+                or returns an empty token.
         """
         if shutil.which("gcloud") is None:
             raise click.ClickException(
@@ -429,7 +410,7 @@ class VertexSynthesizer:
 
         try:
             result = self._gcloud(
-                ["gcloud", "auth", "print-access-token", "--format=json"],
+                ["gcloud", "auth", "print-access-token"],
                 capture_output=True,
                 text=True,
             )
@@ -452,17 +433,13 @@ class VertexSynthesizer:
                 "Run: gcloud auth application-default login"
             ) from None
 
-        try:
-            token_data = json.loads(result.stdout)
-            token: str = token_data["token"]
-            expiry_epoch = _parse_iso8601_epoch(token_data["token_expiry"])
-        except (json.JSONDecodeError, KeyError, ValueError) as exc:
-            # Fix 10: don't embed exc in the message — it may contain raw token data.
+        token: str = result.stdout.strip()
+        if not token:
             raise click.ClickException(
-                "unexpected response format from gcloud auth print-access-token: "
-                "expected JSON with 'token' and 'token_expiry' fields. "
-                "Run: gcloud components update"
-            ) from exc
+                "gcloud auth print-access-token returned an empty token. "
+                "Run: gcloud auth application-default login"
+            )
+        expiry_epoch = self._clock() + _TOKEN_TTL
 
         self._cached_token = (token, expiry_epoch)
         return token
