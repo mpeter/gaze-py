@@ -2,6 +2,15 @@
 
 All notable changes to gaze-py are documented here.
 
+## [0.7.2] — 2026-07-07
+
+### Fixed
+
+- **Vertex token fetch** — `gcloud auth print-access-token` now returns a plain
+  token string in current gcloud versions; the legacy `--format=json` flag and
+  JSON parsing (`token`/`token_expiry` fields) have been removed. Token TTL is
+  now derived from a 55-minute constant rather than the (absent) expiry field.
+
 ## [0.7.1] — 2026-07-07
 
 ### Fixed
