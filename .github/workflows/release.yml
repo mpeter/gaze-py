@@ -127,20 +127,6 @@ jobs:
           git tag "$RELEASE_TAG"
           git push origin "$RELEASE_TAG"
 
-      - name: Smoke test published package
-        run: |
-          VER="${RELEASE_TAG#v}"
-          for i in 1 2 3 4 5; do
-            sleep 30
-            if uvx --from "gaze-py==${VER}" gazepy --version 2>/dev/null | grep -q "${VER}"; then
-              echo "Smoke test passed: gaze-py ${VER} is available on PyPI."
-              exit 0
-            fi
-            echo "Attempt $i: not yet available, retrying in 30s..."
-          done
-          echo "::error::Smoke test timed out after 150s — verify manually at https://pypi.org/p/gaze-py"
-          exit 1
-
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -153,3 +139,17 @@ jobs:
             --title "gaze-py ${RELEASE_TAG}" \
             --notes "${NOTES}" \
             dist/*.whl dist/*.tar.gz
+
+      - name: Smoke test published package
+        run: |
+          VER="${RELEASE_TAG#v}"
+          for i in $(seq 1 10); do
+            sleep 30
+            if uvx --from "gaze-py==${VER}" gazepy --version 2>/dev/null | grep -q "${VER}"; then
+              echo "Smoke test passed: gaze-py ${VER} is available on PyPI."
+              exit 0
+            fi
+            echo "Attempt $i: not yet available, retrying in 30s..."
+          done
+          echo "::error::Smoke test timed out after 300s — verify manually at https://pypi.org/p/gaze-py"
+          exit 1
