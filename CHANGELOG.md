@@ -26,6 +26,20 @@ All notable changes to gaze-py are documented here.
   monkeypatch-style `os.getcwd = fake` emitted no effect; module objects are
   process-global state. Parameter names shadowing module names are excluded.
 
+### Changed
+
+- **Effect taxonomy completed to 48 types** (EC-001): `SideEffectType` now
+  defines all 48 types from the porting contract tier table (P0=6 + P1=11 +
+  P2=16 + P3=9 + P4=6), adding the 10 types marked "Defined" in
+  taxonomy-reference.md: ErrorSignal (P0); GeneratorYield, ContainerMutation,
+  StreamOutput (P1); AsyncGeneratorYield, MetaprogrammingMutation,
+  DescriptorEffect, ResourceManagement, ImportSideEffect, MonkeyPatch (P2).
+  Definitions only — these types are not yet detected by the reference Go
+  implementation either; detection follows separately. AGENTS.md's prior
+  "38 types / documentation bug" claim contradicted the contract and has been
+  amended per its own contracts-first rule. JSON schema is unaffected (the
+  `side_effects` array is not enum-restricted).
+
 ## [0.7.2] — 2026-07-07
 
 ### Fixed

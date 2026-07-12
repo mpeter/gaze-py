@@ -1,12 +1,13 @@
 """Tests for taxonomy layer — EC-001 compliance.
 
 Verifies:
-- Exactly 38 SideEffectType members (the porting contracts say "37" in their
-  headers, but enumeration yields 38: P0=5+P1=8+P2=10+P3=9+P4=6; this is a
-  documentation bug in the contracts — see specs.md EC-001 note)
-- Tier counts: P0=5, P1=8, P2=10, P3=9, P4=6
+- Exactly 48 SideEffectType members per the EC-001 tier table
+  ("Total: 48 effect types" — contracts.md), including the 10 types
+  taxonomy-reference.md marks "Defined" (specified but not yet detected
+  by the reference Go implementation)
+- Tier counts: P0=6, P1=11, P2=16, P3=9, P4=6
 - All named types present by their string value
-- TIER_MAP covers all 38 types
+- TIER_MAP covers all 48 types
 - Score dataclass has required nullable fields
 - FunctionTarget has caller_count field
 - Summary has crap_threshold and gaze_crap_threshold fields
@@ -35,10 +36,10 @@ from gaze_py.taxonomy.models import (
 # Named constants for tier counts — satisfies PLR2004 (no magic values).
 # These are the canonical counts from EC-001 / taxonomy-reference.md.
 # ---------------------------------------------------------------------------
-_TOTAL_EFFECT_TYPES = 38  # NOTE: contracts say 37 — enumeration yields 38
-_P0_COUNT = 5
-_P1_COUNT = 8
-_P2_COUNT = 10
+_TOTAL_EFFECT_TYPES = 48  # EC-001 tier table: "Total: 48 effect types"
+_P0_COUNT = 6
+_P1_COUNT = 11
+_P2_COUNT = 16
 _P3_COUNT = 9
 _P4_COUNT = 6
 _TIER_COUNT = 5
@@ -51,18 +52,20 @@ _DEFAULT_CRAP_THRESHOLD = 15.0
 
 
 class TestSideEffectTypeCount:
-    """EC-001: Exactly 38 SideEffectType members."""
+    """EC-001: Exactly 48 SideEffectType members."""
 
-    def test_total_count_is_38(self) -> None:
-        """EC-001: Total member count is 38.
+    def test_total_count_is_48(self) -> None:
+        """EC-001: Total member count is 48.
 
-        NOTE: The porting contracts say "37 types" in their headers, but
-        enumeration yields 38 (P0=5 + P1=8 + P2=10 + P3=9 + P4=6 = 38).
-        This is a documentation bug in the contracts. Tests MUST assert 38.
+        The EC-001 tier table totals 48 (P0=6 + P1=11 + P2=16 + P3=9 +
+        P4=6). Ten of these are "Defined" in taxonomy-reference.md —
+        present in the taxonomy but not yet detected by the reference Go
+        implementation. Definitions are contract-mandated regardless of
+        detection status.
         """
         assert len(SideEffectType) == _TOTAL_EFFECT_TYPES
 
-    def test_tier_map_covers_all_38_types(self) -> None:
+    def test_tier_map_covers_all_48_types(self) -> None:
         """TIER_MAP has an entry for every SideEffectType member."""
         assert len(TIER_MAP) == _TOTAL_EFFECT_TYPES
         for effect_type in SideEffectType:
@@ -82,8 +85,7 @@ class TestSideEffectTypeCount:
 def test_tier_member_count(tier: Tier, expected_count: int) -> None:
     """EC-001: Each tier has the correct member count per the porting contract.
 
-    NOTE: P4 contracts say 5 in their count column but list 6 type names.
-    The canonical count is 6 per enumeration.
+    Counts follow the EC-001 tier table: P0=6, P1=11, P2=16, P3=9, P4=6.
     """
     tier_types = [t for t, t_tier in TIER_MAP.items() if t_tier == tier]
     assert len(tier_types) == expected_count, (
@@ -102,6 +104,7 @@ _P0_NAMES = [
     "SentinelError",
     "ReceiverMutation",
     "PointerArgMutation",
+    "ErrorSignal",
 ]
 # P1 types
 _P1_NAMES = [
@@ -113,6 +116,9 @@ _P1_NAMES = [
     "ChannelSend",
     "ChannelClose",
     "DeferredReturnMutation",
+    "GeneratorYield",
+    "ContainerMutation",
+    "StreamOutput",
 ]
 # P2 types
 _P2_NAMES = [
@@ -126,6 +132,12 @@ _P2_NAMES = [
     "CallbackInvocation",
     "LogWrite",
     "ContextCancellation",
+    "AsyncGeneratorYield",
+    "MetaprogrammingMutation",
+    "DescriptorEffect",
+    "ResourceManagement",
+    "ImportSideEffect",
+    "MonkeyPatch",
 ]
 # P3 types
 _P3_NAMES = [
