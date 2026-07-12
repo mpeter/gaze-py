@@ -104,6 +104,22 @@ _SUBPROCESS_SPAWN_CALLS: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# DBAPI module names whose .connect() return value is a database connection.
+# Used to track connections bound to local variables so DatabaseWrite fires
+# for in-function constructions (con = sqlite3.connect(...); con.execute(...)),
+# not only for connections received as parameters. Explicit allowlist keeps
+# false positives at zero: socket.connect()/smtplib connect patterns are calls
+# on instances, not on these module names.
+_DBAPI_MODULES: frozenset[str] = frozenset(
+    {"sqlite3", "psycopg", "psycopg2", "pymysql", "MySQLdb", "cx_Oracle", "duckdb", "mariadb"}
+)
+
+# Write methods on a tracked DB connection/cursor local. The parameter path in
+# _handle_param_attr_call keeps its narrower {execute, commit} set (any-param
+# heuristic); locals tracked from a known DBAPI construction are unambiguous,
+# so the executemany/executescript siblings are safe to include here.
+_DB_WRITE_METHODS: frozenset[str] = frozenset({"execute", "executemany", "executescript", "commit"})
+
 # Decorator names (bare and qualified) that indicate lru_cache/cache decoration
 _LRU_CACHE_DECORATORS: frozenset[str] = frozenset({"lru_cache", "cache"})
 
@@ -345,6 +361,7 @@ class _FunctionVisitor(ast.NodeVisitor):
         params: set[str],
         has_return_annotation: bool,
         annotation_is_none: bool,
+        module_names: set[str] | None = None,
     ) -> None:
         """Initialize the visitor for a specific function.
 
@@ -354,16 +371,24 @@ class _FunctionVisitor(ast.NodeVisitor):
             params: Set of parameter names for this function.
             has_return_annotation: True if the function has a return annotation.
             annotation_is_none: True if the annotation is exactly '-> None'.
+            module_names: Names bound to imported modules at module level
+                (from _collect_module_names). Used to detect GlobalMutation
+                via module-attribute assignment (os.getcwd = ...).
+                Default: None (no module-attr detection).
         """
         self._rel_path = rel_path
         self._fn_name = fn_name
         self._params = params
         self._has_return_annotation = has_return_annotation
         self._annotation_is_none = annotation_is_none
+        self._module_names = module_names or set()
         self._effects: list[SideEffect] = []
         self._depth = 0  # nesting depth; skip nested FunctionDef when > 0
         # For GlobalMutation: track declared global names
         self._global_names: set[str] = set()
+        # For DatabaseWrite: locals bound from a known DBAPI construction
+        # (con = sqlite3.connect(...)) or a cursor derived from one.
+        self._db_locals: set[str] = set()
         # For ClosureCaptureMutation: track declared nonlocal names
         self._nonlocal_names: set[str] = set()
         # For DeferredReturnMutation: track finally-assigned names and return names
@@ -548,6 +573,10 @@ class _FunctionVisitor(ast.NodeVisitor):
         """Detect ReceiverMutation, PointerArgMutation, GlobalMutation, EnvVarMutation."""
         targets = node.targets
 
+        # Track DB connection locals (con = sqlite3.connect(...)) for the
+        # DatabaseWrite local-call path. Tracking only — emits nothing.
+        self._track_db_local(node)
+
         # EnvVarMutation takes priority over PointerArgMutation for os.environ
         if self._check_env_var_mutation(targets):
             self._add(
@@ -566,6 +595,14 @@ class _FunctionVisitor(ast.NodeVisitor):
                 SideEffectType.PointerArgMutation,
                 node,
                 "Function mutates a parameter via item assignment param[key] = val",
+            )
+        elif (mod_attr := self._module_attr_target(targets)) is not None:
+            # GlobalMutation: assignment to an attribute of an imported module
+            # (os.getcwd = fake) — module objects are process-global state.
+            self._add(
+                SideEffectType.GlobalMutation,
+                node,
+                f"Function mutates imported module attribute '{mod_attr}'",
             )
 
         # GlobalMutation: assignment to a declared global name
@@ -638,8 +675,69 @@ class _FunctionVisitor(ast.NodeVisitor):
                 node,
                 f"Function mutates module-level global '{target.id}' via augmented assignment",
             )
+        elif (mod_attr := self._module_attr_target([target])) is not None:
+            self._add(
+                SideEffectType.GlobalMutation,
+                node,
+                f"Function mutates imported module attribute '{mod_attr}' via augmented assignment",
+            )
 
         self.generic_visit(node)
+
+    def _module_attr_target(self, targets: list[ast.expr]) -> str | None:
+        """Return 'module.attr' when a target assigns to an imported module attribute.
+
+        Detects monkeypatch-style global mutation: `os.getcwd = fake`. Module
+        objects are process-global state, so attribute assignment on a name
+        bound by a module-level `import` is a GlobalMutation (the Go reference
+        implements GlobalMutation; the dedicated MonkeyPatch type is not yet
+        in the port's taxonomy — see docs/audit-2026-07-12.md G1b/G1c).
+
+        Parameters shadow module names: a param named `os` suppresses the
+        check for that name (assignment then mutates the argument, not the
+        module — PointerArgMutation territory, and attribute-assignment on
+        params is deliberately not claimed here).
+
+        Args:
+            targets: Assignment target expressions.
+
+        Returns:
+            'module.attr' for the first matching target, or None.
+        """
+        for target in targets:
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id in self._module_names
+                and target.value.id not in self._params
+            ):
+                return f"{target.value.id}.{target.attr}"
+        return None
+
+    def _track_db_local(self, node: ast.Assign) -> None:
+        """Record locals bound from a known DBAPI construction.
+
+        Two forms are tracked (emission happens in _handle_db_local_call):
+        - con = sqlite3.connect(...)        (module in _DBAPI_MODULES)
+        - cur = con.cursor()                (receiver already tracked, or a
+                                             _is_db_context() name like 'conn')
+
+        Args:
+            node: The assignment statement being visited.
+        """
+        value = node.value
+        if not isinstance(value, ast.Call):
+            return
+        func = value.func
+        if not isinstance(func, ast.Attribute) or not isinstance(func.value, ast.Name):
+            return
+        owner = func.value.id
+        is_connect = func.attr == "connect" and owner in _DBAPI_MODULES
+        is_cursor = func.attr == "cursor" and (owner in self._db_locals or _is_db_context(owner))
+        if is_connect or is_cursor:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self._db_locals.add(target.id)
 
     # ------------------------------------------------------------------
     # GlobalMutation — collect global declarations first
@@ -1093,6 +1191,34 @@ class _FunctionVisitor(ast.NodeVisitor):
 
         return False
 
+    def _handle_db_local_call(self, obj_name: str | None, method: str, node: ast.Call) -> bool:
+        """Detect DatabaseWrite on a tracked DB connection/cursor local.
+
+        Fires only for names recorded by _track_db_local (constructed from a
+        known DBAPI module inside this function), so it carries none of the
+        any-parameter heuristic risk of _handle_param_attr_call.
+
+        Args:
+            obj_name: Receiver name of the attribute call, or None.
+            method: The method being called.
+            node: The full ast.Call node.
+
+        Returns:
+            True when a DatabaseWrite effect was detected and added.
+        """
+        if obj_name is None or obj_name not in self._db_locals:
+            return False
+        if method in _DB_WRITE_METHODS:
+            self._add(
+                SideEffectType.DatabaseWrite,
+                node,
+                f"Function writes to a database via {obj_name}.{method}() "
+                "on a connection constructed in-function",
+            )
+            self.generic_visit(node)
+            return True
+        return False
+
     def _handle_name_call(self, fn: str, node: ast.Call) -> bool:
         """Detect simple name call effects (print, setattr, open, callbacks).
 
@@ -1171,6 +1297,8 @@ class _FunctionVisitor(ast.NodeVisitor):
             if self._handle_pathlib_attr_call(method, node):
                 return
             if self._handle_lib_attr_call(obj_name, method, node):
+                return
+            if self._handle_db_local_call(obj_name, method, node):
                 return
             if self._handle_param_attr_call(obj_name, method, node):
                 return
@@ -1448,6 +1576,35 @@ def _collect_return_names_excluding_finally(stmts: list[ast.stmt]) -> set[str]:
             for child in ast.iter_child_nodes(stmt):
                 if isinstance(child, ast.stmt):
                     names |= _collect_return_names_excluding_finally([child])
+    return names
+
+
+def _collect_module_names(module: ast.Module) -> set[str]:
+    """Collect names bound to imported modules at module level.
+
+    `import x` → x; `import x.y` → x; `import x.y as z` → z. Module-level
+    try/except import blocks are included (the common fallback-import
+    pattern). `from x import y` is deliberately excluded: y is usually a
+    function or class, and attribute assignment on those is MonkeyPatch
+    territory — a type not yet in the port's taxonomy (G1c).
+
+    Args:
+        module: Parsed module AST.
+
+    Returns:
+        Set of module alias names visible at module scope.
+    """
+    stmts: list[ast.stmt] = list(module.body)
+    for stmt in module.body:
+        if isinstance(stmt, ast.Try):
+            stmts.extend(stmt.body)
+            for handler in stmt.handlers:
+                stmts.extend(handler.body)
+    names: set[str] = set()
+    for stmt in stmts:
+        if isinstance(stmt, ast.Import):
+            for alias in stmt.names:
+                names.add(alias.asname or alias.name.split(".")[0])
     return names
 
 
@@ -1846,6 +2003,9 @@ class FileDetector:
         # Build a map from function node id → enclosing class name for receiver.
         _fn_to_class = _build_class_method_map(module)
 
+        # Module alias names for module-attribute GlobalMutation detection.
+        module_names = _collect_module_names(module)
+
         # Walk ALL function definitions at any nesting level
         for fn_node in ast.walk(module):
             if not isinstance(fn_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -1876,6 +2036,7 @@ class FileDetector:
                 params=params,
                 has_return_annotation=has_annotation,
                 annotation_is_none=annotation_is_none,
+                module_names=module_names,
             )
             visitor.visit(fn_node)
             # Post-process: DeferredReturnMutation requires whole-function context

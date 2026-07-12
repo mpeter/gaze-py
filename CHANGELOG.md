@@ -14,6 +14,18 @@ All notable changes to gaze-py are documented here.
   hits. On a 212-file / 5.9 MB-docs repo, `gazepy crap` drops from 4:35 to
   0:22 (12.4×) with byte-identical output.
 
+### Fixed
+
+- **DatabaseWrite on locally-constructed connections** — `con =
+  sqlite3.connect(...)` followed by `con.execute()`/`con.commit()` (and
+  cursors derived via `.cursor()`) emitted no effect; detection previously
+  fired only when the connection was a function parameter. Tracked DBAPI
+  modules: sqlite3, psycopg/psycopg2, pymysql, MySQLdb, cx_Oracle, duckdb,
+  mariadb.
+- **GlobalMutation via imported-module attribute assignment** —
+  monkeypatch-style `os.getcwd = fake` emitted no effect; module objects are
+  process-global state. Parameter names shadowing module names are excluded.
+
 ## [0.7.2] — 2026-07-07
 
 ### Fixed

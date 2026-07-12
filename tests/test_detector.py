@@ -1456,3 +1456,69 @@ def test_format_annotation_returns_empty_string_on_none() -> None:
     """_format_annotation returns '' for None input (no annotation)."""
     result = _format_annotation(None)
     assert result == "", f"Expected '' for None annotation, got {result!r}"
+
+
+# ---------------------------------------------------------------------------
+# EC-001 P2 — DatabaseWrite on locally-constructed connections (G1a)
+# ---------------------------------------------------------------------------
+
+
+def test_database_write_local_connection_detected() -> None:
+    """DatabaseWrite (P2): con = sqlite3.connect(); con.execute()/commit().
+
+    Regression for the G1a false negative (docs/audit-2026-07-12.md): the
+    parameter-path heuristic missed connections constructed in-function.
+    """
+    targets = FileDetector.detect(FIXTURES / "db_write_local_conn.py", root=ROOT)
+    all_effects = [e for t in targets for e in t.effects]
+    db_writes = [e for e in all_effects if e.type == SideEffectType.DatabaseWrite]
+    assert len(db_writes) == 2, (
+        f"Expected 2 DatabaseWrite (execute + commit), got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_database_write_local_cursor_detected() -> None:
+    """DatabaseWrite (P2): cursor derived from a tracked connection.
+
+    cur = con.cursor() inherits tracking from con = sqlite3.connect();
+    cur.executemany() must emit DatabaseWrite.
+    """
+    targets = FileDetector.detect(FIXTURES / "db_write_local_cursor.py", root=ROOT)
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.DatabaseWrite for e in all_effects), (
+        f"Expected DatabaseWrite, got: {[e.type for e in all_effects]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# EC-001 P1 — GlobalMutation via imported-module attribute assignment (G1a)
+# ---------------------------------------------------------------------------
+
+
+def test_module_attr_assignment_is_global_mutation() -> None:
+    """GlobalMutation (P1): os.getcwd = fake mutates process-global state.
+
+    Regression for the G1a false negative (docs/audit-2026-07-12.md):
+    monkeypatch-style assignment to an imported module attribute emitted
+    nothing. The dedicated MonkeyPatch type is G1c; GlobalMutation is the
+    correct currently-defined label.
+    """
+    targets = FileDetector.detect(FIXTURES / "module_attr_mutation.py", root=ROOT)
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.GlobalMutation for e in all_effects), (
+        f"Expected GlobalMutation, got: {[e.type for e in all_effects]}"
+    )
+
+
+def test_module_attr_shadowed_by_param_not_global_mutation() -> None:
+    """A parameter shadowing a module name suppresses module-attr detection.
+
+    def f(os): os.getcwd = ... mutates the argument, not the module — no
+    GlobalMutation may be emitted.
+    """
+    targets = FileDetector.detect(FIXTURES / "module_attr_shadowed_param.py", root=ROOT)
+    all_effects = [e for t in targets for e in t.effects]
+    assert not any(e.type == SideEffectType.GlobalMutation for e in all_effects), (
+        f"Param-shadowed module name must not emit GlobalMutation, got: "
+        f"{[e.type for e in all_effects]}"
+    )
