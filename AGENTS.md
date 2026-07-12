@@ -23,11 +23,13 @@ contractual or incidental, and computes CRAP and GazeCRAP scores.
 ## Core Mission
 
 gaze-py is a **port**, not an independent tool. Schema compatibility with the Go
-gaze implementation is a first-class requirement. The 38-type effect taxonomy,
+gaze implementation is a first-class requirement. The 48-type effect taxonomy,
 JSON field names, scoring formulas, and quadrant rules are fixed by the porting
-contracts and MUST NOT be invented or reinterpreted. Note: the porting contracts
-state "37 types" in their headers — this is a documentation bug. Enumeration
-yields 38 (P0=5 + P1=8 + P2=10 + P3=9 + P4=6). Tests MUST assert 38.
+contracts and MUST NOT be invented or reinterpreted. The EC-001 tier table
+totals 48 (P0=6 + P1=11 + P2=16 + P3=9 + P4=6). Tests MUST assert 48. Ten of
+the 48 are marked "Defined" in taxonomy-reference.md — specified in the
+taxonomy but not yet detected by the reference Go implementation. Definitions
+are mandatory; detection of "Defined" types follows the reference.
 
 ## Behavioral Constraints
 
@@ -54,7 +56,7 @@ make an implementation pass. The following are protected:
    target. Never lower it to make a PR pass.
 2. **Porting contract IDs** — EC-001 through OC-003 in test names and comments
    are traceability markers. Never remove or rename them.
-3. **Effect taxonomy** — The 38 `SideEffectType` values and their P0–P4 tier
+3. **Effect taxonomy** — The 48 `SideEffectType` values and their P0–P4 tier
    assignments are fixed by EC-001. Never add, remove, or reclassify them
    without a constitution amendment.
 

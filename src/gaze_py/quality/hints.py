@@ -1,13 +1,15 @@
 """Assertion hint generator for uncovered contractual side effects.
 
 Port of Go gaze internal/quality/hints.go:hintForEffect.
-Maps each of the 38 SideEffectType values to a Python assertion snippet
+Maps each of the 48 SideEffectType values to a Python assertion snippet
 that a developer can paste into a test to cover the gap.
 
-Per EC-001: all 38 SideEffectType values MUST be handled — no fall-through
-to empty string. The match statement covers P0/P1/P2 with tailored hints,
-P3 exceptions (StdoutWrite, StderrWrite, ProcessExit) with tailored hints,
-and all remaining P3/P4 types with a generic fallback.
+Per EC-001: all 48 SideEffectType values MUST be handled — no fall-through
+to empty string. The match statement covers detected P0/P1/P2 types with
+tailored hints, P3 exceptions (StdoutWrite, StderrWrite, ProcessExit) with
+tailored hints, and everything else — remaining P3/P4 types plus the 10
+"Defined" (not-yet-detected) types — with a generic fallback. Tailored
+hints for Defined types land with their detectors.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ def hint_for_effect(effect: SideEffect) -> str:  # noqa: PLR0911, PLR0912
     StdoutWrite, and StderrWrite which receive tailored hints.
 
     The PLR0911/PLR0912 suppressions are intentional: this function is a
-    pure dispatch table over all 38 SideEffectType values (EC-001). Each
+    pure dispatch table over all 48 SideEffectType values (EC-001). Each
     match arm is a single return — there is no logic to extract. Splitting
     into sub-functions would obscure the one-to-one mapping that makes this
     function easy to audit against the Go port.

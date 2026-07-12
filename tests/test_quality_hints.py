@@ -123,16 +123,16 @@ def test_hint_for_process_exit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Exhaustive coverage — all 38 types must return non-empty strings
+# Exhaustive coverage — all 48 types must return non-empty strings
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("effect_type", list(SideEffectType))
-def test_hint_for_all_38_types_non_empty(effect_type: SideEffectType) -> None:
+def test_hint_for_all_48_types_non_empty(effect_type: SideEffectType) -> None:
     """hint_for_effect() returns a non-empty string for every SideEffectType.
 
     Guards against missing match arms and empty-string returns.
-    Parametrized over all 38 SideEffectType values (EC-001).
+    Parametrized over all 48 SideEffectType values (EC-001).
     """
     result = hint_for_effect(_make_effect(effect_type))
     assert result, f"hint_for_effect returned empty string for {effect_type!r}"
