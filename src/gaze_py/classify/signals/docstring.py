@@ -102,6 +102,77 @@ _DIRECT_WEIGHT: int = 15
 _INDIRECT_WEIGHT: int = 5
 _INCIDENTAL_WEIGHT: int = -15
 
+# All keywords the scanner looks for (contractual + incidental), used by
+# keywords_in() so callers can precompute keyword hits for invariant text.
+_ALL_KEYWORDS: frozenset[str] = frozenset(_CONTRACTUAL_KEYWORDS) | _INCIDENTAL_KEYWORDS
+
+
+def keywords_in(text: str | None) -> frozenset[str]:
+    """Return the set of signal keywords present in text (case-insensitive).
+
+    This is the scan half of the docstring signal, split out so that callers
+    can precompute keyword hits for text that is invariant across many
+    classify() calls (e.g. project-wide docs from the O3 doc scan) instead of
+    re-scanning megabytes of text per side effect.
+
+    Args:
+        text: Text to scan, or None.
+
+    Returns:
+        Frozenset of matched keywords (possibly empty).
+    """
+    if not text:
+        return frozenset()
+    lower = text.lower()
+    return frozenset(k for k in _ALL_KEYWORDS if k in lower)
+
+
+def signal_from_keywords(
+    found: frozenset[str],
+    effect_type: SideEffectType,
+) -> Signal | None:
+    """Compute the docstring signal from a precomputed keyword-hit set.
+
+    Scoring is identical to docstring_signal(): incidental keywords → -15,
+    contractual keywords → +15 when the keyword implies effect_type (direct)
+    or +5 otherwise (indirect). The highest-weight match wins.
+
+    Args:
+        found: Set of keywords present in the combined docstring/docs text,
+            as produced by keywords_in().
+        effect_type: The SideEffectType being classified.
+
+    Returns:
+        A Signal with source='godoc' or 'godoc_keyword_indirect', or None
+        when no keywords are found.
+    """
+    best: Signal | None = None
+
+    # Check incidental keywords first — they produce negative signals.
+    for keyword in _INCIDENTAL_KEYWORDS:
+        if keyword in found:
+            candidate = Signal(source="godoc", weight=_INCIDENTAL_WEIGHT)
+            if best is None or candidate.weight > best.weight:
+                best = candidate
+
+    # Check contractual keywords.
+    for keyword, implied_types in _CONTRACTUAL_KEYWORDS.items():
+        if keyword not in found:
+            continue
+
+        if effect_type in implied_types:
+            # Direct match: keyword implies this specific effect type.
+            candidate = Signal(source="godoc", weight=_DIRECT_WEIGHT)
+        else:
+            # Indirect match: keyword found but doesn't imply this effect type.
+            candidate = Signal(source="godoc_keyword_indirect", weight=_INDIRECT_WEIGHT)
+
+        # Take the highest-weight match per keyword (direct beats indirect).
+        if best is None or candidate.weight > best.weight:
+            best = candidate
+
+    return best
+
 
 def docstring_signal(
     docstring: str | None,
@@ -127,31 +198,4 @@ def docstring_signal(
     """
     if not docstring:
         return None
-
-    doc_lower = docstring.lower()
-    best: Signal | None = None
-
-    # Check incidental keywords first — they produce negative signals.
-    for keyword in _INCIDENTAL_KEYWORDS:
-        if keyword in doc_lower:
-            candidate = Signal(source="godoc", weight=_INCIDENTAL_WEIGHT)
-            if best is None or candidate.weight > best.weight:
-                best = candidate
-
-    # Check contractual keywords.
-    for keyword, implied_types in _CONTRACTUAL_KEYWORDS.items():
-        if keyword not in doc_lower:
-            continue
-
-        if effect_type in implied_types:
-            # Direct match: keyword implies this specific effect type.
-            candidate = Signal(source="godoc", weight=_DIRECT_WEIGHT)
-        else:
-            # Indirect match: keyword found but doesn't imply this effect type.
-            candidate = Signal(source="godoc_keyword_indirect", weight=_INDIRECT_WEIGHT)
-
-        # Take the highest-weight match per keyword (direct beats indirect).
-        if best is None or candidate.weight > best.weight:
-            best = candidate
-
-    return best
+    return signal_from_keywords(keywords_in(docstring), effect_type)

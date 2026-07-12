@@ -449,51 +449,55 @@ def test_scan_handles_oserror(
 # ---------------------------------------------------------------------------
 
 
-def test_engine_combines_docstring_and_project_docs(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """DS-005: ClassificationEngine combines docstring + project_docs_text for Signal 5."""
-    from gaze_py.classify import engine as engine_module
-    from gaze_py.classify.signals import docstring as docstring_module
+def test_engine_combines_docstring_and_project_docs() -> None:
+    """DS-005: ClassificationEngine combines docstring + project_docs_text for Signal 5.
+
+    Behavioral assertion (not implementation-mocking): keywords found only in
+    the per-function docstring AND keywords found only in project_docs_text
+    must both contribute to Signal 5. The engine precomputes project-docs
+    keyword hits at construction (perf: never re-scan the docs blob per
+    effect), so this test verifies the combination through classify() output.
+    """
+    from gaze_py.classify.engine import ClassificationEngine
     from gaze_py.taxonomy.effects import SideEffectType, Tier
     from gaze_py.taxonomy.models import FunctionTarget, SideEffect
 
-    combined_calls: list[str | None] = []
-    original_signal = docstring_module.docstring_signal
+    def _make_effect(effect_type: SideEffectType) -> SideEffect:
+        return SideEffect(
+            id="se-00000001",
+            type=effect_type,
+            tier=Tier.P0,
+            location="src/example.py:1:0",
+            description="test",
+            target="my_func",
+        )
 
-    def capturing_signal(text: str | None, effect_type: object) -> object:
-        combined_calls.append(text)
-        return original_signal(text, effect_type)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(engine_module, "docstring_signal", capturing_signal)
-
-    effect = SideEffect(
-        id="se-00000001",
-        type=SideEffectType.ReturnValue,
-        tier=Tier.P0,
-        location="src/example.py:1:0",
-        description="test",
-        target="my_func",
-    )
-    target = FunctionTarget(
-        function="my_func",
-        file_path="src/example.py",
-        line=1,
-        complexity=1,
-        package="src/example.py",
-        receiver=None,
-        signature="def my_func()",
-        effects=[effect],
-    )
-
-    from gaze_py.classify.engine import ClassificationEngine
+    def _make_target(effect: SideEffect) -> FunctionTarget:
+        return FunctionTarget(
+            function="my_func",
+            file_path="src/example.py",
+            line=1,
+            complexity=1,
+            package="src/example.py",
+            receiver=None,
+            signature="def my_func()",
+            effects=[effect],
+        )
 
     engine = ClassificationEngine(project_docs_text="writes to the database")
-    # Pass docstring via classify() keyword arg (docstring is not on FunctionTarget)
-    engine.classify(effect, target, docstring="Returns a value.")
 
-    assert len(combined_calls) > 0, "docstring_signal was not called"
-    combined_text = combined_calls[0]
-    assert combined_text is not None
-    assert "Returns a value." in combined_text
-    assert "writes to the database" in combined_text
+    # Docstring keyword "returns" direct-matches ReturnValue → +15 'godoc'.
+    effect = _make_effect(SideEffectType.ReturnValue)
+    result = engine.classify(effect, _make_target(effect), docstring="Returns a value.")
+    godoc = [s for s in result.signals if s.source == "godoc"]
+    assert godoc, "docstring keyword did not contribute to Signal 5"
+    assert godoc[0].weight == 15
+
+    # Project-docs keyword "writes" direct-matches DatabaseWrite → +15 'godoc',
+    # even though the per-function docstring has no matching keyword — proving
+    # project_docs_text participates in Signal 5.
+    effect = _make_effect(SideEffectType.DatabaseWrite)
+    result = engine.classify(effect, _make_target(effect), docstring="No keyword here.")
+    godoc = [s for s in result.signals if s.source == "godoc"]
+    assert godoc, "project_docs_text keyword did not contribute to Signal 5"
+    assert godoc[0].weight == 15

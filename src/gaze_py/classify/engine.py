@@ -10,7 +10,7 @@ Per CC-001 through CC-006 (contracts.md and specs.md).
 from __future__ import annotations
 
 from gaze_py.classify.signals.caller import caller_signal
-from gaze_py.classify.signals.docstring import docstring_signal
+from gaze_py.classify.signals.docstring import keywords_in, signal_from_keywords
 from gaze_py.classify.signals.interface import interface_signal
 from gaze_py.classify.signals.naming import naming_signal
 from gaze_py.classify.signals.visibility import visibility_signal
@@ -69,6 +69,11 @@ class ClassificationEngine:
         self._contractual_threshold = contractual_threshold
         self._incidental_threshold = incidental_threshold
         self._project_docs_text = project_docs_text
+        # Perf: project docs text is invariant across every classify() call,
+        # so scan it for signal keywords exactly once here. Re-scanning the
+        # multi-MB combined docs blob per side effect made large-repo runs
+        # take minutes (O(effects × docs_bytes) in str.lower()).
+        self._docs_keywords = keywords_in(project_docs_text)
 
     def classify(
         self,
@@ -129,13 +134,14 @@ class ClassificationEngine:
             signals.append(sig)
 
         # Signal 5: Docstring keywords — augmented with project docs text (O3).
-        # Combine per-function docstring with project-wide documentation so
-        # that behavioral declarations in README/architecture docs contribute
-        # to classification even when individual functions lack docstrings.
-        _combined_doc = (docstring or "") + (
-            "\n" + self._project_docs_text if self._project_docs_text else ""
-        )
-        sig = docstring_signal(_combined_doc if _combined_doc.strip() else None, effect.type)
+        # Per-function docstring keywords are unioned with the precomputed
+        # project-docs keyword set (see __init__) so behavioral declarations
+        # in README/architecture docs contribute even when functions lack
+        # docstrings. Equivalent to scanning the concatenated text — keywords
+        # are alphabetic, so none can straddle the old "\n" join boundary —
+        # but without re-scanning megabytes of docs per side effect.
+        found_keywords = keywords_in(docstring) | self._docs_keywords
+        sig = signal_from_keywords(found_keywords, effect.type)
         if sig is not None:
             signals.append(sig)
 
