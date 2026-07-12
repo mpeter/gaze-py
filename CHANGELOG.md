@@ -2,6 +2,18 @@
 
 All notable changes to gaze-py are documented here.
 
+## [Unreleased]
+
+### Performance
+
+- **Classification engine no longer re-scans project docs per side effect** —
+  `ClassificationEngine` previously concatenated the entire O3 doc-scan text
+  onto the per-function docstring and lowercased + keyword-scanned the blob
+  for every classified effect (O(effects × docs_bytes)). Docs keywords are
+  now precomputed once at engine construction and unioned with per-docstring
+  hits. On a 212-file / 5.9 MB-docs repo, `gazepy crap` drops from 4:35 to
+  0:22 (12.4×) with byte-identical output.
+
 ## [0.7.2] — 2026-07-07
 
 ### Fixed
