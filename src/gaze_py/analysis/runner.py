@@ -7,11 +7,40 @@ import warnings
 from pathlib import Path
 
 from gaze_py.analysis.detector import FileDetector
+from gaze_py.analysis.docscan import scan_docs
 from gaze_py.analysis.files import collect_py_files
 from gaze_py.classify.engine import ClassificationEngine
 from gaze_py.config.loader import GazeConfig
 from gaze_py.taxonomy.exceptions import GazeParseError
 from gaze_py.taxonomy.models import FunctionTarget
+
+
+def project_docs_text(src_path: Path, config: GazeConfig) -> str | None:
+    """Scan project docs and return their combined text for Signal 5 (O3).
+
+    Wraps scan_docs with the graceful-degradation contract every classify
+    path shares: a docscan failure must never abort analysis (Principle VI),
+    so any exception degrades to None with a warning.
+
+    Args:
+        src_path: Source directory or file whose project docs to scan.
+        config: GazeConfig providing doc-scan excludes and timeout.
+
+    Returns:
+        Combined doc text, or None when no docs were found or the scan failed.
+    """
+    # BLE001 suppression is justified: scan failure must never abort
+    # analysis (Principle VI graceful degradation).
+    try:
+        entries = scan_docs(src_path, config)
+        joined = "\n".join(e.content for e in entries)
+        return joined if joined.strip() else None
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(
+            f"docscan failed, continuing without doc augmentation: {exc}",
+            stacklevel=2,
+        )
+        return None
 
 
 def detect_and_classify(

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from gaze_py.analysis.files import collect_py_files
-from gaze_py.analysis.runner import detect_and_classify
+from gaze_py.analysis.runner import detect_and_classify, project_docs_text
 from gaze_py.config.loader import GazeConfig
 from gaze_py.quality.assertions import detect_assertions
 from gaze_py.quality.coverage import compute_contract_coverage
@@ -90,10 +90,15 @@ def assess(
     """
     # Step 1: detect and classify source functions (uses shared runner, M1 fixed).
     # include_unexported=True by default so private helpers are included (D1 in design.md).
+    # Project docs text augments Signal 5 (O3) — Go's quality path consumes
+    # classifications attached by the docs-aware analysis pipeline, so the
+    # quality command must classify with the same docs augmentation as
+    # analyze/crap or the same effect gets a different label per command.
     source_targets = detect_and_classify(
         src_path.resolve(),
         config=config,
         include_unexported=include_unexported,
+        docs_text=project_docs_text(src_path.resolve(), config),
     )
 
     # Build a lookup map: function name → FunctionTarget.
