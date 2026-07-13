@@ -4,6 +4,8 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-07-13
+
 ### Added
 
 - **Frontier detectors for four "Defined" taxonomy types** (EC-001 / audit
