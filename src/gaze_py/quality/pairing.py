@@ -137,13 +137,16 @@ def _build_astroid_graph(
 
     Import resolution: astroid resolves cross-file imports (a test file's
     ``from mypkg.mod import fn``) via ``sys.path``. When gaze-py runs as a
-    console script against another project, that project's root is NOT on
-    ``sys.path``, so every cross-file inference fails and the graph contains
-    no test→source edges — Strategy 3 silently pairs nothing. To make the
-    build cwd- and entry-point-independent, the project root of every
-    analyzed file (located via pyproject.toml/setup.py markers, D8) is
-    prepended to ``sys.path`` for the duration of the build and removed
-    afterwards.
+    console script against another project, that project's import roots are
+    NOT on ``sys.path``, so every cross-file inference fails and the graph
+    contains no test→source edges — Strategy 3 silently pairs nothing. To
+    make the build cwd- and entry-point-independent, each analyzed file's
+    package import root — the first ancestor directory WITHOUT an
+    ``__init__.py`` (see ``_import_root``) — is prepended to ``sys.path``
+    for the duration of the build and removed afterwards. Marker-based
+    project roots (pyproject.toml/setup.py, D8) are wrong for src-layout
+    projects: ``from mypkg import x`` resolves from ``root/src``, not
+    ``root``, so the package-boundary walk is used instead.
 
     Files that Astroid cannot load (encoding errors, unresolvable imports,
     syntax errors) are skipped with a stderr warning; the graph is partial
@@ -167,7 +170,7 @@ def _build_astroid_graph(
     # Make analyzed projects importable so astroid can resolve their
     # cross-file imports (see docstring). Only roots not already present
     # are added, and they are removed in the finally block.
-    roots = {str(_find_project_root(p.resolve())) for p in unique_files}
+    roots = {str(_import_root(p.resolve())) for p in unique_files}
     added_roots = [r for r in roots if r not in sys.path]
     sys.path[:0] = added_roots
 
@@ -198,6 +201,34 @@ def _build_astroid_graph(
                 sys.path.remove(r)
 
     return dict(graph)
+
+
+def _import_root(file_path: Path) -> Path:
+    """Return the directory that must be on sys.path to import file_path.
+
+    Walks up from the file's directory while ``__init__.py`` is present:
+    the first ancestor WITHOUT one is the package import root — the exact
+    directory Python (and astroid) needs on ``sys.path`` for the file's
+    dotted module name to resolve. Handles all layouts uniformly:
+
+    - flat layout (``root/mypkg/mod.py``) → root
+    - src layout (``root/src/mypkg/mod.py``) → root/src
+    - standalone module (``root/script.py``, no __init__.py) → root
+    - tests package (``root/tests/__init__.py``) → root
+
+    Args:
+        file_path: Resolved path to a Python source file.
+
+    Returns:
+        The import-root directory for the file.
+    """
+    current = file_path.parent
+    while (current / "__init__.py").exists():
+        parent = current.parent
+        if parent == current:  # filesystem root — cannot walk further
+            break
+        current = parent
+    return current
 
 
 def _find_project_root(start: Path) -> Path:
