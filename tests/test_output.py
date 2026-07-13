@@ -449,3 +449,45 @@ def test_text_output_renders_strategy_when_set() -> None:
     output = to_text(result)
     assert output  # CR-007: direct reference to bound return value
     assert "add_tests" in output
+
+
+# ---------------------------------------------------------------------------
+# OC-002 — Per-effect classification serialization (G2, audit 2026-07-12)
+# ---------------------------------------------------------------------------
+
+
+def test_oc002_effect_classification_serializes_with_confidence_key() -> None:
+    """OC-002: per-effect classification emits {label, confidence, signals}.
+
+    Matches the Go schema (schema.go $defs.Classification): the numeric field
+    is named "confidence" in JSON, not "score" (the internal dataclass field
+    name).
+    """
+    import dataclasses as _dc
+
+    target = _make_target(with_classification=False)
+    target.effects = [_dc.replace(_make_effect(), classification=_make_classification())]
+    result = _make_result(targets=[target])
+    data = json.loads(to_json(result))
+
+    effect = data["results"][0]["side_effects"][0]
+    assert "classification" in effect
+    classification = effect["classification"]
+    assert classification["label"] == "contractual"
+    assert classification["confidence"] == 85
+    assert "score" not in classification
+    assert classification["signals"] == [{"source": "naming", "weight": 10}]
+
+
+def test_oc002_effect_classification_omitted_when_none() -> None:
+    """OC-002: unclassified effects omit the classification key entirely.
+
+    Matches Go's `json:"classification,omitempty"` — detect-only runs
+    (analyze without --classify) must not emit "classification": null.
+    """
+    target = _make_target(with_classification=False)
+    result = _make_result(targets=[target])
+    data = json.loads(to_json(result))
+
+    effect = data["results"][0]["side_effects"][0]
+    assert "classification" not in effect

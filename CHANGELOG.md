@@ -4,6 +4,23 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Per-effect classification restored in JSON output** (OC-002 / audit G2):
+  the runner previously classified every effect but kept only the last
+  result in a single per-function slot, and JSON emitted no classification
+  at all. Each `SideEffect` now carries its own `classification` —
+  serialized as `{label, confidence, signals}` and omitted when
+  classification has not run, matching Go's schema exactly. The legacy
+  per-function slot is no longer populated.
+- **Classification context threaded through the runner** (audit G3): the
+  analyze/crap path now passes the function docstring, class bases, return
+  type hint, and receiver into the classification engine — Signals 1
+  (interface), 2 (visibility), and 5 (docstring) previously ran blind in
+  this path despite being implemented and tested. The quality pipeline
+  (contract coverage) now reuses the attached classification instead of
+  re-classifying without context or project docs text.
+
 ### Performance
 
 - **Classification engine no longer re-scans project docs per side effect** —

@@ -27,6 +27,7 @@ from gaze_py.taxonomy.models import (
     OverSpecification,
     QualityReport,
     QualitySummary,
+    SideEffect,
 )
 
 if TYPE_CHECKING:
@@ -137,6 +138,32 @@ def _json_default(obj: Any) -> Any:  # noqa: ANN401  # Any is required — json.
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
+def _effect_dict(effect: SideEffect) -> dict[str, object]:
+    """Serialize a SideEffect with per-effect classification per OC-002.
+
+    Matches the Go schema (schema.go $defs.SideEffect / $defs.Classification):
+    the classification sub-object uses the key "confidence" (not "score") and
+    is omitted entirely when classification has not run — Go's
+    `json:"classification,omitempty"`.
+
+    Args:
+        effect: The SideEffect to serialize.
+
+    Returns:
+        Dict form of the effect, with "classification" reshaped to
+        {label, confidence, signals} or absent when None.
+    """
+    d = dataclasses.asdict(effect)
+    classification = d.pop("classification")
+    if classification is not None:
+        d["classification"] = {
+            "label": classification["label"],
+            "confidence": classification["score"],
+            "signals": classification["signals"],
+        }
+    return d
+
+
 def _target_dict(ft: FunctionTarget) -> dict[str, object]:
     """Serialize a FunctionTarget's identity fields as a target dict.
 
@@ -216,8 +243,8 @@ def analysis_to_json(
                 "effect_confidence_range": None,
             }
 
-        # Serialize effects using dataclasses.asdict for nested dataclasses.
-        effects_list = [dataclasses.asdict(e) for e in ft.effects]
+        # Serialize effects with per-effect classification (OC-002).
+        effects_list = [_effect_dict(e) for e in ft.effects]
 
         entry: dict[str, object] = {
             "target": _target_dict(ft),

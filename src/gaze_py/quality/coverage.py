@@ -1,8 +1,11 @@
 """A.4 — Contract coverage computation for the O1 quality assessment pipeline.
 
-Classifies each side effect on the target function individually using
-ClassificationEngine, then computes what fraction of contractual effects
-have at least one mapped assertion.
+Uses the per-effect classification attached by the runner
+(SideEffect.classification) when present; falls back to a locally
+constructed ClassificationEngine for effects that arrive unclassified
+(direct callers, tests). The attached result is preferred because the
+runner classifies with full context — docstring, class bases, return type
+hint, receiver, and project docs text — none of which are available here.
 
 Per OC-003 (null-not-zero): when there are no contractual effects,
 percentage is None — NOT 0.0.
@@ -16,10 +19,37 @@ from gaze_py.quality.hints import hint_for_effect
 from gaze_py.taxonomy.effects import SideEffectType
 from gaze_py.taxonomy.models import (
     AssertionSite,
+    ClassificationResult,
     ContractCoverageResult,
     FunctionTarget,
     SideEffect,
 )
+
+
+def _classification_for(
+    effect: SideEffect,
+    target: FunctionTarget,
+    engine: ClassificationEngine,
+) -> ClassificationResult:
+    """Return the effect's attached classification, or classify as fallback.
+
+    The runner attaches per-effect classification with full context
+    (docstring, class bases, return type hint, receiver, project docs).
+    Effects reaching this module through the quality pipeline carry it;
+    effects constructed directly (tests, ad-hoc callers) may not — those
+    are classified here without context, preserving prior behaviour.
+
+    Args:
+        effect: The SideEffect to resolve a classification for.
+        target: The FunctionTarget containing the effect.
+        engine: Fallback ClassificationEngine for unclassified effects.
+
+    Returns:
+        The ClassificationResult for the effect.
+    """
+    if effect.classification is not None:
+        return effect.classification
+    return engine.classify(effect, target)
 
 
 def compute_contract_coverage(
@@ -71,7 +101,9 @@ def compute_contract_coverage(
     # where effectsSet membership drives the check, not classification outcome).
     if no_test_coverage and target.effects:
         contractual_count = sum(
-            1 for effect in target.effects if engine.classify(effect, target).label == "contractual"
+            1
+            for effect in target.effects
+            if _classification_for(effect, target, engine).label == "contractual"
         )
         return ContractCoverageResult(
             percentage=None,
@@ -87,7 +119,7 @@ def compute_contract_coverage(
     ambiguous_scores: list[int] = []
 
     for effect in target.effects:
-        classification = engine.classify(effect, target)
+        classification = _classification_for(effect, target, engine)
         if classification.label == "contractual":
             contractual.append(effect)
         elif classification.label == "incidental":
