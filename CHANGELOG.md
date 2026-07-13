@@ -38,6 +38,15 @@ All notable changes to gaze-py are documented here.
   this path despite being implemented and tested. The quality pipeline
   (contract coverage) now reuses the attached classification instead of
   re-classifying without context or project docs text.
+- **DatabaseWrite on locally-constructed connections** — `con =
+  sqlite3.connect(...)` followed by `con.execute()`/`con.commit()` (and
+  cursors derived via `.cursor()`) emitted no effect; detection previously
+  fired only when the connection was a function parameter. Tracked DBAPI
+  modules: sqlite3, psycopg/psycopg2, pymysql, MySQLdb, cx_Oracle, duckdb,
+  mariadb.
+- **GlobalMutation via imported-module attribute assignment** —
+  monkeypatch-style `os.getcwd = fake` emitted no effect; module objects are
+  process-global state. Parameter names shadowing module names are excluded.
 
 ### Performance
 
@@ -48,18 +57,17 @@ All notable changes to gaze-py are documented here.
   now precomputed once at engine construction and unioned with per-docstring
   hits. On a 212-file / 5.9 MB-docs repo, `gazepy crap` drops from 4:35 to
   0:22 (12.4×) with byte-identical output.
-
-### Fixed
-
-- **DatabaseWrite on locally-constructed connections** — `con =
-  sqlite3.connect(...)` followed by `con.execute()`/`con.commit()` (and
-  cursors derived via `.cursor()`) emitted no effect; detection previously
-  fired only when the connection was a function parameter. Tracked DBAPI
-  modules: sqlite3, psycopg/psycopg2, pymysql, MySQLdb, cx_Oracle, duckdb,
-  mariadb.
-- **GlobalMutation via imported-module attribute assignment** —
-  monkeypatch-style `os.getcwd = fake` emitted no effect; module objects are
-  process-global state. Parameter names shadowing module names are excluded.
+- **docscan prunes excluded directories during the walk** (audit P2): the
+  scanner previously enumerated every `.md` under the repo root via rglob
+  and filtered afterwards — descending `.venv/`, `node_modules/`, `.git/`
+  in full, burning the 30s `doc_scan_timeout` on large repos and then
+  **silently truncating** the doc list (a run-to-run determinism problem,
+  not just speed). The walk now prunes hidden (dot-prefixed) directories
+  and `dir/**` exclude patterns before descent, matching the Go reference
+  scanner (`filepath.SkipDir`). Behavior change: `.md` files inside hidden
+  directories such as `.venv/` were previously **included** as priority-3
+  docs (`.venv` was never in the default excludes) — they are now pruned.
+  Timeout truncation, if it still occurs, emits a warning.
 
 ### Changed
 

@@ -159,6 +159,99 @@ def test_exclude_filter_glob_pattern(tmp_path: Path) -> None:
     assert "third_party.md" not in names
 
 
+def test_hidden_directories_pruned(tmp_path: Path) -> None:
+    """Dot-directories (.venv, .git) are never descended (P2, audit 2026-07-12).
+
+    Go reference parity (scanner.go filepath.SkipDir). Previously rglob
+    enumerated .venv/** and — because .venv is not in the default exclude
+    list — its .md files leaked into the doc list as priority-3 entries,
+    polluting classification input.
+    """
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "README.md").write_text("readme")
+    venv_docs = tmp_path / ".venv" / "lib" / "site-packages" / "pkg"
+    venv_docs.mkdir(parents=True)
+    (venv_docs / "PKG_README.md").write_text("vendored package readme")
+
+    config = GazeConfig(doc_scan_exclude=[])  # even with NO excludes
+    entries = scan_docs(tmp_path, config)
+
+    names = {e.path.name for e in entries}
+    assert "README.md" in names
+    assert "PKG_README.md" not in names, ".venv contents must be pruned, not scanned"
+
+
+def test_excluded_directories_pruned_not_descended(tmp_path: Path) -> None:
+    """'dir/**' exclude patterns prune the directory during the walk (P2).
+
+    Observable via os.walk: the pruned directory is never opened. Previously
+    rglob descended node_modules fully and filtered file-by-file afterwards.
+    """
+    import os as _os
+
+    from gaze_py.analysis import docscan as docscan_module
+
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "README.md").write_text("readme")
+    nm = tmp_path / "node_modules" / "pkg"
+    nm.mkdir(parents=True)
+    (nm / "readme.md").write_text("dep readme")
+
+    opened: list[str] = []
+    real_walk = _os.walk
+
+    def spying_walk(top, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        for dirpath, dirnames, filenames in real_walk(top, **kwargs):
+            opened.append(str(dirpath))
+            yield dirpath, dirnames, filenames
+
+    from unittest import mock
+
+    with mock.patch.object(docscan_module.os, "walk", spying_walk):
+        entries = scan_docs(tmp_path, GazeConfig())  # default excludes node_modules/**
+
+    names = {e.path.name for e in entries}
+    assert "readme.md" not in names
+    assert not any("node_modules" in d for d in opened), (
+        f"node_modules was descended instead of pruned: {opened}"
+    )
+
+
+def test_timeout_truncation_warns(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Timeout truncation emits a warning instead of failing silently (P2).
+
+    A silently shortened doc list changes classification inputs run-to-run;
+    the truncation must be visible to the operator.
+    """
+    from gaze_py.analysis import docscan as docscan_module
+
+    (tmp_path / "pyproject.toml").write_text("")
+    for i in range(5):
+        (tmp_path / f"doc_{i:02d}.md").write_text(f"content {i}")
+
+    class ImmediateTimer:
+        def __init__(self, _interval: float, func: object, *args: object) -> None:
+            self._func = func
+
+        def start(self) -> None:
+            t = threading.Thread(target=self._func, daemon=True)
+            t.start()
+            t.join(timeout=0.1)
+
+        def cancel(self) -> None:
+            pass
+
+    monkeypatch.setattr(docscan_module.threading, "Timer", ImmediateTimer)
+
+    config = GazeConfig(doc_scan_exclude=[], doc_scan_timeout=0.001)
+    with pytest.warns(UserWarning, match="truncated"):
+        entries = scan_docs(tmp_path, config)
+    assert isinstance(entries, list)
+
+
 # ---------------------------------------------------------------------------
 # DS-002 — Include filter
 # ---------------------------------------------------------------------------
