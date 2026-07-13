@@ -636,3 +636,53 @@ def test_quality_report_includes_gap_hints() -> None:
     assert "result" in first_hint or "assert" in first_hint, (
         f"Expected ReturnValue hint containing 'result' or 'assert', got: {first_hint!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# O3 docs augmentation: assess() classifies with project docs text
+# ---------------------------------------------------------------------------
+
+
+def test_assess_uses_project_docs_for_classification(tmp_path: Path) -> None:
+    """assess() threads project docs text into classification (O3 parity).
+
+    Regression: the analyze/crap CLI passed docs_text into the engine but
+    assess() classified without it, so the same effect got a different label
+    per command. A private helper's ReturnValue (P0) with no docstring scores
+    75 — ambiguous; a project doc containing "returns" adds the direct godoc
+    signal (+15) → 90 — contractual, so the paired test gets a real coverage
+    percentage instead of reason="all_effects_ambiguous".
+    """
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "mod.py").write_text(
+        "def _helper(x):\n    return x + 1\n",
+        encoding="utf-8",
+    )
+    (src_dir / "README.md").write_text(
+        "This module returns computed values.\n",
+        encoding="utf-8",
+    )
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_mod.py").write_text(
+        "def test_helper_gives_value() -> None:\n    assert _helper(1) == 2\n",
+        encoding="utf-8",
+    )
+
+    result = assess(src_dir, tests_dir / "test_mod.py", config=_default_config())
+    report = next(
+        (
+            r
+            for r in result.reports
+            if isinstance(r.target_function, FunctionTarget)
+            and r.target_function.function == "_helper"
+        ),
+        None,
+    )
+    assert report is not None, f"No report paired to _helper. Reports: {result.reports}"
+    assert report.contract_coverage is not None
+    assert report.contract_coverage.reason != "all_effects_ambiguous", (
+        "Docs text did not reach the classifier — ReturnValue stayed ambiguous"
+    )
+    assert report.contract_coverage.percentage is not None

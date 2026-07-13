@@ -24,6 +24,14 @@ All notable changes to gaze-py are documented here.
 
 ### Fixed
 
+- **Quality pipeline classified without project docs text** (O3 parity):
+  `gazepy analyze`/`crap` augment Signal 5 with scanned project docs, but
+  `assess()` (the `quality` command) classified the same effects without
+  them — so the same effect could be contractual under `analyze` and
+  ambiguous under `quality`. Go's quality path consumes classifications
+  attached by the docs-aware analysis pipeline; `assess()` now scans docs
+  via the shared `project_docs_text()` helper and threads them into
+  `detect_and_classify`.
 - **Strategy 3 pairing never fired for class-based or packaged tests**:
   `_pair_astroid` reconstructed the test's FQN from its file path, which
   dropped the enclosing `Test*` class and any package prefix (a `tests/`
