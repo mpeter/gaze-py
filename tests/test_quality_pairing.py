@@ -549,3 +549,65 @@ def test_build_astroid_graph_resolves_imports_without_project_on_sys_path(
     test_funcs = find_test_functions(test_file)
     result = _pair_astroid(test_funcs[0], {"target_fn"}, graph)
     assert result == "target_fn"
+
+
+def test_import_root_flat_src_and_standalone_layouts(tmp_path: Path) -> None:
+    """_import_root returns the directory Python needs on sys.path per layout."""
+    from gaze_py.quality.pairing import _import_root
+
+    # flat layout: root/mypkg/mod.py → root
+    flat = tmp_path / "flat"
+    (flat / "mypkg").mkdir(parents=True)
+    (flat / "mypkg" / "__init__.py").write_text("", encoding="utf-8")
+    (flat / "mypkg" / "mod.py").write_text("", encoding="utf-8")
+    assert _import_root(flat / "mypkg" / "mod.py") == flat
+
+    # src layout: root/src/mypkg/mod.py → root/src
+    srcl = tmp_path / "srcl"
+    (srcl / "src" / "mypkg").mkdir(parents=True)
+    (srcl / "src" / "mypkg" / "__init__.py").write_text("", encoding="utf-8")
+    (srcl / "src" / "mypkg" / "mod.py").write_text("", encoding="utf-8")
+    assert _import_root(srcl / "src" / "mypkg" / "mod.py") == srcl / "src"
+
+    # standalone module (no __init__.py anywhere) → containing dir
+    (tmp_path / "script.py").write_text("", encoding="utf-8")
+    assert _import_root(tmp_path / "script.py") == tmp_path
+
+
+def test_build_astroid_graph_resolves_imports_in_src_layout(tmp_path: Path) -> None:
+    """Cross-file edges are inferred for src-layout projects.
+
+    Regression: the previous sys.path bootstrap used the marker-based
+    project root (pyproject.toml), but ``from mypkg import x`` in a
+    src-layout project resolves from ``root/src`` — so inference failed
+    and Strategy 3 paired nothing for src-layout repos.
+    """
+    import sys as _sys
+
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    pkg = tmp_path / "src" / "mypkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    src_file = pkg / "mod.py"
+    src_file.write_text("def target_fn() -> int:\n    return 1\n", encoding="utf-8")
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "__init__.py").write_text("", encoding="utf-8")
+    test_file = tests_dir / "test_mod.py"
+    test_file.write_text(
+        "from mypkg.mod import target_fn\n\n"
+        "def test_target_behaviour() -> None:\n"
+        "    assert target_fn() == 1\n",
+        encoding="utf-8",
+    )
+
+    path_before = list(_sys.path)
+    graph = _build_astroid_graph([test_file], [src_file])
+    assert _sys.path == path_before
+
+    callees = {c for edges in graph.values() for c in edges}
+    assert "mypkg.mod.target_fn" in callees
+
+    test_funcs = find_test_functions(test_file)
+    assert _pair_astroid(test_funcs[0], {"target_fn"}, graph) == "target_fn"

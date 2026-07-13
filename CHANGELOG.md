@@ -24,6 +24,13 @@ All notable changes to gaze-py are documented here.
 
 ### Fixed
 
+- **Strategy 3 pairing failed on src-layout projects**: the astroid graph
+  build put the marker-based project root (pyproject.toml) on `sys.path`,
+  but `from mypkg import x` in a `root/src/mypkg` layout resolves from
+  `root/src` — so cross-file inference failed and transitive pairing found
+  nothing. Each analyzed file's package import root (first ancestor without
+  an `__init__.py`) is now used instead, which handles flat, src, and
+  standalone layouts uniformly.
 - **Caller signal (Signal 3) never fired** (CC-005 parity): the detector
   accepted a caller map and `caller_signal` was implemented and tested, but
   `detect_and_classify` hardcoded `callers=None`, so no effect anywhere ever
