@@ -15,6 +15,7 @@ import pytest
 from gaze_py.analysis.detector import FileDetector, _build_signature, _format_annotation
 from gaze_py.taxonomy.effects import SideEffectType
 from gaze_py.taxonomy.exceptions import GazeParseError
+from gaze_py.taxonomy.models import SideEffect
 
 # Re-exported at module level so inline imports inside test functions are not needed.
 # All tests import FileDetector and SideEffectType from here.
@@ -1522,3 +1523,107 @@ def test_module_attr_shadowed_by_param_not_global_mutation() -> None:
         f"Param-shadowed module name must not emit GlobalMutation, got: "
         f"{[e.type for e in all_effects]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# EC-001 — G1c frontier detectors (docs/audit-2026-07-12.md)
+# These types are "Defined" in taxonomy-reference.md — specified in the
+# contract but undetected by the reference Go implementation. gaze-py is the
+# first implementation to detect them.
+# ---------------------------------------------------------------------------
+
+
+def _effects_for(fixture: str, function: str) -> list[SideEffect]:
+    """Detect the fixture and return the named function's effects."""
+    targets = FileDetector.detect(FIXTURES / fixture, root=ROOT)
+    matches = [t for t in targets if t.function == function]
+    assert len(matches) == 1, f"expected one target named {function!r}, got {matches}"
+    return matches[0].effects
+
+
+def test_generator_yield_detected() -> None:
+    """GeneratorYield (P1): 'yield' in a sync def emits GeneratorYield."""
+    effects = _effects_for("generator_yield.py", "gen_numbers")
+    assert [e.type for e in effects] == [SideEffectType.GeneratorYield]
+
+
+def test_yield_from_is_generator_yield() -> None:
+    """GeneratorYield (P1): 'yield from' delegation emits GeneratorYield."""
+    effects = _effects_for("generator_yield.py", "delegate")
+    assert [e.type for e in effects] == [SideEffectType.GeneratorYield]
+
+
+def test_async_generator_yield_detected() -> None:
+    """AsyncGeneratorYield (P2): 'yield' in an async def, not GeneratorYield."""
+    effects = _effects_for("async_generator_yield.py", "agen")
+    assert [e.type for e in effects] == [SideEffectType.AsyncGeneratorYield]
+
+
+def test_import_side_effect_detected_per_statement() -> None:
+    """ImportSideEffect (P2): each deferred import statement emits once.
+
+    Module-level imports never fire — the visitor only sees function bodies.
+    """
+    effects = _effects_for("import_side_effect.py", "lazy_load")
+    imports = [e for e in effects if e.type == SideEffectType.ImportSideEffect]
+    assert len(imports) == 2, f"Expected 2 ImportSideEffect, got: {[e.type for e in effects]}"
+
+
+def test_resource_management_with_open() -> None:
+    """ResourceManagement (P2): 'with open(p) as f:' acquires a resource."""
+    effects = _effects_for("resource_management.py", "read_config")
+    assert any(e.type == SideEffectType.ResourceManagement for e in effects), (
+        f"Expected ResourceManagement, got: {[e.type for e in effects]}"
+    )
+
+
+def test_resource_management_async_with() -> None:
+    """ResourceManagement (P2): generic 'async with expr:' acquisitions fire too."""
+    effects = _effects_for("resource_management.py", "fetch")
+    assert any(e.type == SideEffectType.ResourceManagement for e in effects), (
+        f"Expected ResourceManagement, got: {[e.type for e in effects]}"
+    )
+
+
+def test_with_param_still_mutex_not_resource_management() -> None:
+    """'with param:' keeps its specific effect (MutexOp) — no double claim.
+
+    Param-based context managers are claimed by the MutexOp /
+    DatabaseTransaction heuristic; ResourceManagement covers only the
+    generic remainder.
+    """
+    targets = FileDetector.detect(FIXTURES / "wait_group_op.py", root=ROOT)
+    all_effects = [e for t in targets for e in t.effects]
+    assert not any(
+        e.type == SideEffectType.ResourceManagement and "asyncio.TaskGroup" in e.description
+        for e in all_effects
+    ), "TaskGroup with-items must stay WaitGroupOp, not ResourceManagement"
+
+
+def test_monkeypatch_from_import_and_dotted_chain() -> None:
+    """MonkeyPatch (P2): attribute replacement on imported names.
+
+    Both shapes fire: Cls.attr = fake (from-import) and mod.Cls.attr = fake
+    (dotted chain rooted at an imported module). Plain single-level module
+    attributes (os.getcwd = fake) stay GlobalMutation for Go parity.
+    """
+    effects = _effects_for("monkeypatch_imported.py", "patch_it")
+    patches = [e for e in effects if e.type == SideEffectType.MonkeyPatch]
+    assert len(patches) == 2, f"Expected 2 MonkeyPatch, got: {[e.type for e in effects]}"
+    assert not any(e.type == SideEffectType.GlobalMutation for e in effects)
+
+
+def test_monkeypatch_shadowed_param_not_detected() -> None:
+    """A parameter shadowing a from-imported name suppresses MonkeyPatch."""
+    effects = _effects_for("monkeypatch_shadowed_param.py", "not_a_patch")
+    assert not any(e.type == SideEffectType.MonkeyPatch for e in effects), (
+        f"Param-shadowed name must not emit MonkeyPatch, got: {[e.type for e in effects]}"
+    )
+
+
+def test_module_attr_stays_global_mutation_not_monkeypatch() -> None:
+    """os.getcwd = fake stays GlobalMutation (Go parity), not MonkeyPatch."""
+    targets = FileDetector.detect(FIXTURES / "module_attr_mutation.py", root=ROOT)
+    all_effects = [e for t in targets for e in t.effects]
+    assert any(e.type == SideEffectType.GlobalMutation for e in all_effects)
+    assert not any(e.type == SideEffectType.MonkeyPatch for e in all_effects)

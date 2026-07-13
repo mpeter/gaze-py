@@ -4,6 +4,24 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Frontier detectors for four "Defined" taxonomy types** (EC-001 / audit
+  G1c) — first detection anywhere; these types are specified in
+  taxonomy-reference.md but undetected by the reference Go implementation:
+  - **GeneratorYield** (P1): `yield` / `yield from` in sync generators
+  - **AsyncGeneratorYield** (P2): `yield` in async generators
+  - **ImportSideEffect** (P2): deferred imports inside function bodies —
+    module top-level code executes at call time
+  - **ResourceManagement** (P2): generic context-manager acquisition
+    (`with open(...)`, `async with client.session()`); param-based
+    with-items keep their specific MutexOp / DatabaseTransaction /
+    WaitGroupOp effects
+  - **MonkeyPatch** (P2): attribute replacement on from-imported names
+    (`Cls.method = fake`) and dotted chains rooted at imported modules
+    (`mod.Cls.method = fake`). Single-level module attributes
+    (`os.getcwd = fake`) stay GlobalMutation for Go parity.
+
 ### Fixed
 
 - **Per-effect classification restored in JSON output** (OC-002 / audit G2):

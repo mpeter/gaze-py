@@ -362,6 +362,8 @@ class _FunctionVisitor(ast.NodeVisitor):
         has_return_annotation: bool,
         annotation_is_none: bool,
         module_names: set[str] | None = None,
+        from_import_names: set[str] | None = None,
+        is_async: bool = False,
     ) -> None:
         """Initialize the visitor for a specific function.
 
@@ -375,6 +377,12 @@ class _FunctionVisitor(ast.NodeVisitor):
                 (from _collect_module_names). Used to detect GlobalMutation
                 via module-attribute assignment (os.getcwd = ...).
                 Default: None (no module-attr detection).
+            from_import_names: Names bound by module-level from-imports
+                (from _collect_from_import_names). Used to detect MonkeyPatch
+                via attribute assignment on imported classes/functions
+                (Cls.method = fake). Default: None (no monkeypatch detection).
+            is_async: True when the visited function is an AsyncFunctionDef.
+                Selects AsyncGeneratorYield over GeneratorYield for yields.
         """
         self._rel_path = rel_path
         self._fn_name = fn_name
@@ -382,6 +390,8 @@ class _FunctionVisitor(ast.NodeVisitor):
         self._has_return_annotation = has_return_annotation
         self._annotation_is_none = annotation_is_none
         self._module_names = module_names or set()
+        self._from_import_names = from_import_names or set()
+        self._is_async = is_async
         self._effects: list[SideEffect] = []
         self._depth = 0  # nesting depth; skip nested FunctionDef when > 0
         # For GlobalMutation: track declared global names
@@ -483,6 +493,88 @@ class _FunctionVisitor(ast.NodeVisitor):
         if isinstance(node.value, ast.Name):
             self._return_names.add(node.value.id)
 
+        self.generic_visit(node)
+
+    # ------------------------------------------------------------------
+    # GeneratorYield / AsyncGeneratorYield
+    # ------------------------------------------------------------------
+
+    def _add_yield_effect(self, node: ast.Yield | ast.YieldFrom, phrase: str) -> None:
+        """Emit GeneratorYield or AsyncGeneratorYield for a yield expression.
+
+        Per EC-001: GeneratorYield (P1) — yielding a value from a generator;
+        AsyncGeneratorYield (P2) — yielding from an async generator. The
+        containing function's async-ness (not the yield syntax) selects the
+        type. Both were 'Defined' (specified, undetected) in the reference
+        Go implementation — gaze-py is the first to detect them
+        (docs/audit-2026-07-12.md G1c).
+
+        Args:
+            node: The Yield or YieldFrom expression node.
+            phrase: Syntax phrase for the description ("yield"/"yield from").
+        """
+        if self._is_async:
+            self._add(
+                SideEffectType.AsyncGeneratorYield,
+                node,
+                f"Async generator produces values via '{phrase}'",
+            )
+        else:
+            self._add(
+                SideEffectType.GeneratorYield,
+                node,
+                f"Generator produces values via '{phrase}'",
+            )
+
+    def visit_Yield(self, node: ast.Yield) -> None:  # noqa: N802
+        """Detect GeneratorYield / AsyncGeneratorYield from yield expressions."""
+        self._add_yield_effect(node, "yield")
+        self.generic_visit(node)
+
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> None:  # noqa: N802
+        """Detect GeneratorYield from 'yield from' delegation.
+
+        'yield from' is a SyntaxError inside async functions, so this is
+        always the sync GeneratorYield path in valid source.
+        """
+        self._add_yield_effect(node, "yield from")
+        self.generic_visit(node)
+
+    # ------------------------------------------------------------------
+    # ImportSideEffect — deferred imports inside the function body
+    # ------------------------------------------------------------------
+
+    def _add_import_effect(self, node: ast.Import | ast.ImportFrom, module: str) -> None:
+        """Emit ImportSideEffect for an import statement in the function body.
+
+        Per EC-001: ImportSideEffect (P2) — module import that triggers
+        observable side effects. A deferred (function-body) import executes
+        the module's top-level code at call time on first import; this
+        visitor only ever sees function bodies, so module-level imports
+        never reach here.
+
+        Args:
+            node: The Import or ImportFrom statement node.
+            module: The imported module name for the description.
+        """
+        self._add(
+            SideEffectType.ImportSideEffect,
+            node,
+            f"Function performs deferred import of '{module}' —"
+            " module top-level code executes at call time",
+        )
+
+    def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
+        """Detect ImportSideEffect from 'import x' inside the function body."""
+        modules = ", ".join(alias.name for alias in node.names)
+        self._add_import_effect(node, modules)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
+        """Detect ImportSideEffect from 'from x import y' inside the function body."""
+        # Relative imports (from . import x) have module=None; render the dots.
+        module = ("." * node.level) + (node.module or "")
+        self._add_import_effect(node, module)
         self.generic_visit(node)
 
     # ------------------------------------------------------------------
@@ -599,10 +691,22 @@ class _FunctionVisitor(ast.NodeVisitor):
         elif (mod_attr := self._module_attr_target(targets)) is not None:
             # GlobalMutation: assignment to an attribute of an imported module
             # (os.getcwd = fake) — module objects are process-global state.
+            # Kept as GlobalMutation (not MonkeyPatch) for parity with the Go
+            # reference, which labels package-member reassignment GlobalMutation.
             self._add(
                 SideEffectType.GlobalMutation,
                 node,
                 f"Function mutates imported module attribute '{mod_attr}'",
+            )
+        elif (patched := self._monkeypatch_target(targets)) is not None:
+            # MonkeyPatch: attribute replacement on a from-imported name
+            # (Cls.method = fake) or on a dotted path rooted at an imported
+            # module (mod.Cls.method = fake). Per EC-001: runtime replacement
+            # of functions/methods/attributes.
+            self._add(
+                SideEffectType.MonkeyPatch,
+                node,
+                f"Function monkeypatches imported attribute '{patched}' at runtime",
             )
 
         # GlobalMutation: assignment to a declared global name
@@ -712,6 +816,52 @@ class _FunctionVisitor(ast.NodeVisitor):
                 and target.value.id not in self._params
             ):
                 return f"{target.value.id}.{target.attr}"
+        return None
+
+    def _monkeypatch_target(self, targets: list[ast.expr]) -> str | None:
+        """Return the dotted path when a target monkeypatches an imported name.
+
+        Two shapes are detected (per EC-001 MonkeyPatch — runtime replacement
+        of functions/methods/attributes):
+
+        - ``Cls.method = fake`` where ``Cls`` was bound by a module-level
+          from-import (``from mod import Cls``)
+        - ``mod.Cls.method = fake`` — a nested attribute chain rooted at a
+          module-level import or from-import
+
+        Plain single-level module attributes (``os.getcwd = fake``) are NOT
+        claimed here — those stay GlobalMutation for parity with the Go
+        reference (see _module_attr_target). Parameter names shadowing an
+        imported name suppress detection, mirroring the module-attr rule.
+
+        Args:
+            targets: Assignment target expressions.
+
+        Returns:
+            Dotted path (e.g. 'Cls.method') for the first match, or None.
+        """
+        imported = (self._from_import_names | self._module_names) - self._params
+        for target in targets:
+            if not isinstance(target, ast.Attribute):
+                continue
+            # Cls.method = fake  (from-imported base name)
+            if (
+                isinstance(target.value, ast.Name)
+                and target.value.id in self._from_import_names
+                and target.value.id not in self._params
+            ):
+                return f"{target.value.id}.{target.attr}"
+            # mod.Cls.method = fake  (nested chain rooted at an imported name)
+            root = target.value
+            depth = 0
+            while isinstance(root, ast.Attribute):
+                root = root.value
+                depth += 1
+            if depth >= 1 and isinstance(root, ast.Name) and root.id in imported:
+                try:
+                    return ast.unparse(target)
+                except Exception:  # noqa: BLE001  # unparse failure → still a match
+                    return f"{root.id}...{target.attr}"
         return None
 
     def _track_db_local(self, node: ast.Assign) -> None:
@@ -1339,15 +1489,45 @@ class _FunctionVisitor(ast.NodeVisitor):
                 f"Function acquires a lock/mutex via '{prefix}with {ctx_name}:'",
             )
 
-    def visit_With(self, node: ast.With) -> None:  # noqa: N802
-        """Detect DatabaseTransaction and MutexOp from 'with param:' patterns.
+    def _add_resource_management(self, ctx: ast.expr, node: ast.AST, *, is_async: bool) -> None:
+        """Emit ResourceManagement for a context-manager acquisition.
 
-        Uses _is_db_context() heuristic — see its docstring for word-part rules.
+        Per EC-001: ResourceManagement (P2) — acquisition or release of an
+        external resource (context managers, RAII). Fires for with-items not
+        claimed by a more specific effect (param-based MutexOp /
+        DatabaseTransaction, TaskGroup WaitGroupOp). 'Defined' (undetected)
+        in the reference Go implementation — see docs/audit-2026-07-12.md G1c.
+
+        Args:
+            ctx: The context manager expression of the with-item.
+            node: The with/async-with statement node (for location).
+            is_async: True when called from visit_AsyncWith.
+        """
+        try:
+            ctx_text = ast.unparse(ctx)
+        except Exception:  # noqa: BLE001  # unparse failure → generic description
+            ctx_text = "<context manager>"
+        prefix = "async " if is_async else ""
+        self._add(
+            SideEffectType.ResourceManagement,
+            node,
+            f"Function acquires a managed resource via '{prefix}with {ctx_text}:'",
+        )
+
+    def visit_With(self, node: ast.With) -> None:  # noqa: N802
+        """Detect DatabaseTransaction, MutexOp, and ResourceManagement from with-statements.
+
+        Param-based context managers use the _is_db_context() heuristic —
+        see its docstring for word-part rules. All other context managers
+        (calls like open(), attributes like self.lock) are generic resource
+        acquisitions → ResourceManagement.
         """
         for item in node.items:
             ctx = item.context_expr
             if isinstance(ctx, ast.Name) and ctx.id in self._params:
                 self._handle_with_param(ctx.id, node, is_async=False)
+            else:
+                self._add_resource_management(ctx, node, is_async=False)
 
         self.generic_visit(node)
 
@@ -1390,6 +1570,9 @@ class _FunctionVisitor(ast.NodeVisitor):
                     "Function synchronizes tasks via async with asyncio.TaskGroup()",
                 )
                 break
+            else:
+                # Generic async context manager — resource acquisition.
+                self._add_resource_management(ctx, node, is_async=True)
         self.generic_visit(node)
 
     # ------------------------------------------------------------------
@@ -1585,8 +1768,8 @@ def _collect_module_names(module: ast.Module) -> set[str]:
     `import x` → x; `import x.y` → x; `import x.y as z` → z. Module-level
     try/except import blocks are included (the common fallback-import
     pattern). `from x import y` is deliberately excluded: y is usually a
-    function or class, and attribute assignment on those is MonkeyPatch
-    territory — a type not yet in the port's taxonomy (G1c).
+    function or class, and attribute assignment on those is MonkeyPatch —
+    detected separately via _collect_from_import_names.
 
     Args:
         module: Parsed module AST.
@@ -1594,18 +1777,57 @@ def _collect_module_names(module: ast.Module) -> set[str]:
     Returns:
         Set of module alias names visible at module scope.
     """
+    names: set[str] = set()
+    for stmt in _module_level_stmts(module):
+        if isinstance(stmt, ast.Import):
+            for alias in stmt.names:
+                names.add(alias.asname or alias.name.split(".")[0])
+    return names
+
+
+def _collect_from_import_names(module: ast.Module) -> set[str]:
+    """Collect names bound by module-level from-imports.
+
+    `from mod import Cls` → Cls; `from mod import Cls as C` → C. Star
+    imports bind no inspectable name and are skipped. Module-level
+    try/except import blocks are included, mirroring _collect_module_names.
+    Used for MonkeyPatch detection: attribute assignment on a from-imported
+    name (Cls.method = fake) replaces program structure at runtime.
+
+    Args:
+        module: Parsed module AST.
+
+    Returns:
+        Set of from-imported names visible at module scope.
+    """
+    names: set[str] = set()
+    for stmt in _module_level_stmts(module):
+        if isinstance(stmt, ast.ImportFrom):
+            for alias in stmt.names:
+                if alias.name != "*":
+                    names.add(alias.asname or alias.name)
+    return names
+
+
+def _module_level_stmts(module: ast.Module) -> list[ast.stmt]:
+    """Return module body statements, descending into try/except blocks.
+
+    The common fallback-import pattern places imports inside module-level
+    try/except; both the try body and handler bodies are included.
+
+    Args:
+        module: Parsed module AST.
+
+    Returns:
+        Flat list of module-level statements including try/except bodies.
+    """
     stmts: list[ast.stmt] = list(module.body)
     for stmt in module.body:
         if isinstance(stmt, ast.Try):
             stmts.extend(stmt.body)
             for handler in stmt.handlers:
                 stmts.extend(handler.body)
-    names: set[str] = set()
-    for stmt in stmts:
-        if isinstance(stmt, ast.Import):
-            for alias in stmt.names:
-                names.add(alias.asname or alias.name.split(".")[0])
-    return names
+    return stmts
 
 
 def _is_db_context(name: str) -> bool:
@@ -2011,8 +2233,10 @@ class FileDetector:
         # names (classification context for the interface signal).
         _fn_to_class, _fn_to_bases = _build_class_method_map(module)
 
-        # Module alias names for module-attribute GlobalMutation detection.
+        # Module alias names for module-attribute GlobalMutation detection;
+        # from-import names for MonkeyPatch detection.
         module_names = _collect_module_names(module)
+        from_import_names = _collect_from_import_names(module)
 
         # Walk ALL function definitions at any nesting level
         for fn_node in ast.walk(module):
@@ -2045,6 +2269,8 @@ class FileDetector:
                 has_return_annotation=has_annotation,
                 annotation_is_none=annotation_is_none,
                 module_names=module_names,
+                from_import_names=from_import_names,
+                is_async=isinstance(fn_node, ast.AsyncFunctionDef),
             )
             visitor.visit(fn_node)
             # Post-process: DeferredReturnMutation requires whole-function context
