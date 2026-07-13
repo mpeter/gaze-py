@@ -50,6 +50,15 @@ All notable changes to gaze-py are documented here.
 
 ### Performance
 
+- **Astroid call-graph state survives across quality runs** (audit P3):
+  `_build_astroid_graph` called `MANAGER.clear_cache()` on every invocation,
+  evicting astroid's builtins/stdlib bootstrap modules and forcing a
+  multi-second rebuild of inference state per `assess()` call. Eviction is
+  now targeted at the analyzed files only — matched by resolved path AND
+  module name, so a same-named fixture at a different path can never serve
+  stale content (pinned by new staleness tests). The graph build is also
+  lazy: it runs only when name/call-site pairing (Strategies 1–2) leaves a
+  test unpaired. gaze-py's own suite drops from 2:24 to 0:36 (4×).
 - **Classification engine no longer re-scans project docs per side effect** —
   `ClassificationEngine` previously concatenated the entire O3 doc-scan text
   onto the per-function docstring and lowercased + keyword-scanned the blob
