@@ -1902,28 +1902,35 @@ class _ClosureVisitor(ast.NodeVisitor):
 # ---------------------------------------------------------------------------
 
 
-def _build_class_method_map(module: ast.Module) -> dict[int, str]:
-    """Build a map from function node id → enclosing class name.
+def _build_class_method_map(module: ast.Module) -> tuple[dict[int, str], dict[int, list[str]]]:
+    """Build maps from function node id → enclosing class name and bases.
 
     Walks the module AST once to record which function definitions are direct
     methods of a ClassDef (appear in the class body at depth 1). Used to
-    populate FunctionTarget.receiver during detection.
+    populate FunctionTarget.receiver and FunctionTarget.class_bases during
+    detection; the latter feeds the interface signal (Signal 1).
 
     Args:
         module: Parsed AST module node.
 
     Returns:
-        Dict mapping id(fn_node) → class_name for all direct class methods.
-        Module-level functions are not included (they have no enclosing class).
+        Tuple of two dicts keyed by id(fn_node) for all direct class methods:
+        the first maps to the enclosing class name, the second to the class's
+        base names (unparsed; empty list for base-less classes). Module-level
+        functions appear in neither (they have no enclosing class).
     """
     fn_to_class: dict[int, str] = {}
+    fn_to_bases: dict[int, list[str]] = {}
     for class_node in ast.walk(module):
         if not isinstance(class_node, ast.ClassDef):
             continue
+        bases = [_format_annotation(base) for base in class_node.bases]
+        bases = [b for b in bases if b]
         for stmt in class_node.body:
             if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 fn_to_class[id(stmt)] = class_node.name
-    return fn_to_class
+                fn_to_bases[id(stmt)] = bases
+    return fn_to_class, fn_to_bases
 
 
 class FileDetector:
@@ -2000,8 +2007,9 @@ class FileDetector:
             targets.append(module_target)
 
         # --- Phase 2: Per-function pass ---
-        # Build a map from function node id → enclosing class name for receiver.
-        _fn_to_class = _build_class_method_map(module)
+        # Map function node id → enclosing class name (receiver) and base
+        # names (classification context for the interface signal).
+        _fn_to_class, _fn_to_bases = _build_class_method_map(module)
 
         # Module alias names for module-attribute GlobalMutation detection.
         module_names = _collect_module_names(module)
@@ -2075,6 +2083,13 @@ class FileDetector:
             # Reconstruct signature from AST arguments.
             signature = _build_signature(fn_node, fn_name)
 
+            # Classification context: docstring (Signal 5), class bases
+            # (Signal 1), return type hint (Signal 2). None when absent so
+            # the signals can distinguish "absent" from "empty".
+            docstring = ast.get_docstring(fn_node)
+            class_bases = _fn_to_bases.get(id(fn_node)) or None
+            return_type_hint = _format_annotation(fn_node.returns) or None
+
             target = FunctionTarget(
                 function=fn_name,
                 file_path=rel_path,
@@ -2085,6 +2100,9 @@ class FileDetector:
                 signature=signature,
                 caller_count=caller_count,
                 effects=effects,
+                docstring=docstring,
+                class_bases=class_bases,
+                return_type_hint=return_type_hint,
             )
             targets.append(target)
 

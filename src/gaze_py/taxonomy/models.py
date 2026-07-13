@@ -62,6 +62,12 @@ class SideEffect:
         location: Source location in "file:line:col" format (two colons).
         description: Human-readable description of the detected effect.
         target: Qualified function name that contains this effect.
+        classification: Per-effect classification result, or None before
+            classification runs. Mirrors Go's SideEffect.Classification
+            (types.go) — each effect carries its own classification, and
+            JSON serialization emits it per effect (omitted when None,
+            matching Go's omitempty). Attached via dataclasses.replace()
+            in the runner since SideEffect is frozen.
     """
 
     id: str
@@ -70,6 +76,7 @@ class SideEffect:
     location: str  # "file:line:col"
     description: str
     target: str  # function qualified name
+    classification: ClassificationResult | None = None
 
 
 @dataclass(frozen=True)
@@ -162,9 +169,21 @@ class FunctionTarget:
         caller_count: Number of distinct caller modules (from the pre-pass
             caller map). Defaults to 0 when no caller map is provided.
         effects: All detected side effects for this function.
-        classification: Classification result for the primary effect, or
-            None before classification runs.
+        classification: Legacy per-function classification slot. No longer
+            populated by the pipeline — classification is per effect
+            (SideEffect.classification), matching the Go schema. Retained
+            for API compatibility; always None after detect_and_classify().
         score: Scoring metrics, or None before scoring runs.
+        docstring: The function's docstring text, or None when absent.
+            Analysis context for the classification engine (Signal 5);
+            not serialized into JSON output.
+        class_bases: Base class names of the enclosing class for methods
+            (e.g., ["ABC", "Protocol"]), or None for module-level functions
+            and methods of base-less classes. Analysis context for the
+            interface signal (Signal 1); not serialized.
+        return_type_hint: String form of the return annotation (e.g.,
+            "int", "None"), or None when unannotated. Analysis context for
+            the visibility signal (Signal 2); not serialized.
     """
 
     function: str
@@ -178,6 +197,9 @@ class FunctionTarget:
     effects: list[SideEffect] = field(default_factory=list)
     classification: ClassificationResult | None = None
     score: Score | None = None
+    docstring: str | None = None
+    class_bases: list[str] | None = None
+    return_type_hint: str | None = None
 
 
 @dataclass

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 from pathlib import Path
 
@@ -37,7 +38,11 @@ def detect_and_classify(
             for all classified functions. Default: None (no augmentation).
 
     Returns:
-        List of FunctionTarget with effects and classification populated.
+        List of FunctionTarget with effects populated; each SideEffect
+        carries its own classification (SideEffect.classification), matching
+        the Go schema's per-effect attachment. The legacy per-function
+        FunctionTarget.classification slot is left as None — it could only
+        hold one result and silently kept the last effect's.
     """
     root = src_path if src_path.is_dir() else src_path.parent
     py_files = collect_py_files(src_path)
@@ -60,8 +65,24 @@ def detect_and_classify(
                 continue
             if function_filter is not None and target.function != function_filter:
                 continue
-            for effect in target.effects:
-                target.classification = engine.classify(effect, target)
+            # Classify each effect and attach the result to the effect itself
+            # (SideEffect is frozen — rebuild via dataclasses.replace). The
+            # detector-captured context (docstring, class bases, return hint,
+            # receiver) feeds Signals 1/2/5, which previously ran blind here.
+            target.effects = [
+                dataclasses.replace(
+                    effect,
+                    classification=engine.classify(
+                        effect,
+                        target,
+                        class_bases=target.class_bases,
+                        docstring=target.docstring,
+                        return_type_hint=target.return_type_hint,
+                        receiver_name=target.receiver,
+                    ),
+                )
+                for effect in target.effects
+            ]
             all_targets.append(target)
 
     return all_targets
