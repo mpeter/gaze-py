@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import textwrap
-import unittest.mock
 from pathlib import Path
 
 import astroid
@@ -372,21 +371,69 @@ def test_build_astroid_graph_skips_bad_file() -> None:
     assert len(result) > 0
 
 
-def test_build_astroid_graph_clears_cache_between_calls() -> None:
-    """clear_cache() is called exactly once per _build_astroid_graph() invocation.
+def test_build_astroid_graph_rereads_changed_file(tmp_path: Path) -> None:
+    """D2: a file whose content changed between builds is re-read, not cached.
 
-    Calling _build_astroid_graph() twice must call clear_cache() twice total.
-    This verifies the D2 contract without relying on observable cache state.
+    The full MANAGER.clear_cache() was replaced with targeted eviction of the
+    analyzed files (audit P3) — this test pins the staleness contract the
+    old call provided: same path, new content, fresh graph.
+    """
+    mod = tmp_path / "mymod.py"
+    mod.write_text("def helper():\n    return 1\n\ndef old_caller():\n    return helper()\n")
+    graph1 = _build_astroid_graph([], [mod])
+    assert any("old_caller" in caller for caller in graph1), graph1
+
+    mod.write_text("def helper():\n    return 1\n\ndef new_caller():\n    return helper()\n")
+    graph2 = _build_astroid_graph([], [mod])
+    assert any("new_caller" in caller for caller in graph2), graph2
+    assert not any("old_caller" in caller for caller in graph2), graph2
+
+
+def test_build_astroid_graph_same_name_different_path_not_stale(tmp_path: Path) -> None:
+    """D2: a same-named module at a different path does not hit a stale entry.
+
+    astroid keys its cache by module name; two tmp fixtures both named
+    fixture.py must each see their own content. Eviction matches module
+    name as well as file path to guarantee this.
+    """
+    dir_a = tmp_path / "a"
+    dir_b = tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    (dir_a / "fixture.py").write_text(
+        "def alpha_helper():\n    return 1\n\ndef alpha():\n    return alpha_helper()\n"
+    )
+    (dir_b / "fixture.py").write_text(
+        "def beta_helper():\n    return 1\n\ndef beta():\n    return beta_helper()\n"
+    )
+
+    graph_a = _build_astroid_graph([], [dir_a / "fixture.py"])
+    graph_b = _build_astroid_graph([], [dir_b / "fixture.py"])
+
+    assert any("alpha" in caller for caller in graph_a), graph_a
+    assert any("beta" in caller for caller in graph_b), graph_b
+    assert not any("alpha" in caller for caller in graph_b), graph_b
+
+
+def test_build_astroid_graph_preserves_third_party_cache() -> None:
+    """P3: building the graph does not evict astroid's builtins cache.
+
+    The old clear_cache() evicted bootstrap modules, forcing a multi-second
+    rebuild of builtin inference state on every assess() call. Targeted
+    eviction must leave non-analyzed entries (e.g. 'builtins') in place.
     """
     engine_fixture = (
         Path(__file__).parent / "testdata" / "quality" / "astroid" / "src" / "engine.py"
     )
+    # Ensure builtins is cached (astroid bootstraps it on first use).
+    astroid.MANAGER.ast_from_module_name("builtins")
+    assert "builtins" in astroid.MANAGER.astroid_cache
 
-    with unittest.mock.patch.object(astroid.MANAGER, "clear_cache") as mock_clear:
-        _build_astroid_graph([], [engine_fixture])
-        _build_astroid_graph([], [engine_fixture])
+    _build_astroid_graph([], [engine_fixture])
 
-    assert mock_clear.call_count == 2
+    assert "builtins" in astroid.MANAGER.astroid_cache, (
+        "builtins was evicted — targeted eviction regressed to a full clear"
+    )
 
 
 # ---------------------------------------------------------------------------

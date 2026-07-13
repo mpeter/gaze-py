@@ -10,6 +10,7 @@ Orchestrates the full pipeline:
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -103,11 +104,21 @@ def assess(
     if not test_funcs:
         return AssessResult(reports=(), untested=())
 
-    # Step 3: build Astroid call graph once for Strategy 3 pairing (D2).
-    # Deduplicate file paths — one path per file, not one per test function.
+    # Step 3: prepare a LAZY Astroid call graph for Strategy 3 pairing (D2).
+    # The graph is expensive (astroid inference over every file, preceded by
+    # a global MANAGER.clear_cache()) and is only consulted for tests that
+    # Strategies 1–2 fail to pair. The provider builds it at most once per
+    # assess() call, and not at all when name/call-site pairing succeeds
+    # for every test — the common case (audit P3, docs/audit-2026-07-12.md).
     test_files: list[Path] = list(dict.fromkeys(Path(tf.filename) for tf in test_funcs))
     src_files: list[Path] = list(collect_py_files(src_path))
-    graph = _build_astroid_graph(test_files, src_files)
+    graph_cache: dict[str, set[str]] | None = None
+
+    def graph_provider() -> dict[str, set[str]]:
+        nonlocal graph_cache
+        if graph_cache is None:
+            graph_cache = _build_astroid_graph(test_files, src_files)
+        return graph_cache
 
     # Step 4: process each test function through the pipeline.
     reports: list[QualityReport] = []
@@ -119,7 +130,7 @@ def assess(
             target_map=target_map,
             config=config,
             target_func=target_func,
-            astroid_graph=graph,
+            astroid_graph_provider=graph_provider,
         )
         if report is not None:
             reports.append(report)
@@ -148,7 +159,7 @@ def _process_test_func(
     target_map: dict[str, FunctionTarget],
     config: GazeConfig,
     target_func: str | None,
-    astroid_graph: dict[str, set[str]] | None = None,
+    astroid_graph_provider: Callable[[], dict[str, set[str]]] | None = None,
 ) -> QualityReport | None:
     """Process a single test function through the full pipeline.
 
@@ -158,14 +169,20 @@ def _process_test_func(
         target_map: Lookup map from function name to FunctionTarget.
         config: GazeConfig with classification thresholds.
         target_func: Optional filter — skip if pair doesn't match this name.
-        astroid_graph: Optional caller→callees adjacency dict for Strategy 3
-            transitive call graph pairing. When None, Strategy 3 is skipped.
+        astroid_graph_provider: Optional zero-arg callable returning the
+            caller→callees adjacency dict for Strategy 3 transitive pairing.
+            Invoked only when Strategies 1–2 fail. When None, Strategy 3 is
+            skipped.
 
     Returns:
         A QualityReport, or None when the test function is filtered out.
     """
     # Pair the test function with a production target.
-    pair = pair_to_targets(test_func, source_targets, astroid_graph=astroid_graph)
+    pair = pair_to_targets(
+        test_func,
+        source_targets,
+        astroid_graph_provider=astroid_graph_provider,
+    )
 
     # If target_func filter is set, skip non-matching pairs.
     if target_func is not None and pair.target_name != target_func:

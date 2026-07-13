@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import collections
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import astroid
@@ -93,6 +94,26 @@ def _extract_call_name(node: ast.Call) -> str | None:
     return None
 
 
+def _evict_analyzed_from_cache(files: list[Path]) -> None:
+    """Evict MANAGER cache entries belonging to the given analyzed files.
+
+    An entry is evicted when its source file is one of the analyzed paths,
+    or when its module name's last component matches an analyzed file's stem
+    (astroid keys its cache by module name, so a same-named fixture at a
+    different path would otherwise hit a stale entry). Over-eviction of an
+    unrelated same-named module is safe — it is simply re-parsed on demand.
+
+    Args:
+        files: The files about to be analyzed in this build.
+    """
+    analyzed_paths = {str(p.resolve()) for p in files}
+    analyzed_stems = {p.stem for p in files}
+    for name, mod in list(MANAGER.astroid_cache.items()):
+        mod_file = getattr(mod, "file", None)
+        if mod_file in analyzed_paths or name.rsplit(".", 1)[-1] in analyzed_stems:
+            del MANAGER.astroid_cache[name]
+
+
 def _build_astroid_graph(
     test_files: list[Path],
     src_files: list[Path],
@@ -103,10 +124,15 @@ def _build_astroid_graph(
     and infers the fully-qualified names of every callee. Returns a plain dict
     mapping caller FQN to the set of callee FQNs reachable from that function.
 
-    MANAGER.clear_cache() is called at the start of every invocation to prevent
-    stale data when assess() is called multiple times in the same process (D2).
-    This evicts all cached AST modules from the global MANAGER — a known
-    trade-off documented in design.md D2 and CHANGELOG.
+    Staleness control (D2): before each build, cached MANAGER entries for the
+    analyzed files are evicted — matched by resolved file path AND by module
+    name, so a re-used module name at a different path (two tmp fixtures both
+    named ``fixture.py``) cannot serve stale content. Entries for everything
+    else — builtins, stdlib, site-packages — are deliberately retained: the
+    previous ``MANAGER.clear_cache()`` evicted astroid's bootstrap modules
+    too, forcing a multi-second rebuild of builtin inference state on every
+    invocation (audit P3, docs/audit-2026-07-12.md). Third-party modules do
+    not change mid-process; the analyzed files are the only staleness risk.
 
     Files that Astroid cannot load (encoding errors, unresolvable imports,
     syntax errors) are skipped with a stderr warning; the graph is partial
@@ -120,12 +146,12 @@ def _build_astroid_graph(
         Adjacency dict mapping caller FQN (str) to set of callee FQNs (set[str]).
         Empty dict when no files could be loaded.
     """
-    # D2: clear stale data before each build.
-    MANAGER.clear_cache()
-
     # Deduplicate while preserving insertion order (test_files first so test
     # FQNs are available as graph keys before src FQNs are added as callees).
     unique_files: list[Path] = list(dict.fromkeys(test_files + src_files))
+
+    # D2: evict cached entries for the analyzed files only (see docstring).
+    _evict_analyzed_from_cache(unique_files)
 
     graph: collections.defaultdict[str, set[str]] = collections.defaultdict(set)
 
@@ -252,6 +278,7 @@ def pair_to_targets(
     source_functions: list[FunctionTarget],
     *,
     astroid_graph: dict[str, set[str]] | None = None,
+    astroid_graph_provider: Callable[[], dict[str, set[str]]] | None = None,
 ) -> TestTargetPair:
     """Pair a test function with its most likely production target.
 
@@ -263,17 +290,23 @@ def pair_to_targets(
     2. **Call graph** — deep AST walk of the test function body; the first
        source function name found in a direct call is selected (confidence 0.8).
     3. **Transitive call graph** — BFS over the Astroid-inferred call graph
-       (confidence 0.75). Only fires when ``astroid_graph`` is provided.
+       (confidence 0.75). Only fires when ``astroid_graph`` or
+       ``astroid_graph_provider`` is provided.
     4. **Unmatched** — no match found (confidence 0.0, target_name=None).
 
     When source_functions is empty, returns immediately with method="unmatched".
-    Existing callers that omit ``astroid_graph`` are unaffected (default None).
+    Existing callers that omit both astroid parameters are unaffected.
 
     Args:
         test_func: The test function to pair.
         source_functions: All production FunctionTargets available for pairing.
-        astroid_graph: Optional caller→callees adjacency dict from
-            ``_build_astroid_graph()``. When None, Strategy 3 is skipped.
+        astroid_graph: Optional pre-built caller→callees adjacency dict from
+            ``_build_astroid_graph()``. When set, used directly.
+        astroid_graph_provider: Optional zero-arg callable returning the
+            adjacency dict. Invoked ONLY when Strategies 1–2 fail, so an
+            expensive graph build is skipped entirely when every test pairs
+            by name or direct call (audit P3). Ignored when ``astroid_graph``
+            is also set.
 
     Returns:
         A TestTargetPair with the best match found.
@@ -326,7 +359,11 @@ def pair_to_targets(
                 )
 
     # Strategy 3 — Transitive call graph via Astroid inference.
-    # Only fires when astroid_graph is provided; existing callers are unaffected.
+    # Only fires when a graph or provider is supplied; existing callers are
+    # unaffected. The provider is invoked here — after Strategies 1–2 have
+    # failed — so the expensive astroid build is lazy (audit P3).
+    if astroid_graph is None and astroid_graph_provider is not None:
+        astroid_graph = astroid_graph_provider()
     if astroid_graph is not None:
         matched_name = _pair_astroid(test_func, source_names, astroid_graph)
         if matched_name is not None:
