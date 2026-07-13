@@ -24,6 +24,15 @@ All notable changes to gaze-py are documented here.
 
 ### Fixed
 
+- **Caller signal (Signal 3) never fired** (CC-005 parity): the detector
+  accepted a caller map and `caller_signal` was implemented and tested, but
+  `detect_and_classify` hardcoded `callers=None`, so no effect anywhere ever
+  received the +5/+10/+15 caller-dependency weight. `build_caller_map()` now
+  counts distinct referencing modules per function name across the analyzed
+  tree (Go's classify/callers.go counts distinct referencing packages,
+  excluding the definer) and the runner passes it to every detection. This
+  matters most for P2/P3 effects on standalone functions, whose maximum
+  score without it was 79 — one point below the contractual threshold.
 - **Quality pipeline classified without project docs text** (O3 parity):
   `gazepy analyze`/`crap` augment Signal 5 with scanned project docs, but
   `assess()` (the `quality` command) classified the same effects without
