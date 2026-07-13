@@ -146,3 +146,59 @@ class Repo(ABC):
         assert target.receiver is None
         assert target.docstring is None
         assert target.return_type_hint is None
+
+
+class TestCallerSignalWiring:
+    """Signal 3: build_caller_map counts referencing modules; runner wires it.
+
+    Regression: detect_and_classify hardcoded callers=None, so the
+    implemented caller_signal never fired anywhere in gaze-py. Go parity
+    (classify/callers.go): distinct packages referencing the function,
+    excluding the definer, weight 1→+5, 2–3→+10, 4+→+15.
+    """
+
+    def test_build_caller_map_counts_distinct_modules(self, tmp_path: Path) -> None:
+        """Two referencing modules → count 2; defining module excluded."""
+        from gaze_py.analysis.runner import build_caller_map
+
+        (tmp_path / "core.py").write_text("def shared_helper():\n    return 1\n", encoding="utf-8")
+        (tmp_path / "user_a.py").write_text(
+            "from core import shared_helper\n\ndef go_a():\n    return shared_helper()\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "user_b.py").write_text(
+            "import core\n\ndef go_b():\n    return core.shared_helper()\n",
+            encoding="utf-8",
+        )
+
+        callers = build_caller_map(sorted(tmp_path.glob("*.py")))
+        assert callers.get("shared_helper") == 2
+        # go_a / go_b are referenced nowhere else → absent (count 0 omitted).
+        assert "go_a" not in callers
+        assert "go_b" not in callers
+
+    def test_defining_module_self_reference_not_counted(self, tmp_path: Path) -> None:
+        """Recursion / same-module calls do not count as callers (Go parity)."""
+        from gaze_py.analysis.runner import build_caller_map
+
+        (tmp_path / "solo.py").write_text("def lonely():\n    return lonely()\n", encoding="utf-8")
+        callers = build_caller_map([tmp_path / "solo.py"])
+        assert "lonely" not in callers
+
+    def test_caller_signal_fires_in_detect_and_classify(self, tmp_path: Path) -> None:
+        """A function referenced from another module carries the caller signal."""
+        (tmp_path / "core.py").write_text(
+            "def compute_answer():\n    return 42\n", encoding="utf-8"
+        )
+        (tmp_path / "consumer.py").write_text(
+            "from core import compute_answer\n\ndef wrap():\n    return compute_answer()\n",
+            encoding="utf-8",
+        )
+
+        targets = detect_and_classify(tmp_path, config=GazeConfig())
+        target = next(t for t in targets if t.function == "compute_answer")
+        assert target.caller_count == 1
+        effect = target.effects[0]
+        assert effect.classification is not None
+        sources = {s.source: s.weight for s in effect.classification.signals}
+        assert sources.get("caller") == 5, f"expected caller signal +5, got signals: {sources}"

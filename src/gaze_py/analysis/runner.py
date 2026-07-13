@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import warnings
 from pathlib import Path
@@ -43,6 +44,63 @@ def project_docs_text(src_path: Path, config: GazeConfig) -> str | None:
         return None
 
 
+def build_caller_map(py_files: list[Path]) -> dict[str, int]:
+    """Count distinct referencing modules per function name (Signal 3, CC-005).
+
+    Go parity (classify/callers.go): the caller signal counts distinct
+    *packages* that reference the function via TypesInfo.Uses, excluding the
+    package that defines it, each counted once. The Python analog counts
+    distinct *modules* (files) that reference the function's name, excluding
+    every module that defines a function of that name.
+
+    A module "references" a name when the name appears as an ``ast.Name``
+    load/store, an ``ast.Attribute`` attr (``mod.fn``, ``obj.method``), or a
+    ``from x import name`` alias. This is name-based, not type-resolved:
+    two same-named functions in different modules share one count — the same
+    granularity as the detector's ``callers.get(fn_name)`` lookup, and the
+    conservative direction (over-counting popular names inflates a +5/+15
+    signal, never fabricates a contractual label on its own).
+
+    Files that fail to parse are skipped silently — the map is a scoring
+    signal, not analysis output; detection itself warns on the same files.
+
+    Args:
+        py_files: Python source files that make up the analyzed tree.
+
+    Returns:
+        Mapping of simple function name → distinct referencing-module count,
+        suitable for FileDetector.detect(callers=...).
+    """
+    defined_in: dict[str, set[Path]] = {}
+    referenced_in: dict[str, set[Path]] = {}
+
+    for py_file in py_files:
+        try:
+            module = ast.parse(
+                py_file.read_text(encoding="utf-8", errors="replace"),
+                filename=str(py_file),
+            )
+        except (OSError, SyntaxError, ValueError):
+            continue
+
+        for node in ast.walk(module):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                defined_in.setdefault(node.name, set()).add(py_file)
+            elif isinstance(node, ast.Name):
+                referenced_in.setdefault(node.id, set()).add(py_file)
+            elif isinstance(node, ast.Attribute):
+                referenced_in.setdefault(node.attr, set()).add(py_file)
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    referenced_in.setdefault(alias.name, set()).add(py_file)
+
+    return {
+        name: count
+        for name, defining_files in defined_in.items()
+        if (count := len(referenced_in.get(name, set()) - defining_files)) > 0
+    }
+
+
 def detect_and_classify(
     src_path: Path,
     *,
@@ -80,11 +138,15 @@ def detect_and_classify(
         config.incidental_threshold,
         project_docs_text=docs_text,
     )
+    # Signal 3 (caller dependency): count distinct referencing modules across
+    # the analyzed tree. Previously hardcoded to None, so the implemented
+    # caller_signal never fired anywhere.
+    callers = build_caller_map(py_files)
     all_targets: list[FunctionTarget] = []
 
     for py_file in py_files:
         try:
-            targets = FileDetector.detect(py_file, root=root, callers=None)
+            targets = FileDetector.detect(py_file, root=root, callers=callers)
         except GazeParseError as e:
             warnings.warn(f"Skipping {py_file}: {e}", stacklevel=2)
             continue
