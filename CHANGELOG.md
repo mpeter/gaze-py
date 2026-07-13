@@ -24,6 +24,24 @@ All notable changes to gaze-py are documented here.
 
 ### Fixed
 
+- **Strategy 3 pairing never fired for class-based or packaged tests**:
+  `_pair_astroid` reconstructed the test's FQN from its file path, which
+  dropped the enclosing `Test*` class and any package prefix (a `tests/`
+  directory with `__init__.py`) — astroid graph keys look like
+  `tests.test_mod.TestCase.test_x`, so the lookup missed and the transitive
+  call-graph strategy silently paired nothing. Start keys are now located by
+  matching graph keys directly (last component == test name, file stem among
+  the key's components), with BFS seeded from all matches in sorted order.
+- **Astroid graph had no cross-file edges when gaze-py runs as a console
+  script**: astroid resolves a test file's `from pkg.mod import fn` via
+  `sys.path`; the analyzed project's root is only on `sys.path` by accident
+  (e.g. `python` from the repo root). Run as an installed CLI from any other
+  directory, every cross-file inference failed and Strategy 3 produced zero
+  test→source pairings. `_build_astroid_graph` now temporarily prepends each
+  analyzed file's project root (pyproject.toml / setup.py markers) to
+  `sys.path` during the build and restores it afterwards. Combined with the
+  FQN fix above, test-target pairing on fieldkit-cmd went from 48.3% to
+  86.7% (1060 → 1902 of 2194 tests).
 - **Per-effect classification restored in JSON output** (OC-002 / audit G2):
   the runner previously classified every effect but kept only the last
   result in a single per-function slot, and JSON emitted no classification

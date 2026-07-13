@@ -460,31 +460,92 @@ def test_find_project_root_falls_back_to_parent_when_no_markers(
     assert result == some_file.parent
 
 
-def test_pair_astroid_filename_not_under_root_uses_stem(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """_pair_astroid uses stem fallback when file is outside project root.
+def test_pair_astroid_matches_package_and_class_qualified_key(tmp_path: Path) -> None:
+    """_pair_astroid matches graph keys carrying a package prefix and test class.
 
-    # CR-004: Tested directly because pair_to_targets() always resolves a real
-    # project root; monkeypatching _find_project_root to return a non-ancestor
-    # path exercises the ValueError → stem-fallback branch in _pair_astroid
-    # without requiring a contrived filesystem layout.
+    Regression: astroid qnames for a test inside a ``tests`` package (with
+    __init__.py) and a Test* class look like
+    ``tests.test_mod.TestCase.test_x`` — the previous path-derived FQN
+    reconstruction produced ``test_mod.test_x`` and never matched, so
+    Strategy 3 silently paired nothing for class-based tests.
     """
-    import gaze_py.quality.pairing as pairing_mod
-
-    # Return a path that is NOT an ancestor of tmp_path, forcing relative_to()
-    # to raise ValueError and trigger the stem fallback.
-    other_root = tmp_path.parent / "nonexistent_sibling_xyz"
-    monkeypatch.setattr(pairing_mod, "_find_project_root", lambda _: other_root)
-
-    test_file = tmp_path / "test_mymodule.py"
-    test_file.write_text("def test_foo(): pass\n")
+    graph: dict[str, set[str]] = {
+        "tests.test_mod.TestParser.test_parses_value": {"pkg.parser.parse_value"},
+    }
+    test_file = tmp_path / "test_mod.py"
+    src = "class TestParser:\n    def test_parses_value(self) -> None: pass\n"
+    test_file.write_text(src, encoding="utf-8")
     test_funcs = find_test_functions(test_file)
     assert test_funcs
 
-    # source_names contains the stem of the test file so a stem match is
-    # possible; the key property is that no ValueError is raised.
-    source_names = {"test_mymodule"}
-    result = _pair_astroid(test_funcs[0], source_names, graph={})
-    # result may be None (BFS finds nothing) or str (stem matched a source name).
-    assert result is None or isinstance(result, str)
+    result = _pair_astroid(test_funcs[0], {"parse_value"}, graph)
+    assert result == "parse_value"
+
+
+def test_pair_astroid_ignores_same_name_in_other_module(tmp_path: Path) -> None:
+    """A graph key with the same test name but a different module stem must not match.
+
+    Guards the stem-component requirement in start-key matching: without it,
+    ``test_setup`` in an unrelated module would seed the BFS and produce a
+    false pairing.
+    """
+    graph: dict[str, set[str]] = {
+        "tests.test_other.test_setup": {"pkg.other.other_target"},
+    }
+    test_file = tmp_path / "test_mod.py"
+    test_file.write_text("def test_setup() -> None: pass\n", encoding="utf-8")
+    test_funcs = find_test_functions(test_file)
+    assert test_funcs
+
+    result = _pair_astroid(test_funcs[0], {"other_target"}, graph)
+    assert result is None
+
+
+def test_build_astroid_graph_resolves_imports_without_project_on_sys_path(
+    tmp_path: Path,
+) -> None:
+    """Cross-file import edges are inferred even when the project is not importable.
+
+    Regression: astroid resolves ``from pkg.mod import fn`` via sys.path.
+    Running gaze-py as a console script against another repo leaves that
+    repo's root off sys.path, so every cross-file inference failed and
+    Strategy 3 produced zero test→source edges. _build_astroid_graph must
+    temporarily add the analyzed project's root (D8 markers) to sys.path —
+    and remove it again afterwards.
+    """
+    import sys as _sys
+
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    src_file = pkg / "mod.py"
+    src_file.write_text("def target_fn() -> int:\n    return 1\n", encoding="utf-8")
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "__init__.py").write_text("", encoding="utf-8")
+    test_file = tests_dir / "test_mod.py"
+    test_file.write_text(
+        "from pkg.mod import target_fn\n\n"
+        "def test_target_behaviour() -> None:\n"
+        "    assert target_fn() == 1\n",
+        encoding="utf-8",
+    )
+
+    assert str(tmp_path) not in _sys.path
+    path_before = list(_sys.path)
+
+    graph = _build_astroid_graph([test_file], [src_file])
+
+    # The temporary root must be gone again.
+    assert _sys.path == path_before
+
+    # The cross-file edge must exist: some test-side key calls pkg.mod.target_fn.
+    callees = {c for edges in graph.values() for c in edges}
+    assert "pkg.mod.target_fn" in callees
+
+    # And Strategy 3 end-to-end pairs the test to the target.
+    test_funcs = find_test_functions(test_file)
+    result = _pair_astroid(test_funcs[0], {"target_fn"}, graph)
+    assert result == "target_fn"

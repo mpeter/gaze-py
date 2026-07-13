@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import collections
+import contextlib
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -134,6 +135,16 @@ def _build_astroid_graph(
     invocation (audit P3, docs/audit-2026-07-12.md). Third-party modules do
     not change mid-process; the analyzed files are the only staleness risk.
 
+    Import resolution: astroid resolves cross-file imports (a test file's
+    ``from mypkg.mod import fn``) via ``sys.path``. When gaze-py runs as a
+    console script against another project, that project's root is NOT on
+    ``sys.path``, so every cross-file inference fails and the graph contains
+    no test→source edges — Strategy 3 silently pairs nothing. To make the
+    build cwd- and entry-point-independent, the project root of every
+    analyzed file (located via pyproject.toml/setup.py markers, D8) is
+    prepended to ``sys.path`` for the duration of the build and removed
+    afterwards.
+
     Files that Astroid cannot load (encoding errors, unresolvable imports,
     syntax errors) are skipped with a stderr warning; the graph is partial
     but no exception is raised (D4).
@@ -153,26 +164,38 @@ def _build_astroid_graph(
     # D2: evict cached entries for the analyzed files only (see docstring).
     _evict_analyzed_from_cache(unique_files)
 
+    # Make analyzed projects importable so astroid can resolve their
+    # cross-file imports (see docstring). Only roots not already present
+    # are added, and they are removed in the finally block.
+    roots = {str(_find_project_root(p.resolve())) for p in unique_files}
+    added_roots = [r for r in roots if r not in sys.path]
+    sys.path[:0] = added_roots
+
     graph: collections.defaultdict[str, set[str]] = collections.defaultdict(set)
 
-    for path in unique_files:
-        try:
-            module = MANAGER.ast_from_file(str(path))
-        except astroid.exceptions.AstroidBuildingError as exc:
-            sys.stderr.write(f"warning: astroid could not load {path}: {exc}\n")
-            continue
+    try:
+        for path in unique_files:
+            try:
+                module = MANAGER.ast_from_file(str(path))
+            except astroid.exceptions.AstroidBuildingError as exc:
+                sys.stderr.write(f"warning: astroid could not load {path}: {exc}\n")
+                continue
 
-        for fn in module.nodes_of_class(astroid.nodes.FunctionDef):
-            caller_qname = fn.qname()
-            for call in fn.nodes_of_class(astroid.nodes.Call):
-                try:
-                    for inferred in call.func.infer():
-                        if inferred is astroid.util.Uninferable:
-                            continue
-                        callee_qname = inferred.qname()
-                        graph[caller_qname].add(callee_qname)
-                except astroid.exceptions.InferenceError:
-                    continue
+            for fn in module.nodes_of_class(astroid.nodes.FunctionDef):
+                caller_qname = fn.qname()
+                for call in fn.nodes_of_class(astroid.nodes.Call):
+                    try:
+                        for inferred in call.func.infer():
+                            if inferred is astroid.util.Uninferable:
+                                continue
+                            callee_qname = inferred.qname()
+                            graph[caller_qname].add(callee_qname)
+                    except astroid.exceptions.InferenceError:
+                        continue
+    finally:
+        for r in added_roots:
+            with contextlib.suppress(ValueError):
+                sys.path.remove(r)
 
     return dict(graph)
 
@@ -207,11 +230,20 @@ def _pair_astroid(
 ) -> str | None:
     """Pair a test function to a source function via transitive call graph BFS.
 
-    Derives the test function's fully-qualified name using the D8 project-root
-    heuristic, then performs a BFS over the Astroid call graph up to
+    Locates the test function's entry in the Astroid call graph by matching
+    graph keys instead of reconstructing the FQN from the file path: a key
+    matches when its last component equals the test's name and the test
+    file's stem appears among its components. Astroid qnames keep the full
+    package path (``tests.test_mod``) and include the enclosing test class
+    (``tests.test_mod.TestCase.test_x``) — the previous path-derived
+    reconstruction (``test_mod.test_x``) missed both, so Strategy 3 never
+    fired for class-based tests or tests inside a ``tests`` package.
+
+    From the matched key(s), performs a BFS over the call graph up to
     ``depth_limit`` hops. At each callee FQN, the short name (last segment
     after the final ``.``) is checked against ``source_names``. The first
-    matching short name is returned.
+    matching short name is returned; start keys are scanned in sorted order
+    for determinism.
 
     Uses ``graph.get(fqn, set())`` at every lookup — a callee that was never
     itself a caller has no key in the adjacency dict; ``graph[fqn]`` would
@@ -227,31 +259,20 @@ def _pair_astroid(
     Returns:
         The short name of the first matching source function, or None.
     """
-    # D8: derive FQN from filename using project-root heuristic.
-    file_path = Path(test_func.filename)
-    project_root = _find_project_root(file_path)
-
-    try:
-        rel = file_path.relative_to(project_root)
-    except ValueError:
-        # filename is not under project_root — fall back to stem only.
-        rel = Path(file_path.stem)
-
-    # Convert path separators to dots and strip .py suffix.
-    parts = list(rel.with_suffix("").parts)
-
-    # Strip leading "tests", "test", "src" components to match Astroid's
-    # module naming (Astroid sees the module name, not the filesystem path).
-    if parts and parts[0] in {"tests", "test", "src"}:
-        parts = parts[1:]
-
-    module_fqn = ".".join(parts)
-    start_fqn = f"{module_fqn}.{test_func.name}" if module_fqn else test_func.name
+    # Match the test's graph key(s) directly: last component == test name,
+    # and the test file's stem appears among the key's components. This is
+    # robust to package prefixes and enclosing test classes, neither of
+    # which TestFunc knows about.
+    stem = Path(test_func.filename).stem
+    start_keys = sorted(
+        key for key in graph if key.rsplit(".", 1)[-1] == test_func.name and stem in key.split(".")
+    )
+    if not start_keys:
+        return None
 
     # BFS over the call graph, tracking (node_fqn, depth) pairs.
-    queue: collections.deque[tuple[str, int]] = collections.deque()
-    queue.append((start_fqn, 0))
-    visited: set[str] = {start_fqn}
+    queue: collections.deque[tuple[str, int]] = collections.deque((key, 0) for key in start_keys)
+    visited: set[str] = set(start_keys)
 
     while queue:
         fqn, depth = queue.popleft()
