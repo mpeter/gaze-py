@@ -165,26 +165,62 @@ def _classify_assert(node: ast.Assert) -> tuple[AssertionKind, frozenset[str]]:
     return AssertionKind.STDLIB_TRUTH, names
 
 
-def _is_raises_context(node: ast.With) -> bool:
-    """Return True if the with-statement is a pytest.raises() context.
+def _is_raises_call(ctx: ast.expr) -> bool:
+    """Return True if the expression is a call to a raises-style assertion.
 
-    Matches: ``with pytest.raises(SomeError):``
+    Matches attribute calls whose name is ``raises`` (e.g., ``pytest.raises``),
+    ``assertRaises`` (e.g., ``self.assertRaises``), or ``assertRaisesRegex``
+    (e.g., ``self.assertRaisesRegex``).
 
     Args:
-        node: The ast.With node to inspect.
+        ctx: A context-manager expression to inspect.
 
     Returns:
-        True when the first context manager is a call to an attribute named
-        "raises" (e.g., pytest.raises).
+        True when ctx is a call to an attribute named "raises",
+        "assertRaises", or "assertRaisesRegex".
     """
-    if not node.items:
-        return False
-    ctx = node.items[0].context_expr
     return (
         isinstance(ctx, ast.Call)
         and isinstance(ctx.func, ast.Attribute)
-        and ctx.func.attr == "raises"
+        and ctx.func.attr in {"raises", "assertRaises", "assertRaisesRegex"}
     )
+
+
+def _raises_assertion_kind(ctx: ast.expr) -> AssertionKind:
+    """Return the assertion kind for a raises-style context-manager call.
+
+    ``pytest.raises`` → ``STDLIB_RAISES``; ``self.assertRaises`` /
+    ``self.assertRaisesRegex`` → ``UNITTEST_RAISES``.
+
+    Args:
+        ctx: A context-manager expression already validated by
+            :func:`_is_raises_call`.
+
+    Returns:
+        The matching AssertionKind.
+    """
+    assert isinstance(ctx, ast.Call) and isinstance(ctx.func, ast.Attribute)
+    if ctx.func.attr in {"assertRaises", "assertRaisesRegex"}:
+        return AssertionKind.UNITTEST_RAISES
+    return AssertionKind.STDLIB_RAISES
+
+
+def _is_raises_context(node: ast.With | ast.AsyncWith) -> bool:
+    """Return True if any context manager in the with-statement is a raises call.
+
+    Scans all items in the with-statement, not just the first — handles
+    multi-context-manager forms like ``with (mock.patch(...), pytest.raises(V)):``.
+
+    Also matches ``self.assertRaises(V)`` and ``self.assertRaisesRegex(V, r)``
+    used as context managers.
+
+    Args:
+        node: The ast.With or ast.AsyncWith node to inspect.
+
+    Returns:
+        True when any context manager is a call to a raises-style attribute.
+    """
+    return any(_is_raises_call(item.context_expr) for item in node.items)
 
 
 def _classify_method_call(node: ast.Call) -> AssertionKind | None:
@@ -266,7 +302,7 @@ class _AssertionCollector:
         """
         if isinstance(stmt, ast.Assert):
             self._handle_assert(stmt, depth=depth)
-        elif isinstance(stmt, ast.With):
+        elif isinstance(stmt, (ast.With, ast.AsyncWith)):
             self._handle_with(stmt, depth=depth)
         elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
             self._handle_call_expr(stmt.value, stmt, depth=depth)
@@ -293,20 +329,27 @@ class _AssertionCollector:
             )
         )
 
-    def _handle_with(self, node: ast.With, *, depth: int) -> None:
-        """Process a with-statement, detecting pytest.raises() contexts.
+    def _handle_with(self, node: ast.With | ast.AsyncWith, *, depth: int) -> None:
+        """Process a with/async-with statement, detecting raises contexts.
+
+        Scans all context managers in the with-statement for raises-style
+        assertions (``pytest.raises``, ``self.assertRaises``, etc.).
+        Handles multi-CM forms like ``with (mock.patch(...), pytest.raises(V)):``.
 
         Args:
-            node: The with-statement node.
+            node: The with-statement or async-with-statement node.
             depth: Current recursion depth.
         """
         if _is_raises_context(node):
-            ctx = node.items[0].context_expr
-            names = _extract_referenced_names(ctx)
+            raises_ctx = next(
+                item.context_expr for item in node.items if _is_raises_call(item.context_expr)
+            )
+            names = _extract_referenced_names(raises_ctx)
+            kind = _raises_assertion_kind(raises_ctx)
             self.results.append(
                 AssertionSite(
                     location=_location(self._filename, node),
-                    kind=AssertionKind.STDLIB_RAISES,
+                    kind=kind,
                     depth=depth,
                     referenced_names=names,
                 )
@@ -354,6 +397,8 @@ class _AssertionCollector:
         called_name: str | None = None
         if isinstance(call.func, ast.Name):
             called_name = call.func.id
+        elif isinstance(call.func, ast.Attribute):
+            called_name = call.func.attr
 
         if called_name is None:
             return

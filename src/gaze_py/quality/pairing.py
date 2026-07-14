@@ -78,20 +78,23 @@ def find_test_functions(filepath: Path) -> list[TestFunc]:
 
 
 def _extract_call_name(node: ast.Call) -> str | None:
-    """Extract the simple function name from a Call node.
+    """Extract the function name from a Call node.
 
-    Returns the name only for simple name calls (e.g., ``foo(...)``).
-    Method calls and qualified names (e.g., ``obj.method()``, ``mod.fn()``)
-    return None — the call graph strategy targets direct function calls only.
+    Handles both simple name calls (``foo(...)``) and attribute calls
+    (``mod.fn()``, ``obj.method()``).  For attribute calls the attribute
+    name is returned — e.g., ``dq.parse_drafts()`` yields ``"parse_drafts"``.
 
     Args:
         node: The ast.Call node to inspect.
 
     Returns:
-        The function name string if the call is a simple name call, else None.
+        The function name string, or None for unsupported call shapes
+        (e.g., subscript calls like ``funcs[0](...)``).
     """
     if isinstance(node.func, ast.Name):
         return node.func.id
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr
     return None
 
 

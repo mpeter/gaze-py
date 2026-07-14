@@ -300,3 +300,68 @@ def test_map_output_length_all_unmapped() -> None:
     mapped = map_assertions_to_effects(assertions, target, {})
     assert len(mapped) == len(assertions)
     assert all(et is None for _, et in mapped)
+
+
+# ---------------------------------------------------------------------------
+# Module-aliased call bindings (#65)
+# ---------------------------------------------------------------------------
+
+
+def test_build_call_bindings_module_aliased_call() -> None:
+    """drafts = dq.parse_drafts(msgs) → {"drafts": "return_value"} (#65)."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        drafts = dq.parse_drafts(msgs)
+        assert len(drafts) == 1
+    """)
+    bindings = build_call_bindings(tf, "parse_drafts")
+    assert bindings == {"drafts": "return_value"}
+
+
+def test_build_call_bindings_aliased_tuple_unpack() -> None:
+    """x, err = mod.fn(a) → {"x": "return_value", "err": "error_return"}."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        x, err = mod.compute(a)
+        assert x == 42
+    """)
+    bindings = build_call_bindings(tf, "compute")
+    assert bindings == {"x": "return_value", "err": "error_return"}
+
+
+def test_build_call_bindings_aliased_void_call() -> None:
+    """alias.fn() with no assignment → {} (no binding)."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        mod.setup()
+        assert True
+    """)
+    bindings = build_call_bindings(tf, "setup")
+    assert bindings == {}
+
+
+# ---------------------------------------------------------------------------
+# Annotated assignment bindings (Bug D)
+# ---------------------------------------------------------------------------
+
+
+def test_build_call_bindings_annotated_assignment() -> None:
+    """result: int = example_fn(1) → {"result": "return_value"} (Bug D)."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        result: int = example_fn(1, 2)
+        assert result == 3
+    """)
+    bindings = build_call_bindings(tf, "example_fn")
+    assert bindings == {"result": "return_value"}
+
+
+def test_build_call_bindings_annotated_aliased() -> None:
+    """result: int = mod.fn(1) → {"result": "return_value"}."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        result: int = mod.compute(1, 2)
+        assert result == 3
+    """)
+    bindings = build_call_bindings(tf, "compute")
+    assert bindings == {"result": "return_value"}

@@ -26,10 +26,15 @@ def build_call_bindings(test_func: TestFunc, target_name: str) -> dict[str, str]
 
     Binding rules:
     - ``result = target_name(...)``        → {"result": "return_value"}
+    - ``result: T = target_name(...)``     → {"result": "return_value"}
     - ``x, err = target_name(...)``        → {"x": "return_value", "err": "error_return"}
     - ``a, b, c = target_name(...)``       → {"a": "return_value", "b": "error_return"}
       (index 0 → return_value, index 1 → error_return; indices 2+ ignored)
     - ``target_name(...)`` (void call)     → {} (no binding)
+
+    Matches both plain calls (``target_name(...)``) and module-aliased calls
+    (``alias.target_name(...)``). Also handles annotated assignments
+    (``ast.AnnAssign``) in addition to plain assignments (``ast.Assign``).
 
     Args:
         test_func: The test function to scan.
@@ -41,14 +46,18 @@ def build_call_bindings(test_func: TestFunc, target_name: str) -> dict[str, str]
     result: dict[str, str] = {}
 
     for stmt in ast.walk(test_func.node):
-        if not isinstance(stmt, ast.Assign):
-            continue
-        if not _is_call_to(stmt.value, target_name):
-            continue
-
-        # Single target: result = target_name(...)
-        if len(stmt.targets) == 1:
-            _bind_assignment_target(stmt.targets[0], result)
+        if isinstance(stmt, ast.Assign):
+            if not _is_call_to(stmt.value, target_name):
+                continue
+            # Single target: result = target_name(...)
+            if len(stmt.targets) == 1:
+                _bind_assignment_target(stmt.targets[0], result)
+        elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+            if not _is_call_to(stmt.value, target_name):
+                continue
+            # Annotated assignment: result: T = target_name(...)
+            # AnnAssign.target is always a single Name (no tuple unpacking).
+            _bind_assignment_target(stmt.target, result)
 
     return result
 
@@ -77,20 +86,28 @@ def _bind_assignment_target(target: ast.expr, result: dict[str, str]) -> None:
 
 
 def _is_call_to(node: ast.expr, target_name: str) -> bool:
-    """Return True if node is a direct call to target_name.
+    """Return True if node is a call to target_name (plain or module-aliased).
+
+    Matches both ``target_name(...)`` (plain ``ast.Name`` call) and
+    ``alias.target_name(...)`` (``ast.Attribute`` call where the attribute
+    name matches ``target_name``).
 
     Args:
         node: The expression node to inspect.
         target_name: The function name to match.
 
     Returns:
-        True when node is ast.Call with func being ast.Name matching target_name.
+        True when node is an ast.Call whose function name matches target_name.
     """
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == target_name
-    )
+    if not isinstance(node, ast.Call):
+        return False
+    # Plain call: target_name(...)
+    if isinstance(node.func, ast.Name) and node.func.id == target_name:
+        return True
+    # Module-aliased call: alias.target_name(...)
+    if isinstance(node.func, ast.Attribute) and node.func.attr == target_name:
+        return True
+    return False
 
 
 def map_assertions_to_effects(
