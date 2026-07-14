@@ -283,3 +283,143 @@ def test_extract_names_call() -> None:
     assert isinstance(expr, ast.Call)
     names = _extract_referenced_names(expr)
     assert "f" in names
+
+
+# ---------------------------------------------------------------------------
+# Multi-CM with-statement raises detection (#64)
+# ---------------------------------------------------------------------------
+
+
+def test_stdlib_raises_multi_cm_raises_first() -> None:
+    """with pytest.raises(V), SomeCtx(): → still detected (regression guard)."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        with pytest.raises(ValueError), SomeCtx():
+            risky(-1)
+    """)
+    sites = detect_assertions(tf)
+    assert len(sites) == 1
+    assert sites[0].kind == AssertionKind.STDLIB_RAISES
+
+
+def test_stdlib_raises_multi_cm_raises_last() -> None:
+    """with SomeCtx(), pytest.raises(V): → detected at any position (#64)."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        with SomeCtx(), pytest.raises(ValueError):
+            risky(-1)
+    """)
+    sites = detect_assertions(tf)
+    assert len(sites) == 1
+    assert sites[0].kind == AssertionKind.STDLIB_RAISES
+
+
+def test_stdlib_raises_multi_cm_parenthesized() -> None:
+    """with (mock.patch(...), pytest.raises(V)): → detected (parenthesized #64)."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        with (
+            mock.patch("some.module"),
+            pytest.raises(ValueError, match="bad"),
+        ):
+            risky(-1)
+    """)
+    sites = detect_assertions(tf)
+    assert len(sites) == 1
+    assert sites[0].kind == AssertionKind.STDLIB_RAISES
+
+
+# ---------------------------------------------------------------------------
+# unittest assertRaises/assertRaisesRegex as context manager (Bug C)
+# ---------------------------------------------------------------------------
+
+
+def test_assert_raises_context_manager() -> None:
+    """with self.assertRaises(V): → UNITTEST_RAISES (Bug C)."""
+    tf = _make_test_func("""
+    def test_example(self) -> None:
+        with self.assertRaises(ValueError):
+            risky(-1)
+    """)
+    sites = detect_assertions(tf)
+    assert len(sites) == 1
+    assert sites[0].kind == AssertionKind.UNITTEST_RAISES
+
+
+def test_assert_raises_regex_context_manager() -> None:
+    """with self.assertRaisesRegex(V, r'msg'): → UNITTEST_RAISES."""
+    tf = _make_test_func("""
+    def test_example(self) -> None:
+        with self.assertRaisesRegex(ValueError, "bad"):
+            risky(-1)
+    """)
+    sites = detect_assertions(tf)
+    assert len(sites) == 1
+    assert sites[0].kind == AssertionKind.UNITTEST_RAISES
+
+
+def test_assert_raises_cm_multi_cm() -> None:
+    """with (mock.patch(...), self.assertRaises(V)): → UNITTEST_RAISES."""
+    tf = _make_test_func("""
+    def test_example(self) -> None:
+        with (
+            mock.patch("mod.fn"),
+            self.assertRaises(ValueError),
+        ):
+            risky(-1)
+    """)
+    sites = detect_assertions(tf)
+    assert len(sites) == 1
+    assert sites[0].kind == AssertionKind.UNITTEST_RAISES
+
+
+# ---------------------------------------------------------------------------
+# Module-aliased helper recursion (Enhancement E)
+# ---------------------------------------------------------------------------
+
+
+def test_helper_recursion_module_aliased() -> None:
+    """utils.assert_valid(x) → recurses into assert_valid helper body."""
+    tf = _make_test_func("""
+    def test_example() -> None:
+        utils.assert_valid(result)
+    """)
+    # Build a pkg_ast with the helper function defined
+    helper_src = textwrap.dedent("""
+    def assert_valid(x):
+        assert x > 0
+    """)
+    pkg_ast = {"helpers": ast.parse(helper_src)}
+    sites = detect_assertions(tf, pkg_ast=pkg_ast)
+    assert len(sites) == 1
+    assert sites[0].kind == AssertionKind.STDLIB_EQUALITY
+
+
+# ---------------------------------------------------------------------------
+# async with pytest.raises (Enhancement G)
+# ---------------------------------------------------------------------------
+
+
+def test_async_with_pytest_raises() -> None:
+    """async with pytest.raises(V): → STDLIB_RAISES."""
+    src = textwrap.dedent("""
+    async def test_example() -> None:
+        async with pytest.raises(ValueError):
+            await risky(-1)
+    """)
+    module = ast.parse(src)
+    # ast.walk finds AsyncFunctionDef
+    for node in ast.walk(module):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "test_example":
+            tf = TestFunc(
+                name="test_example",
+                filename="test_example.py",
+                lineno=node.lineno,
+                node=node,
+            )
+            break
+    else:
+        raise AssertionError("test_example not found")
+    sites = detect_assertions(tf)
+    assert len(sites) == 1
+    assert sites[0].kind == AssertionKind.STDLIB_RAISES

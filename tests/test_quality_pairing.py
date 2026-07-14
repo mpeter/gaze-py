@@ -100,6 +100,25 @@ def test_pair_call_graph_no_name_match() -> None:
     assert result.confidence == 0.8
 
 
+def test_pair_call_graph_attribute_call() -> None:
+    """Module-aliased call dq.parse_drafts() → Strategy 2 finds parse_drafts.
+
+    Previously _extract_call_name returned None for attribute calls, making
+    Strategy 2 blind to module-aliased calls like dq.parse_drafts().
+    """
+    src = """
+    def test_validate_and_save() -> None:
+        result = dq.parse_drafts(msgs)
+        assert len(result) == 1
+    """
+    tf = _make_test_func(src, "test_validate_and_save")
+    targets = [_make_target("parse_drafts"), _make_target("other_fn")]
+    result = pair_to_targets(tf, targets)
+    assert result.target_name == "parse_drafts"
+    assert result.inference_method == "call_graph"
+    assert result.confidence == 0.8
+
+
 def test_pair_unmatched() -> None:
     """No name match and no call found → None target."""
     tf = _make_test_func("def test_xyz() -> None: pass", "test_xyz")
@@ -207,19 +226,19 @@ def test_extract_call_name_simple() -> None:
 
 
 def test_extract_call_name_method() -> None:
-    """Method call → returns None."""
+    """Method call → returns the method name."""
     stmt = ast.parse("obj.method()").body[0]
     assert isinstance(stmt, ast.Expr)
     assert isinstance(stmt.value, ast.Call)
-    assert _extract_call_name(stmt.value) is None
+    assert _extract_call_name(stmt.value) == "method"
 
 
 def test_extract_call_name_qualified() -> None:
-    """Qualified name call → returns None."""
+    """Qualified name call → returns the attribute name."""
     stmt = ast.parse("mod.fn()").body[0]
     assert isinstance(stmt, ast.Expr)
     assert isinstance(stmt.value, ast.Call)
-    assert _extract_call_name(stmt.value) is None
+    assert _extract_call_name(stmt.value) == "fn"
 
 
 # ---------------------------------------------------------------------------
