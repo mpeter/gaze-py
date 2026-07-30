@@ -4,6 +4,41 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-07-30
+
+### Fixed
+
+- **Bare function-name collisions in test-target pairing**: every pairing
+  lookup (Strategy 1 name convention, Strategy 2 call-graph, Strategy 3
+  astroid, plus `pipeline.py`'s `target_map`, `seen_names`, and
+  `build_contract_coverage_map()`) keyed on bare function name with no
+  module/class disambiguation, so contract coverage was silently
+  misattributed across unrelated functions sharing a name in different
+  files or classes (`GHIssueStore.add_note` vs. an unrelated top-level
+  `add_note`, reproduced deterministically: 100% -> 50% on an unmodified
+  function). Source functions are now grouped by bare name into an index;
+  a match is used unambiguously when only one candidate shares the name,
+  or disambiguated via a qualified key (receiver for methods, file stem
+  for module-level functions) checked against the astroid FQN. When
+  ambiguity can't be resolved, the strategy declines rather than guessing
+  and falls through to the next one. `TestTargetPair` gains an additive
+  `target_file` field so downstream consumers can key on `(function,
+  file_path)` instead of bare name. This was the exact defect that led
+  consumers to disable gazepy's CRAP/contract-coverage gate.
+- **`fix_strategy()` recommended `add_tests`/`add_assertions` past the
+  point they helped**: Rule 4 (default) fired unconditionally whenever
+  Rules 1-3 didn't match, regardless of existing line coverage, so a
+  function already at 90%+ coverage with CRAP elevated by complexity was
+  told to add more tests. Rule 3 (`add_assertions`) fired purely from the
+  quadrant label with no visibility into whether the O1 quality pipeline
+  found any actual unasserted contractual effects, so a function with zero
+  assertion gaps was still told to add assertions. `fix_strategy()` now
+  accepts `has_assertion_gaps: bool | None = None` (threaded from
+  `ContractCoverageResult.gaps` where quality data is available; `None`
+  preserves prior behavior for callers without O1 data), and a new Rule 4
+  recommends `decompose` instead of `add_tests` when line coverage is
+  already `>= 0.5` and no higher rule fired.
+
 ## [0.8.0] — 2026-07-13
 
 ### Added
