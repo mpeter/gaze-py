@@ -1531,6 +1531,7 @@ def _score_target(
             quadrant_label=quad,
             threshold=config.crap_threshold,
             complexity_threshold=int(config.crap_threshold),
+            has_assertion_gaps=bool(quality_result.gaps),
         )
         contract_coverage_pct = quality_result.percentage
         contract_coverage_reason = quality_result.reason

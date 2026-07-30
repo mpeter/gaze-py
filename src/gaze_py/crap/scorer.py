@@ -134,6 +134,7 @@ def fix_strategy(
     quadrant_label: str | None,
     threshold: float = 15.0,
     complexity_threshold: int = _DEFAULT_COMPLEXITY_THRESHOLD,
+    has_assertion_gaps: bool | None = None,
 ) -> str | None:
     """Determine the recommended fix strategy for a function.
 
@@ -143,9 +144,19 @@ def fix_strategy(
               -> "decompose_and_test"
     - Rule 2: complexity >= complexity_threshold AND line_coverage > 0.0
               AND quadrant == "Q3_SimpleButUnderspecified" -> "decompose"
-    - Rule 3: quadrant == "Q3_SimpleButUnderspecified" (low CRAP complexity)
-              -> "add_assertions"
-    - Rule 4 (default): -> "add_tests"
+    - Rule 3: quadrant == "Q3_SimpleButUnderspecified" AND has_assertion_gaps
+              is not False -> "add_assertions". Suppressed when the caller
+              affirmatively knows there are no assertion gaps
+              (has_assertion_gaps=False) — recommending more assertions when
+              contract coverage is already 100% is not actionable.
+    - Rule 4: line_coverage >= 0.5 and no rule above fired -> "decompose".
+              CRAP staying at/above threshold despite already-adequate line
+              coverage means complexity is the dominant term; recommending
+              more tests would be low-value. This also makes "add_tests"
+              unreachable once coverage is already adequate, closing the
+              gap where Rule 5 previously fired regardless of how much
+              coverage already existed.
+    - Rule 5 (default): -> "add_tests"
 
     Args:
         crap_score: Computed CRAP score, or None.
@@ -154,6 +165,9 @@ def fix_strategy(
         quadrant_label: Quadrant label from quadrant(), or None.
         threshold: CRAP threshold. Default: 15.0.
         complexity_threshold: Complexity threshold for Rules 1 and 2. Default: 15.
+        has_assertion_gaps: Whether the O1 quality pipeline found unasserted
+            contractual effects for this function. None when O1 has not run
+            (unknown — Rule 3 behaves as before). True/False when known.
 
     Returns:
         Fix strategy string, or None when CRAP is null or below threshold.
@@ -172,8 +186,11 @@ def fix_strategy(
     ):
         return "decompose"
 
-    if quadrant_label == "Q3_SimpleButUnderspecified":
+    if quadrant_label == "Q3_SimpleButUnderspecified" and has_assertion_gaps is not False:
         return "add_assertions"
+
+    if line_coverage is not None and line_coverage >= _QUADRANT_HIGH_THRESHOLD:
+        return "decompose"
 
     return "add_tests"
 
