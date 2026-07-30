@@ -1,5 +1,10 @@
 # AGENTS.md
 
+**Before creating, editing, or reviewing any `.py` file under `src/gaze_py/` or
+`tests/`: load the `python-conventions` skill.** It folds the `default.md` +
+`python.md` + `python-custom.md` convention packs into one artifact-triggered read
+— see the Convention Packs section below for what it does and does not cover.
+
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
@@ -62,17 +67,18 @@ make an implementation pass. The following are protected:
 
 ## Convention Packs
 
-This repository uses convention packs scaffolded by
-unbound-force. Agents MUST read the applicable pack(s)
-before writing or reviewing code.
+This repository uses convention packs scaffolded by unbound-force, split by
+audience:
 
-- `.opencode/uf/packs/default.md`
-- `.opencode/uf/packs/default-custom.md`
-- `.opencode/uf/packs/severity.md`
-- `.opencode/uf/packs/content.md`
-- `.opencode/uf/packs/content-custom.md`
-- `.opencode/uf/packs/python.md`
-- `.opencode/uf/packs/python-custom.md`
+- **Writing or reviewing Python source** (`src/gaze_py/`, `tests/`): load the
+  `python-conventions` skill — it folds `default.md`, `python.md`, and
+  `python-custom.md` into one read. Do not read those three pack files
+  separately; the skill is the current source of truth and notes where the
+  packs' rule IDs collide across files.
+- **Content agents** (Scribe/Herald/Envoy — docs, blog, PR/comms): load
+  `.opencode/uf/packs/content.md` + `content-custom.md` directly.
+- **Divisor Council review personas**: load `.opencode/uf/packs/severity.md`
+  directly for the shared severity taxonomy.
 
 Skills provide specialized instructions and workflows for specific tasks.
 Use the skill tool to load a skill when a task matches its description.

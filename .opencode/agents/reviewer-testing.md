@@ -27,8 +27,10 @@ Before reviewing, read:
 
 1. `AGENTS.md` — Testing Conventions, Coding Conventions, Build & Test Commands
 2. `.specify/memory/constitution.md` — Core Principles (especially Principle IV: Testability)
-3. `.opencode/uf/packs/python.md` — Python convention pack (TC-001 through TC-013)
-4. `.opencode/uf/packs/python-custom.md` — gaze-py custom rules (CR-001 through CR-006)
+3. The `python-conventions` skill — folds `default.md`, `python.md` (TC-001 through
+   TC-014), and `python-custom.md` (CR-001 through CR-007, including CR-007
+   gaze-visibility — the direct-assertion binding-chain rule that determines
+   whether a test scores any contract coverage at all) into one load
 
 ---
 
