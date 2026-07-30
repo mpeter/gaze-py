@@ -9,6 +9,7 @@ Orchestrates the full pipeline:
 
 from __future__ import annotations
 
+import collections
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from gaze_py.taxonomy.models import (
     FunctionTarget,
     OverSpecification,
     QualityReport,
+    TestTargetPair,
 )
 
 
@@ -101,8 +103,14 @@ def assess(
         docs_text=project_docs_text(src_path.resolve(), config),
     )
 
-    # Build a lookup map: function name → FunctionTarget.
-    target_map: dict[str, FunctionTarget] = {t.function: t for t in source_targets}
+    # Build a lookup map: function name → all FunctionTargets with that name.
+    # A list, not a single value — multiple production functions can share a
+    # bare name across different files/classes (e.g. a method and an
+    # unrelated top-level function both named "add_note"). Resolved via
+    # _resolve_target() using TestTargetPair.target_file to disambiguate.
+    target_map: dict[str, list[FunctionTarget]] = collections.defaultdict(list)
+    for t in source_targets:
+        target_map[t.function].append(t)
 
     # Step 2: discover test functions.
     test_funcs = _collect_test_functions(tests_path)
@@ -141,14 +149,20 @@ def assess(
             reports.append(report)
 
     # Step 5: collect untested production functions (D6 in design.md).
-    # seen_names is the set of non-None target_function.function values from paired reports.
-    seen_names: set[str] = {
-        r.target_function.function for r in reports if r.target_function is not None
+    # seen is (function, file_path) pairs, not bare names — a bare-name set
+    # would incorrectly mark an untested function as "seen" whenever an
+    # unrelated same-named function elsewhere was tested (e.g. testing
+    # GHIssueStore.add_note must not suppress the untested-function entry
+    # for an unrelated top-level add_note in a different file).
+    seen: set[tuple[str, str]] = {
+        (r.target_function.function, r.target_function.file_path)
+        for r in reports
+        if r.target_function is not None
     }
 
     if target_func is None:
         # Unfiltered run: compute untested reports for all unpaired source functions.
-        untested = _untested_reports(tuple(source_targets), seen_names, config)
+        untested = _untested_reports(tuple(source_targets), seen, config)
     else:
         # Filtered run: seen_names is filtered, so we cannot reliably determine
         # which functions are truly untested. Set untested to empty (B-03).
@@ -157,11 +171,45 @@ def assess(
     return AssessResult(reports=tuple(reports), untested=untested)
 
 
+def _resolve_target(
+    pair: TestTargetPair,
+    target_map: dict[str, list[FunctionTarget]],
+) -> FunctionTarget | None:
+    """Resolve a TestTargetPair to its concrete FunctionTarget.
+
+    target_name alone is not a unique key when multiple production
+    functions share a bare name (e.g. a method and an unrelated top-level
+    function both named "add_note"). When target_map has more than one
+    candidate for pair.target_name, disambiguates via pair.target_file —
+    refusing (returning None) rather than guessing when target_file does
+    not resolve it to exactly one candidate. A refused resolution surfaces
+    as "Inferred target not found" in the caller, which is honest: better
+    than silently misattributing contract coverage to the wrong function.
+
+    Args:
+        pair: The TestTargetPair to resolve. pair.target_name must not be None.
+        target_map: Function name → all FunctionTargets sharing that name.
+
+    Returns:
+        The matched FunctionTarget, or None when target_name has no
+        candidates or is ambiguous and unresolved.
+    """
+    assert pair.target_name is not None, "caller must check pair.target_name before resolving"
+    candidates = target_map.get(pair.target_name, [])
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1 and pair.target_file is not None:
+        matches = [c for c in candidates if c.file_path == pair.target_file]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
 def _process_test_func(
     test_func: TestFunc,
     *,
     source_targets: list[FunctionTarget],
-    target_map: dict[str, FunctionTarget],
+    target_map: dict[str, list[FunctionTarget]],
     config: GazeConfig,
     target_func: str | None,
     astroid_graph_provider: Callable[[], dict[str, set[str]]] | None = None,
@@ -207,7 +255,7 @@ def _process_test_func(
             test_location=f"{test_func.filename}:{test_func.lineno}",
         )
 
-    production_target = target_map.get(pair.target_name)
+    production_target = _resolve_target(pair, target_map)
     if production_target is None:
         # Target name was inferred but not found in the source map.
         return QualityReport(
@@ -259,19 +307,22 @@ def _process_test_func(
 
 def _untested_reports(
     source_targets: tuple[FunctionTarget, ...],
-    seen_names: set[str],
+    seen: set[tuple[str, str]],
     config: GazeConfig,
 ) -> tuple[QualityReport, ...]:
     """Build QualityReport entries for production functions with no paired test.
 
-    For each FunctionTarget whose name is not in seen_names, calls
+    For each FunctionTarget whose (function, file_path) is not in seen, calls
     compute_contract_coverage() with no_test_coverage=True and emits a
     QualityReport with test_function="" as a sentinel (D6 in design.md).
 
     Args:
         source_targets: All production FunctionTargets from source analysis.
-        seen_names: Set of target_function values already covered by paired
-            test-keyed reports. Functions in this set are skipped.
+        seen: Set of (function, file_path) pairs already covered by paired
+            test-keyed reports. Functions matching an entry are skipped.
+            Keyed on the pair, not bare function name — a bare-name key
+            would incorrectly suppress an untested entry whenever an
+            unrelated same-named function elsewhere was tested.
         config: GazeConfig with classification thresholds.
 
     Returns:
@@ -280,7 +331,7 @@ def _untested_reports(
     """
     results: list[QualityReport] = []
     for target in source_targets:
-        if target.function in seen_names:
+        if (target.function, target.file_path) in seen:
             continue
         coverage = compute_contract_coverage(target, [], config=config, no_test_coverage=True)
         results.append(
@@ -320,14 +371,20 @@ def build_contract_coverage_map(
     config: GazeConfig,
     *,
     include_unexported: bool = True,
-) -> dict[str, ContractCoverageResult]:
-    """Build a mapping from production function name to its best ContractCoverageResult.
+) -> dict[tuple[str, str], ContractCoverageResult]:
+    """Build a mapping from (function, file_path) to its best ContractCoverageResult.
 
     Runs the full O1 quality assessment pipeline via ``assess()`` and
-    consolidates the results into a flat dict keyed by function name.
-    When multiple test functions target the same production function, the
-    entry with the highest ``percentage`` is kept (or the first entry when
-    both percentages are ``None``).
+    consolidates the results into a flat dict keyed by (function, file_path)
+    — not bare function name. A bare-name key would misattribute contract
+    coverage across same-named functions in different files/classes: e.g.
+    an untested top-level ``add_note`` would silently inherit a fully-tested
+    ``SomeClass.add_note``'s 100% coverage (the exact false-positive class
+    that led fieldkit-cmd to disable the CRAP/contract-coverage gate,
+    reproduced deterministically via this field: 100% -> 50% on an
+    unmodified function). When multiple test functions target the SAME
+    (function, file_path), the entry with the highest ``percentage`` is
+    kept (or the first entry when both percentages are ``None``).
 
     On any exception from ``assess()``, a warning is emitted to stderr and
     an empty dict is returned so callers can degrade gracefully (OC-003).
@@ -340,8 +397,8 @@ def build_contract_coverage_map(
             (private) functions. Forwarded to ``assess()``.
 
     Returns:
-        Dict mapping function name → ContractCoverageResult.  Empty when the
-        pipeline fails or no reports are produced.
+        Dict mapping (function, file_path) → ContractCoverageResult.  Empty
+        when the pipeline fails or no reports are produced.
     """
     try:
         result = assess(src_path, tests_path, config=config, include_unexported=include_unexported)
@@ -349,21 +406,21 @@ def build_contract_coverage_map(
         sys.stderr.write(f"warning: quality pipeline failed: {exc}\n")
         return {}
 
-    coverage_map: dict[str, ContractCoverageResult] = {}
+    coverage_map: dict[tuple[str, str], ContractCoverageResult] = {}
     for report in result.reports + result.untested:
         if report.target_function is None or report.contract_coverage is None:
             continue
         # target_function is FunctionTarget | None; already checked None above.
-        name = report.target_function.function
+        key = (report.target_function.function, report.target_function.file_path)
         ccr = report.contract_coverage
-        if name not in coverage_map:
-            coverage_map[name] = ccr
+        if key not in coverage_map:
+            coverage_map[key] = ccr
         else:
-            existing = coverage_map[name]
+            existing = coverage_map[key]
             # Keep the entry with the higher percentage; when both are None,
             # the first entry wins (insertion order preserved).
             if ccr.percentage is not None and (
                 existing.percentage is None or ccr.percentage > existing.percentage
             ):
-                coverage_map[name] = ccr
+                coverage_map[key] = ccr
     return coverage_map
