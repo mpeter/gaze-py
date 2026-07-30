@@ -299,6 +299,108 @@ def test_sc005_fix_strategy_none_when_crap_exactly_below_threshold() -> None:
     assert result is None
 
 
+def test_sc005_rule4_decompose_when_coverage_already_adequate() -> None:
+    """SC-005 Rule 4: line_coverage >= 0.5 and no rule above fired -> 'decompose'.
+
+    Regression fixture: fieldkit-cmd's commands/skill/eval_runner.py:
+    _parse_eval_argv had CRAP=15.18, complexity=15, line_coverage=0.908,
+    quadrant=Q1_Safe (both line and contract coverage already high). Before
+    this guard, fix_strategy fell through to 'add_tests' unconditionally —
+    recommending more tests for a function already at 90.8% line coverage
+    and 100% contract coverage, when the actual CRAP driver was complexity.
+    """
+    result = fix_strategy(
+        crap_score=15.18,
+        complexity=15,
+        line_coverage=0.908,
+        quadrant_label="Q1_Safe",
+        threshold=15.0,
+        complexity_threshold=15,
+    )
+    assert result == "decompose"
+
+
+def test_sc005_rule4_boundary_exactly_at_coverage_floor() -> None:
+    """SC-005 Rule 4: line_coverage == 0.5 (inclusive floor) -> 'decompose'."""
+    result = fix_strategy(
+        crap_score=20.0,
+        complexity=5,
+        line_coverage=0.5,
+        quadrant_label="Q4",
+        threshold=15.0,
+        complexity_threshold=15,
+    )
+    assert result == "decompose"
+
+
+def test_sc005_rule4_does_not_fire_just_below_coverage_floor() -> None:
+    """SC-005: line_coverage just below 0.5 still falls through to 'add_tests'.
+
+    Regression guard for test_sc005_rule3_add_tests_default's boundary.
+    """
+    result = fix_strategy(
+        crap_score=20.0,
+        complexity=5,
+        line_coverage=0.49,
+        quadrant_label="Q4",
+        threshold=15.0,
+        complexity_threshold=15,
+    )
+    assert result == "add_tests"
+
+
+def test_sc005_rule3_suppressed_when_no_assertion_gaps() -> None:
+    """SC-005 Rule 3: has_assertion_gaps=False suppresses 'add_assertions'.
+
+    Regression fixture: fieldkit-cmd's commands/driver/cli.py:run had
+    CRAP=16.37, quadrant=Q3_SimpleButUnderspecified, contract_coverage=100.0
+    (Gaps == []). Before this guard, Rule 3 fired 'add_assertions' purely
+    from the quadrant label — recommending assertions for a function with
+    zero assertion gaps. With has_assertion_gaps=False known, Rule 3 is
+    skipped and (since line_coverage 0.34 < 0.5, per Q3's own low-line-
+    coverage definition) falls through to 'add_tests' — the strategy that
+    actually addresses what's missing.
+    """
+    result = fix_strategy(
+        crap_score=16.37,
+        complexity=6,
+        line_coverage=0.34,
+        quadrant_label="Q3_SimpleButUnderspecified",
+        threshold=15.0,
+        complexity_threshold=15,
+        has_assertion_gaps=False,
+    )
+    assert result == "add_tests"
+
+
+def test_sc005_rule3_fires_when_assertion_gaps_present() -> None:
+    """SC-005 Rule 3: has_assertion_gaps=True still yields 'add_assertions'."""
+    result = fix_strategy(
+        crap_score=20.0,
+        complexity=5,
+        line_coverage=0.3,
+        quadrant_label="Q3_SimpleButUnderspecified",
+        threshold=15.0,
+        complexity_threshold=15,
+        has_assertion_gaps=True,
+    )
+    assert result == "add_assertions"
+
+
+def test_sc005_rule3_fires_when_gap_visibility_unknown() -> None:
+    """SC-005 Rule 3: has_assertion_gaps=None (unset, O1 not run) preserves prior behavior."""
+    result = fix_strategy(
+        crap_score=20.0,
+        complexity=5,
+        line_coverage=0.3,
+        quadrant_label="Q3_SimpleButUnderspecified",
+        threshold=15.0,
+        complexity_threshold=15,
+        has_assertion_gaps=None,
+    )
+    assert result == "add_assertions"
+
+
 # ---------------------------------------------------------------------------
 # SC-006: recommended_actions()
 # ---------------------------------------------------------------------------
