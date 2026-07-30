@@ -414,6 +414,60 @@ def test_assess_no_effects_function_not_in_untested() -> None:
     )
 
 
+def test_assess_untested_not_suppressed_by_unrelated_same_named_tested_function(
+    tmp_path: Path,
+) -> None:
+    """A tested method must not suppress the untested entry for an unrelated
+    top-level function sharing its bare name.
+
+    Regression fixture for fieldkit-cmd's de-gating bug (572d87fd):
+    GHIssueStore.add_note vs. an unrelated top-level add_note. Before the
+    fix, _untested_reports()'s seen_names set was keyed on bare function
+    name only — testing one same-named function made assess() silently
+    drop the OTHER same-named function's untested entry entirely, rather
+    than reporting it as untested. The bug is at the seen_names layer,
+    independent of pair_to_targets() correctly resolving which function a
+    test targets — even a fully-correct pairing decision is not enough if
+    the untested-collection step re-collides on the bare name afterward.
+    """
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "gh_store.py").write_text(
+        "class GHIssueStore:\n"
+        "    def add_note(self, issue_id: str, note: str) -> None:\n"
+        "        print(note)\n",
+        encoding="utf-8",
+    )
+    (src_dir / "docs_domain.py").write_text(
+        "def add_note(pursuit_file: str, meeting_title: str, content: str) -> None:\n"
+        "    print(content)\n",
+        encoding="utf-8",
+    )
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_gh_store.py").write_text(
+        "def test_add_note() -> None:\n"
+        "    store = GHIssueStore()\n"
+        "    store.add_note('1', 'text')\n",
+        encoding="utf-8",
+    )
+
+    result = assess(src_path=src_dir, tests_path=tests_dir, config=_default_config())
+
+    docs_domain_untested = [
+        r
+        for r in result.untested
+        if isinstance(r.target_function, FunctionTarget)
+        and r.target_function.function == "add_note"
+        and r.target_function.file_path.endswith("docs_domain.py")
+    ]
+    assert docs_domain_untested, (
+        "docs_domain.add_note must appear in result.untested — it has zero "
+        f"tests. untested={result.untested}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Phase 5 — Pipeline tests (tasks 5.1–5.4)
 # ---------------------------------------------------------------------------
@@ -541,8 +595,8 @@ def test_build_contract_coverage_map_keeps_higher_percentage_for_duplicate_targe
 
     result = build_contract_coverage_map(tmp_path, tmp_path, _default_config())
     assert result
-    assert "my_func" in result
-    assert result["my_func"].percentage == 100.0
+    assert ("my_func", "src.py") in result
+    assert result[("my_func", "src.py")].percentage == 100.0
 
 
 def test_build_contract_coverage_map_none_does_not_displace_percentage(
@@ -597,7 +651,82 @@ def test_build_contract_coverage_map_none_does_not_displace_percentage(
 
     result = build_contract_coverage_map(tmp_path, tmp_path, _default_config())
     assert result
-    assert result["fn"].percentage == 50.0
+    assert result[("fn", "src.py")].percentage == 50.0
+
+
+def test_build_contract_coverage_map_does_not_merge_same_named_functions_in_different_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fully-tested function must not overwrite an unrelated, untested same-named function.
+
+    Regression fixture for fieldkit-cmd's de-gating bug (572d87fd), reproduced
+    at the exact layer that produced the reported symptom: this is the map
+    consumed by _run_crap()'s --tests path, and the original repro was
+    confirmed via "the raw contract_coverage field (100% -> 50% on an
+    unmodified function)". Before the (function, file_path) key, an untested
+    top-level add_note would silently inherit GHIssueStore.add_note's 100%
+    coverage because both entries collided on the bare key "add_note".
+    """
+    import gaze_py.quality.pipeline as pipeline_mod
+    from gaze_py.quality.pipeline import AssessResult, build_contract_coverage_map
+    from gaze_py.taxonomy.models import ContractCoverageResult, QualityReport
+
+    tested_ccr = ContractCoverageResult(
+        percentage=100.0,
+        covered_effects=1,
+        total_contractual=1,
+        over_specification_count=0,
+        unmapped_assertions=0,
+        reason=None,
+    )
+    untested_ccr = ContractCoverageResult(
+        percentage=None,
+        covered_effects=0,
+        total_contractual=1,
+        over_specification_count=0,
+        unmapped_assertions=0,
+        reason="no_test_coverage",
+    )
+    method_target = FunctionTarget(
+        function="add_note",
+        file_path="commands/issue/gh_store.py",
+        line=511,
+        complexity=2,
+        package="commands/issue/gh_store.py",
+        receiver="GHIssueStore",
+        signature="def add_note(self, issue_id: str, note: str)",
+    )
+    function_target = FunctionTarget(
+        function="add_note",
+        file_path="meeting/docs_domain.py",
+        line=315,
+        complexity=3,
+        package="meeting/docs_domain.py",
+        receiver=None,
+        signature="def add_note(pursuit_file, meeting_title, content)",
+    )
+    tested_report = QualityReport(
+        test_function="test_add_note",
+        target_function=method_target,
+        assertions=(),
+        contract_coverage=tested_ccr,
+        warnings=(),
+    )
+    untested_report = QualityReport(
+        test_function="",
+        target_function=function_target,
+        assertions=(),
+        contract_coverage=untested_ccr,
+        warnings=("No test targets this function.",),
+    )
+    fake_result = AssessResult(reports=(tested_report,), untested=(untested_report,))
+    monkeypatch.setattr(pipeline_mod, "assess", lambda *a, **kw: fake_result)
+
+    result = build_contract_coverage_map(tmp_path, tmp_path, _default_config())
+
+    assert result[("add_note", "commands/issue/gh_store.py")].percentage == 100.0
+    assert result[("add_note", "meeting/docs_domain.py")].percentage is None
+    assert result[("add_note", "meeting/docs_domain.py")].reason == "no_test_coverage"
 
 
 # ---------------------------------------------------------------------------

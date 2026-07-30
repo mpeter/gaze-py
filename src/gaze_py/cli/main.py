@@ -1871,7 +1871,7 @@ def _enrich_with_quality(
     # include_unexported defaults to True — matches _run_crap() at line 1762.
     coverage_map = build_contract_coverage_map(src, resolved_tests, config)
     for target in result.results:
-        ccr = coverage_map.get(target.function)
+        ccr = coverage_map.get((target.function, target.file_path))
         if ccr is not None:
             # "no_test_coverage": percentage=None → else branch →
             # gaze_crap stays null per Go contract (D5).

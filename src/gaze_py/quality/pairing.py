@@ -257,11 +257,11 @@ def _find_project_root(start: Path) -> Path:
 
 def _pair_astroid(
     test_func: TestFunc,
-    source_names: set[str],
+    source_index: dict[str, list[FunctionTarget]],
     graph: dict[str, set[str]],
     *,
     depth_limit: int = 5,
-) -> str | None:
+) -> FunctionTarget | None:
     """Pair a test function to a source function via transitive call graph BFS.
 
     Locates the test function's entry in the Astroid call graph by matching
@@ -274,10 +274,27 @@ def _pair_astroid(
     fired for class-based tests or tests inside a ``tests`` package.
 
     From the matched key(s), performs a BFS over the call graph up to
-    ``depth_limit`` hops. At each callee FQN, the short name (last segment
-    after the final ``.``) is checked against ``source_names``. The first
-    matching short name is returned; start keys are scanned in sorted order
-    for determinism.
+    ``depth_limit`` hops. At each callee FQN, two match attempts are made
+    against ``source_index`` (keyed by bare function name, since gaze-py's
+    own FunctionTarget list has no FQN reconstruction to compare against
+    astroid's qnames directly):
+
+    1. **Qualified match**: the callee FQN's last two dotted components
+       (``"ClassName.method"`` for a method, or ``"module_stem.function"``
+       for a module-level function) are compared against each same-named
+       candidate's own qualifier (``receiver`` for methods, or the source
+       file's stem for module-level functions). This resolves ambiguity
+       when multiple production functions share a bare name — the case
+       that motivated this rewrite: a test calling ``store.add_note(...)``
+       infers to ``pkg.gh_store.GHIssueStore.add_note`` via astroid type
+       inference, which the qualified match distinguishes from an unrelated
+       top-level ``add_note`` in a different file.
+    2. **Unambiguous short-name match**: if no qualified match fires and
+       exactly one candidate shares the callee's bare short name, that
+       candidate is returned (preserves prior behavior for the common,
+       non-colliding case). When more than one candidate shares the short
+       name and the qualified match did not resolve it, the callee is
+       skipped — refusing an ambiguous pairing rather than guessing one.
 
     Uses ``graph.get(fqn, set())`` at every lookup — a callee that was never
     itself a caller has no key in the adjacency dict; ``graph[fqn]`` would
@@ -285,13 +302,13 @@ def _pair_astroid(
 
     Args:
         test_func: The test function to pair.
-        source_names: Short names of all production functions available for
-            pairing (e.g. ``{"classify", "caller_signal"}``).
+        source_index: Production functions available for pairing, grouped by
+            bare function name (e.g. ``{"add_note": [<method>, <function>]}``).
         graph: Caller→callees adjacency dict from ``_build_astroid_graph()``.
         depth_limit: Maximum BFS hops from the test function FQN. Default 5.
 
     Returns:
-        The short name of the first matching source function, or None.
+        The matched FunctionTarget, or None when no unambiguous match is found.
     """
     # Match the test's graph key(s) directly: last component == test name,
     # and the test file's stem appears among the key's components. This is
@@ -317,10 +334,19 @@ def _pair_astroid(
                 continue
             visited.add(callee_fqn)
 
-            # Extract short name (last segment after final dot).
-            short_name = callee_fqn.rsplit(".", 1)[-1]
-            if short_name in source_names:
-                return short_name
+            parts = callee_fqn.split(".")
+            short_name = parts[-1]
+            candidates = source_index.get(short_name, [])
+
+            if len(parts) >= 2:
+                qualifier = parts[-2]
+                for candidate in candidates:
+                    candidate_qualifier = candidate.receiver or Path(candidate.file_path).stem
+                    if candidate_qualifier == qualifier:
+                        return candidate
+
+            if len(candidates) == 1:
+                return candidates[0]
 
             if depth + 1 < depth_limit:
                 queue.append((callee_fqn, depth + 1))
@@ -341,13 +367,28 @@ def pair_to_targets(
 
     1. **Name convention** — strips the "test_" prefix and looks for an exact
        match (confidence 0.9) or case-insensitive match (confidence 0.7) in
-       source_functions.
-    2. **Call graph** — deep AST walk of the test function body; the first
-       source function name found in a direct call is selected (confidence 0.8).
+       source_functions. When more than one source function shares the
+       matched bare name, the match is ambiguous: Strategy 1 does not
+       return it, and evaluation falls through to Strategy 2/3, since a
+       name match alone cannot disambiguate which same-named function the
+       test actually exercises.
+    2. **Call graph** — deep AST walk of the test function body; a source
+       function name found in a direct call is selected (confidence 0.8)
+       only when it is unambiguous. An ambiguous call (the called name
+       matches more than one source function, e.g. a method call resolving
+       by bare attribute name to both a class method and an unrelated
+       top-level function) is not resolvable from the AST alone — pure
+       syntax cannot tell a method call from a module-aliased function
+       call without type inference — so it is skipped and evaluation
+       proceeds to Strategy 3, which can resolve it via Astroid inference.
     3. **Transitive call graph** — BFS over the Astroid-inferred call graph
        (confidence 0.75). Only fires when ``astroid_graph`` or
-       ``astroid_graph_provider`` is provided.
+       ``astroid_graph_provider`` is provided. Disambiguates same-named
+       functions via qualified matching (see ``_pair_astroid``).
     4. **Unmatched** — no match found (confidence 0.0, target_name=None).
+       This includes cases where a name/call match existed but was
+       ambiguous and no later strategy resolved it — refusing an
+       ambiguous pairing is preferred over guessing one (SC-005).
 
     When source_functions is empty, returns immediately with method="unmatched".
     Existing callers that omit both astroid parameters are unaffected.
@@ -364,7 +405,9 @@ def pair_to_targets(
             is also set.
 
     Returns:
-        A TestTargetPair with the best match found.
+        A TestTargetPair with the best match found. target_file is set
+        whenever target_name is set, identifying which same-named
+        FunctionTarget (if more than one shares the name) was matched.
     """
     if not source_functions:
         return TestTargetPair(
@@ -374,41 +417,53 @@ def pair_to_targets(
             confidence=0.0,
         )
 
+    source_index: dict[str, list[FunctionTarget]] = collections.defaultdict(list)
+    for fn in source_functions:
+        source_index[fn.function].append(fn)
+
     # Strategy 1 — Name convention: strip "test_" prefix.
     candidate = test_func.name.removeprefix("test_")
 
-    # Exact match (confidence 0.9).
-    for fn in source_functions:
-        if fn.function == candidate:
-            return TestTargetPair(
-                test_name=test_func.name,
-                target_name=fn.function,
-                inference_method="name_convention",
-                confidence=0.9,
-            )
+    # Exact match (confidence 0.9). Ambiguous (>1 candidate) falls through.
+    exact_matches = source_index.get(candidate, [])
+    if len(exact_matches) == 1:
+        matched = exact_matches[0]
+        return TestTargetPair(
+            test_name=test_func.name,
+            target_name=matched.function,
+            target_file=matched.file_path,
+            inference_method="name_convention",
+            confidence=0.9,
+        )
 
-    # Case-insensitive match (confidence 0.7).
-    for fn in source_functions:
-        if fn.function.lower() == candidate.lower():
-            return TestTargetPair(
-                test_name=test_func.name,
-                target_name=fn.function,
-                inference_method="name_convention",
-                confidence=0.7,
-            )
+    # Case-insensitive match (confidence 0.7). Ambiguous (>1 candidate) falls through.
+    ci_matches = [fn for fn in source_functions if fn.function.lower() == candidate.lower()]
+    if len(ci_matches) == 1:
+        matched = ci_matches[0]
+        return TestTargetPair(
+            test_name=test_func.name,
+            target_name=matched.function,
+            target_file=matched.file_path,
+            inference_method="name_convention",
+            confidence=0.7,
+        )
 
     # Strategy 2 — Call graph: deep AST walk for direct calls to source functions.
     # Intentional deep walk — tests frequently call targets from within with-blocks,
-    # comprehensions, or inline helpers. Known limitation: first match in pre-order
-    # traversal is selected when multiple source functions are called.
-    source_names = {fn.function for fn in source_functions}
+    # comprehensions, or inline helpers. Known limitation: first UNAMBIGUOUS match
+    # in pre-order traversal is selected when multiple source functions are called.
     for node in ast.walk(test_func.node):
         if isinstance(node, ast.Call):
             called = _extract_call_name(node)
-            if called is not None and called in source_names:
+            if called is None:
+                continue
+            called_matches = source_index.get(called, [])
+            if len(called_matches) == 1:
+                matched = called_matches[0]
                 return TestTargetPair(
                     test_name=test_func.name,
-                    target_name=called,
+                    target_name=matched.function,
+                    target_file=matched.file_path,
                     inference_method="call_graph",
                     confidence=0.8,
                 )
@@ -420,11 +475,12 @@ def pair_to_targets(
     if astroid_graph is None and astroid_graph_provider is not None:
         astroid_graph = astroid_graph_provider()
     if astroid_graph is not None:
-        matched_name = _pair_astroid(test_func, source_names, astroid_graph)
-        if matched_name is not None:
+        astroid_match = _pair_astroid(test_func, source_index, astroid_graph)
+        if astroid_match is not None:
             return TestTargetPair(
                 test_name=test_func.name,
-                target_name=matched_name,
+                target_name=astroid_match.function,
+                target_file=astroid_match.file_path,
                 inference_method="call_graph_transitive",
                 confidence=0.75,
             )

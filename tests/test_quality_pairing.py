@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import collections
 import textwrap
 from pathlib import Path
 
@@ -38,17 +39,31 @@ def _make_test_func(src: str, name: str = "test_foo") -> TestFunc:
     raise ValueError(f"Function {name!r} not found in source")
 
 
-def _make_target(name: str) -> FunctionTarget:
+def _make_target(
+    name: str, *, file_path: str = "src/example.py", receiver: str | None = None
+) -> FunctionTarget:
     """Create a minimal FunctionTarget with the given name."""
     return FunctionTarget(
         function=name,
-        file_path="src/example.py",
+        file_path=file_path,
         line=1,
         complexity=1,
-        package="src/example.py",
-        receiver=None,
+        package=file_path,
+        receiver=receiver,
         signature=f"def {name}()",
     )
+
+
+def _index(*targets: FunctionTarget) -> dict[str, list[FunctionTarget]]:
+    """Build a source_index dict grouping targets by bare function name.
+
+    Mirrors the index pair_to_targets() builds internally — used to call
+    _pair_astroid() directly per CR-004.
+    """
+    result: dict[str, list[FunctionTarget]] = collections.defaultdict(list)
+    for t in targets:
+        result[t.function].append(t)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +177,140 @@ def test_pair_underscore_name() -> None:
     assert result.target_name == "process_items"
     assert result.inference_method == "name_convention"
     assert result.confidence == 0.9
+
+
+# ---------------------------------------------------------------------------
+# Bare-name collision regression: method vs. unrelated top-level function
+# sharing a name (fieldkit-cmd de-gated gazepy over exactly this false-
+# positive class — 572d87fd: GHIssueStore.add_note vs.
+# fieldkit.meeting.docs_domain.add_note misattributed contract coverage
+# across an unmodified function).
+# ---------------------------------------------------------------------------
+
+
+def test_pair_name_convention_ambiguous_falls_through_to_call_graph() -> None:
+    """Strategy 1: two same-named candidates → not returned; falls to Strategy 2.
+
+    test_add_note calls store.add_note(...) directly, so once Strategy 1
+    declines the ambiguous name match, Strategy 2's attribute-call handling
+    should still be unable to disambiguate a method call from a bare name
+    alone and also decline — landing on "unmatched", not a guess.
+    """
+    tf = _make_test_func(
+        "def test_add_note() -> None:\n    store.add_note('id', 'text')", "test_add_note"
+    )
+    targets = [
+        _make_target("add_note", file_path="commands/issue/gh_store.py", receiver="GHIssueStore"),
+        _make_target("add_note", file_path="meeting/docs_domain.py"),
+    ]
+    result = pair_to_targets(tf, targets)
+    assert result.inference_method != "name_convention"
+
+
+def test_pair_call_graph_ambiguous_attribute_call_declines() -> None:
+    """Strategy 2: an attribute call to an ambiguous bare name is not paired.
+
+    store.add_note(...) is an ast.Attribute call. Pure AST cannot tell
+    whether "store" is a class instance (method call) or a module alias
+    (function call) without type inference — Strategy 2 must not guess.
+    """
+    tf = _make_test_func(
+        "def test_something() -> None:\n    store.add_note('id', 'text')", "test_something"
+    )
+    targets = [
+        _make_target("add_note", file_path="commands/issue/gh_store.py", receiver="GHIssueStore"),
+        _make_target("add_note", file_path="meeting/docs_domain.py"),
+    ]
+    result = pair_to_targets(tf, targets)
+    assert result.inference_method != "call_graph"
+
+
+def test_pair_call_graph_unambiguous_plain_call_still_matches() -> None:
+    """Strategy 2: an unambiguous bare-name call still pairs normally (no regression)."""
+    tf = _make_test_func(
+        "def test_something() -> None:\n    add_note('id', 'text')", "test_something"
+    )
+    targets = [_make_target("add_note", file_path="meeting/docs_domain.py")]
+    result = pair_to_targets(tf, targets)
+    assert result.target_name == "add_note"
+    assert result.target_file == "meeting/docs_domain.py"
+    assert result.inference_method == "call_graph"
+
+
+def test_pair_astroid_resolves_method_vs_function_collision() -> None:
+    """Strategy 3: qualified match disambiguates a method call by receiver.
+
+    Regression fixture for the exact fieldkit-cmd repro: astroid infers
+    store.add_note(...) to the fully-qualified callee
+    "fieldkit.commands.issue.gh_store.GHIssueStore.add_note". The qualified
+    match compares the last two FQN components ("GHIssueStore.add_note")
+    against each same-named candidate's receiver, correctly selecting the
+    method over the unrelated top-level function of the same name.
+    """
+    graph: dict[str, set[str]] = {
+        "test_mod.test_add_note": {"fieldkit.commands.issue.gh_store.GHIssueStore.add_note"},
+    }
+    method_target = _make_target(
+        "add_note", file_path="commands/issue/gh_store.py", receiver="GHIssueStore"
+    )
+    function_target = _make_target("add_note", file_path="meeting/docs_domain.py")
+    source_index = _index(method_target, function_target)
+
+    tf = _make_test_func("def test_add_note() -> None: pass", "test_add_note")
+    tf = TestFunc(name="test_add_note", filename="tests/test_mod.py", lineno=1, node=tf.node)
+    result = _pair_astroid(tf, source_index, graph)
+    assert result is not None
+    assert result.function == "add_note"
+    assert result.receiver == "GHIssueStore"
+    assert result.file_path == "commands/issue/gh_store.py"
+
+
+def test_pair_astroid_resolves_module_function_vs_method_collision() -> None:
+    """Strategy 3: qualified match also resolves the module-function side of the collision.
+
+    Mirrors the method case above: astroid infers a plain add_note(...) call
+    to "fieldkit.meeting.docs_domain.add_note" — last two components
+    "docs_domain.add_note" match the module-level candidate's file stem
+    ("docs_domain"), not the method's receiver.
+    """
+    graph: dict[str, set[str]] = {
+        "test_mod.test_add_note": {"fieldkit.meeting.docs_domain.add_note"},
+    }
+    method_target = _make_target(
+        "add_note", file_path="commands/issue/gh_store.py", receiver="GHIssueStore"
+    )
+    function_target = _make_target("add_note", file_path="meeting/docs_domain.py")
+    source_index = _index(method_target, function_target)
+
+    tf = _make_test_func("def test_add_note() -> None: pass", "test_add_note")
+    tf = TestFunc(name="test_add_note", filename="tests/test_mod.py", lineno=1, node=tf.node)
+    result = _pair_astroid(tf, source_index, graph)
+    assert result is not None
+    assert result.function == "add_note"
+    assert result.receiver is None
+    assert result.file_path == "meeting/docs_domain.py"
+
+
+def test_pair_astroid_ambiguous_short_name_without_qualifier_declines() -> None:
+    """Strategy 3: an ambiguous short name with no resolvable qualifier is refused.
+
+    If the astroid-inferred FQN's second-to-last component matches neither
+    candidate's qualifier (receiver or file stem), the match must not be
+    guessed — better no pairing than a wrong one.
+    """
+    graph: dict[str, set[str]] = {
+        "test_mod.test_add_note": {"some.unrelated.module.add_note"},
+    }
+    method_target = _make_target(
+        "add_note", file_path="commands/issue/gh_store.py", receiver="GHIssueStore"
+    )
+    function_target = _make_target("add_note", file_path="meeting/docs_domain.py")
+    source_index = _index(method_target, function_target)
+
+    tf = _make_test_func("def test_add_note() -> None: pass", "test_add_note")
+    tf = TestFunc(name="test_add_note", filename="tests/test_mod.py", lineno=1, node=tf.node)
+    result = _pair_astroid(tf, source_index, graph)
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -294,9 +443,10 @@ def test_pair_astroid_resolves_method_call(tmp_path: Path) -> None:
     }
     tf = _make_tf_with_fqn("test_engine_integration", "test_mod", tmp_path)
 
-    # Direct _pair_astroid call: should return the short name "classify".
-    result = _pair_astroid(tf, {"classify"}, graph)
-    assert result == "classify"
+    # Direct _pair_astroid call: should return the "classify" FunctionTarget.
+    result = _pair_astroid(tf, _index(_make_target("classify")), graph)
+    assert result is not None
+    assert result.function == "classify"
 
     # pair_to_targets integration: inference_method and confidence.
     source_funcs = [_make_target("classify"), _make_target("Engine")]
@@ -318,8 +468,9 @@ def test_pair_astroid_transitive_reaches_caller_signal(tmp_path: Path) -> None:
     }
     tf = _make_tf_with_fqn("test_foo", "test_mod", tmp_path)
 
-    result = _pair_astroid(tf, {"caller_signal"}, graph)
-    assert result == "caller_signal"
+    result = _pair_astroid(tf, _index(_make_target("caller_signal")), graph)
+    assert result is not None
+    assert result.function == "caller_signal"
 
 
 def test_pair_astroid_depth_limit(tmp_path: Path) -> None:
@@ -339,12 +490,13 @@ def test_pair_astroid_depth_limit(tmp_path: Path) -> None:
     tf = _make_tf_with_fqn("test_deep", "test_mod", tmp_path)
 
     # hop6_target is at depth 6 from start; depth_limit=5 must exclude it.
-    result = _pair_astroid(tf, {"hop6_target"}, graph, depth_limit=5)
+    result = _pair_astroid(tf, _index(_make_target("hop6_target")), graph, depth_limit=5)
     assert result is None
 
     # Sanity: with depth_limit=6 it IS reachable.
-    result_deep = _pair_astroid(tf, {"hop6_target"}, graph, depth_limit=6)
-    assert result_deep == "hop6_target"
+    result_deep = _pair_astroid(tf, _index(_make_target("hop6_target")), graph, depth_limit=6)
+    assert result_deep is not None
+    assert result_deep.function == "hop6_target"
 
 
 def test_pair_astroid_empty_graph_falls_through_to_unmatched(tmp_path: Path) -> None:
@@ -497,8 +649,9 @@ def test_pair_astroid_matches_package_and_class_qualified_key(tmp_path: Path) ->
     test_funcs = find_test_functions(test_file)
     assert test_funcs
 
-    result = _pair_astroid(test_funcs[0], {"parse_value"}, graph)
-    assert result == "parse_value"
+    result = _pair_astroid(test_funcs[0], _index(_make_target("parse_value")), graph)
+    assert result is not None
+    assert result.function == "parse_value"
 
 
 def test_pair_astroid_ignores_same_name_in_other_module(tmp_path: Path) -> None:
@@ -516,7 +669,7 @@ def test_pair_astroid_ignores_same_name_in_other_module(tmp_path: Path) -> None:
     test_funcs = find_test_functions(test_file)
     assert test_funcs
 
-    result = _pair_astroid(test_funcs[0], {"other_target"}, graph)
+    result = _pair_astroid(test_funcs[0], _index(_make_target("other_target")), graph)
     assert result is None
 
 
@@ -566,8 +719,9 @@ def test_build_astroid_graph_resolves_imports_without_project_on_sys_path(
 
     # And Strategy 3 end-to-end pairs the test to the target.
     test_funcs = find_test_functions(test_file)
-    result = _pair_astroid(test_funcs[0], {"target_fn"}, graph)
-    assert result == "target_fn"
+    result = _pair_astroid(test_funcs[0], _index(_make_target("target_fn")), graph)
+    assert result is not None
+    assert result.function == "target_fn"
 
 
 def test_import_root_flat_src_and_standalone_layouts(tmp_path: Path) -> None:
@@ -629,4 +783,6 @@ def test_build_astroid_graph_resolves_imports_in_src_layout(tmp_path: Path) -> N
     assert "mypkg.mod.target_fn" in callees
 
     test_funcs = find_test_functions(test_file)
-    assert _pair_astroid(test_funcs[0], {"target_fn"}, graph) == "target_fn"
+    result = _pair_astroid(test_funcs[0], _index(_make_target("target_fn")), graph)
+    assert result is not None
+    assert result.function == "target_fn"

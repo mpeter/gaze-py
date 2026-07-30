@@ -308,6 +308,14 @@ class TestTargetPair:
     Attributes:
         test_name: Name of the test function.
         target_name: Name of the production function (None if unmatched).
+        target_file: file_path of the matched FunctionTarget, or None. Set
+            whenever target_name is set. Disambiguates same-named functions
+            across different files/classes — target_name alone is not a
+            unique key when multiple production functions share a bare
+            name (e.g. a method and an unrelated top-level function both
+            named "add_note"). Consumers that look up the FunctionTarget
+            by name MUST also match on target_file when more than one
+            candidate shares target_name.
         inference_method: "name_convention" | "call_graph" |
             "call_graph_transitive" | "unmatched".
         confidence: 0.0–1.0.
@@ -317,6 +325,7 @@ class TestTargetPair:
     target_name: str | None
     inference_method: str
     confidence: float
+    target_file: str | None = None
 
 
 @dataclass(frozen=True)
