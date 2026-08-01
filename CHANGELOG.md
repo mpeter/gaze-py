@@ -4,6 +4,73 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-01
+
+Released as MINOR rather than PATCH: the correction below changes reported
+CRAP numbers for essentially every consumer and invalidates saved baselines.
+Pinning gaze-py at patch level will not absorb this silently.
+
+### Fixed
+
+- **Line coverage was attributed per file instead of per function**: every
+  function in a file received that file's aggregate `percent_covered`, so CRAP
+  — a per-function metric — was computed from a number that did not describe
+  the function being scored. Verified across 191 files in a consumer project:
+  *zero* files had more than one distinct `line_coverage` value among their
+  functions. The effect is bidirectional and severe. Untested functions were
+  concealed behind well-covered file-mates (in that project, 39 functions at 0%
+  true coverage went unflagged, the worst with a true CRAP of 132), while
+  individually well-tested functions were falsely flagged by uncovered
+  neighbours. Reported crapload was 24 against a true 84.
+
+  This contradicted the Go reference (`funcCoverage()` intersects coverage
+  blocks with each function's own line extent), the porting contract
+  (`requirements.md:73`, "Line coverage per function"), and gaze-py's own
+  spec — so this is a bug fix, not a behavior change.
+
+  Coverage is now resolved for each function from the lines it owns. A
+  function's owned lines exclude its `def` and decorator lines, which execute
+  at import rather than on call — counting them made 0% arithmetically
+  unreachable, reporting a never-called function as 3.7% instead of 0%. They
+  also exclude nested function bodies, since nested functions are scored as
+  independent targets; the nested `def` line stays with the parent, matching
+  how coverage.py attributes it. Both rules are verified against coverage.py's
+  own per-function output.
+
+  A function body with no executable statements (a docstring-only Click group,
+  for example) now reports 100%, matching coverage.py. This diverges
+  deliberately from Go's `funcCoverage()`, which returns 0.0 when the statement
+  total is zero — wrong for Python, where it would report a trivially complete
+  function as a total deficit. Such functions always have complexity 1, so
+  their CRAP is at most 2.0 and they can never be flagged.
+
+  A coverage entry that omits the `executed_lines`/`missing_lines` arrays falls
+  back to file-level attribution, as before. Reports produced by coverage.py
+  always include both; this affects only hand-constructed input.
+
+  A **stale coverage report no longer produces a perfect score.** When a report
+  accounts for none of a function's lines — because a file grew, or the report
+  was generated against different code — that function is unmeasured, not
+  covered, and falls back to the file aggregate. Reading full coverage from that
+  silence would have given a brand-new, wholly untested complexity-20 function a
+  CRAP of 20.0 instead of 420.0, passing `--max-crapload` silently. This is kept
+  distinct from a genuinely statement-free body (a docstring-only function),
+  which is still correctly reported as fully covered. Likewise, a line array
+  that is present but holds no usable integers is now treated as degraded rather
+  than as an empty file, and JSON booleans are no longer accepted as line
+  numbers (Python evaluates `isinstance(True, int)` as true, so `true` would
+  otherwise have masqueraded as line 1).
+
+### Changed
+
+- **`crapload` and `avg_line_coverage` will change for most projects.** Any
+  project whose files mix covered and uncovered functions was previously
+  reporting an incorrect figure in both directions. Baselines saved with 0.8.2
+  or earlier encode the file-level numbers and MUST be regenerated; a stale
+  baseline will otherwise report spurious regressions and improvements.
+  gaze-py's own crapload moves 5 → 9 and `avg_line_coverage` 0.9557 → 0.9390
+  under this fix, measured on identical coverage input.
+
 ## [0.8.2] — 2026-07-30
 
 ### Fixed
