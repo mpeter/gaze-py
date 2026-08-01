@@ -11,9 +11,6 @@ Rules that apply to every coding session.
 ## Tool Usage Discipline
 
 - Read files before editing — never guess at content
-- Use `org_*` tools for work item management
-- Use `comms_*` tools for agent messaging and file reservations
-- Use `forge_*` tools for multi-agent coordination
 - Use `dewey_*` tools for learning storage and retrieval
 - Check `dewey_semantic_search` before solving problems from scratch
 
