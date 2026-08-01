@@ -24,6 +24,14 @@ or `GAZEPY_AI_*` environment variables.
 
 When `--coverprofile` is not provided, gaze-py runs `pytest --cov` automatically.
 
+Line coverage is resolved per function, not per file — see
+[How coverage is attributed](crap.md#how-coverage-is-attributed).
+
+The summary's `avg_line_coverage` is the unweighted mean of those per-function
+values. It is not the mean of file coverages and not a line-weighted project
+total, so it will usually differ from the headline percentage `coverage report`
+prints: a short uncovered function counts as much as a long well-covered one.
+
 ## Options
 
 | Option | Default | Description |

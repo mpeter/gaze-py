@@ -28,6 +28,7 @@ import tempfile
 import time
 import warnings
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import click
@@ -380,7 +381,7 @@ def crap(
     config.gaze_crap_threshold = gaze_crap_threshold
 
     # Coverage acquisition — two paths.
-    coverage_data: dict[str, float] | None
+    coverage_data: dict[str, _FileCoverage] | None
 
     if coverprofile is not None:
         # Path A: explicit --coverprofile provided.
@@ -1145,7 +1146,7 @@ def _run_baseline_comparison(
 # ---------------------------------------------------------------------------
 
 
-def _acquire_coverage(src: Path, coverprofile: str | None) -> dict[str, float] | None:
+def _acquire_coverage(src: Path, coverprofile: str | None) -> dict[str, _FileCoverage] | None:
     """Acquire coverage data from a coverprofile or by auto-running pytest.
 
     Shared by the crap and report commands. When coverprofile is provided,
@@ -1157,7 +1158,7 @@ def _acquire_coverage(src: Path, coverprofile: str | None) -> dict[str, float] |
         coverprofile: Path to a pre-generated coverage.py JSON report, or None.
 
     Returns:
-        Dict mapping relative path → percent_covered (0-100), or None.
+        Dict mapping relative path → _FileCoverage, or None.
     """
     if coverprofile is not None:
         try:
@@ -1370,7 +1371,54 @@ def _assemble_report_payload(result: AnalysisResult) -> str:
     return analysis_to_json(result)
 
 
-def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
+@dataclass(frozen=True)
+class _FileCoverage:
+    """Coverage data for a single source file.
+
+    Attributes:
+        percent_covered: The file's aggregate coverage percentage [0, 100].
+            Used only for the degraded fallback described below.
+        executed_lines: Line numbers coverage.py recorded as executed, or
+            None when the report omitted them.
+        missing_lines: Line numbers coverage.py recorded as not executed, or
+            None when the report omitted them.
+
+    When either line set is None the file is *degraded*: per-function
+    attribution is impossible and every function in it falls back to
+    `percent_covered`. Coverage.py always emits both arrays, so this only
+    affects hand-constructed reports.
+    """
+
+    percent_covered: float
+    executed_lines: frozenset[int] | None
+    missing_lines: frozenset[int] | None
+
+
+def _line_set(raw: object) -> frozenset[int] | None:
+    """Coerce a coverage.py line array into a frozenset.
+
+    Args:
+        raw: The value found at `executed_lines` / `missing_lines`, which may
+            be absent or malformed in a hand-constructed report.
+
+    Returns:
+        The line numbers, or None when the value is not a usable line array —
+        signalling a degraded file entry to the resolver.
+    """
+    if not isinstance(raw, list):
+        return None
+    # `isinstance(True, int)` is True in Python, and `frozenset({True}) == {1}`,
+    # so booleans would silently masquerade as line 1.
+    lines = frozenset(n for n in raw if isinstance(n, int) and not isinstance(n, bool))
+    if raw and not lines:
+        # A non-empty array that yielded no line numbers is malformed, not
+        # empty. Degrading is honest; returning an empty set would claim the
+        # file has no statements and score every function in it as covered.
+        return None
+    return lines
+
+
+def _load_coverage_json(coverage_json: str | None) -> dict[str, _FileCoverage] | None:
     """Load coverage data from a coverage.py JSON report.
 
     Raises GazeConfigError for all error conditions so callers can decide
@@ -1381,8 +1429,8 @@ def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
             when no coverage file was specified.
 
     Returns:
-        Dict mapping relative file path → percent_covered (float [0, 100]),
-        or None when coverage_json is None.
+        Dict mapping relative file path → _FileCoverage, or None when
+        coverage_json is None.
 
     Raises:
         GazeConfigError: When the file does not exist, cannot be read, is not
@@ -1412,8 +1460,8 @@ def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
             'Expected format: {"files": {"<path>": {"summary": {"percent_covered": N}}}}'
         )
 
-    # Build a flat map: relative_path → percent_covered
-    coverage_map: dict[str, float] = {}
+    # Build a flat map: relative_path → _FileCoverage
+    coverage_map: dict[str, _FileCoverage] = {}
     files_section = raw["files"]
     if isinstance(files_section, dict):
         for file_path, file_data in files_section.items():
@@ -1424,7 +1472,11 @@ def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
             ):
                 pct = file_data["summary"]["percent_covered"]
                 if isinstance(pct, (int, float)):
-                    coverage_map[str(file_path)] = float(pct)
+                    coverage_map[str(file_path)] = _FileCoverage(
+                        percent_covered=float(pct),
+                        executed_lines=_line_set(file_data.get("executed_lines")),
+                        missing_lines=_line_set(file_data.get("missing_lines")),
+                    )
 
     return coverage_map
 
@@ -1432,9 +1484,10 @@ def _load_coverage_json(coverage_json: str | None) -> dict[str, float] | None:
 def _resolve_line_coverage(
     py_file: Path,
     root: Path,
-    coverage_data: dict[str, float] | None,
+    coverage_data: dict[str, _FileCoverage] | None,
+    target: FunctionTarget,
 ) -> float | None:
-    """Resolve line coverage fraction for a single file.
+    """Resolve the line coverage fraction for a single function.
 
     Tries three lookup keys in order (most specific → least specific):
 
@@ -1449,14 +1502,24 @@ def _resolve_line_coverage(
     3. Filename-only (`complexity.py`) — last-resort fallback for any
        remaining edge cases.
 
-    Converts `percent_covered` (0–100) from `coverage_data` to a fraction
-    (0.0–1.0) for the CRAP scorer.
+    Once a file entry is found, coverage is computed for `target` alone —
+    CRAP is a per-function metric, so applying the file's aggregate to every
+    function in it would conceal untested functions behind well-covered
+    file-mates and falsely flag well-tested ones. See the porting contract
+    (`requirements.md:73`) and Go's `funcCoverage()`.
+
+    Two cases fall back to the file's aggregate `percent_covered`:
+    the report omitted the line arrays, or the target's extent is unknown.
+
+    A target that owns no statements (e.g. a body that is only a docstring)
+    resolves to 1.0, matching what coverage.py reports for it.
 
     Args:
         py_file: Absolute path to the Python source file.
         root: Project root directory used to compute the root-relative key.
-        coverage_data: Dict mapping relative path → percent_covered (0-100),
-            or None when no coverage data is available.
+        coverage_data: Dict mapping relative path → _FileCoverage, or None
+            when no coverage data is available.
+        target: The function being scored, supplying the lines it owns.
 
     Returns:
         Line coverage fraction in [0.0, 1.0], or None when not available.
@@ -1475,15 +1538,35 @@ def _resolve_line_coverage(
     if py_file.is_relative_to(Path.cwd()):
         cwd_rel = str(py_file.relative_to(Path.cwd()))
 
-    pct = coverage_data.get(rel)
-    if pct is None and cwd_rel is not None:
-        pct = coverage_data.get(cwd_rel)
-    if pct is None:
-        pct = coverage_data.get(py_file.name)
-    if pct is None:
+    entry = coverage_data.get(rel)
+    if entry is None and cwd_rel is not None:
+        entry = coverage_data.get(cwd_rel)
+    if entry is None:
+        entry = coverage_data.get(py_file.name)
+    if entry is None:
         return None
-    # Convert percentage (0-100) to fraction (0.0-1.0) for the scorer.
-    return pct / 100.0
+
+    owned = target.owned_lines
+    if entry.executed_lines is None or entry.missing_lines is None or owned is None:
+        # Degraded: no per-line data, or no known extent for this function.
+        # Convert percentage (0-100) to fraction (0.0-1.0) for the scorer.
+        return entry.percent_covered / 100.0
+
+    if not owned:
+        # No statements to cover — vacuously complete, as coverage.py reports it.
+        return 1.0
+
+    executed = owned & entry.executed_lines
+    statements = executed | (owned & entry.missing_lines)
+    if not statements:
+        # The function owns statements, yet the report accounts for none of
+        # them — it predates this source or was generated against different
+        # code. Degrade to the file aggregate rather than infer 1.0: treating
+        # an unmeasured function as fully covered would hand a brand-new,
+        # wholly untested function a perfect score on the path that feeds
+        # --max-crapload.
+        return entry.percent_covered / 100.0
+    return len(executed) / len(statements)
 
 
 def _score_target(
@@ -1577,7 +1660,7 @@ def _score_target(
 
 def _compute_avg_line_coverage(
     targets: list[FunctionTarget],
-    coverage_data: dict[str, float] | None,
+    coverage_data: dict[str, _FileCoverage] | None,
 ) -> float | None:
     """Compute the average line coverage fraction across all scored targets.
 
@@ -1688,7 +1771,7 @@ def _build_summary(
     all_targets: list[FunctionTarget],
     *,
     config: GazeConfig,
-    coverage_data: dict[str, float] | None,
+    coverage_data: dict[str, _FileCoverage] | None,
 ) -> Summary:
     """Build the Summary aggregate from all analyzed and scored targets.
 
@@ -1840,7 +1923,7 @@ def _enrich_with_quality(
     result: AnalysisResult,
     src: Path,
     tests_path: str | None,
-    coverage_data: dict[str, float] | None,
+    coverage_data: dict[str, _FileCoverage] | None,
     *,
     config: GazeConfig,
 ) -> None:
@@ -1888,7 +1971,7 @@ def _enrich_with_quality(
 
 def _run_crap(
     path: Path,
-    coverage_data: dict[str, float] | None,
+    coverage_data: dict[str, _FileCoverage] | None,
     *,
     config: GazeConfig,
 ) -> AnalysisResult:
@@ -1899,8 +1982,8 @@ def _run_crap(
 
     Args:
         path: Resolved source path (file or directory) to analyze.
-        coverage_data: Dict mapping relative path → percent_covered (0-100),
-            or None when no coverage data is available.
+        coverage_data: Dict mapping relative path → _FileCoverage, or None
+            when no coverage data is available.
         config: GazeConfig with threshold and classification values.
 
     Returns:
@@ -1916,7 +1999,7 @@ def _run_crap(
 
     for target in targets:
         abs_file = root / target.file_path
-        line_coverage_frac = _resolve_line_coverage(abs_file, root, coverage_data)
+        line_coverage_frac = _resolve_line_coverage(abs_file, root, coverage_data, target)
         _score_target(target, line_coverage_frac=line_coverage_frac, config=config)
 
     summary = _build_summary(targets, config=config, coverage_data=coverage_data)

@@ -14,7 +14,7 @@ CRAP = complexity² × (1 − line_coverage)³ + complexity
 
 Where:
 - `complexity` — McCabe cyclomatic complexity (number of independent paths through the function; minimum 1)
-- `line_coverage` — fraction of lines executed by tests, in [0.0, 1.0]
+- `line_coverage` — fraction of *that function's own* lines executed by tests, in [0.0, 1.0]. Coverage is attributed per function, never inherited from the containing file; see [How coverage is attributed](../reference/cli/crap.md#how-coverage-is-attributed).
 
 A function with complexity 10 and 0% coverage scores `10² × 1³ + 10 = 110`. The same function at 100% coverage scores `10² × 0 + 10 = 10` — CRAP equals complexity at full coverage. The score is `null` when coverage data is unavailable.
 
