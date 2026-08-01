@@ -20,6 +20,7 @@ from gaze_py.crap.compare import (
     build_comparison_summary,
     classify_delta,
     compare,
+    legacy_score_key,
     load_baseline,
     score_key,
 )
@@ -376,6 +377,133 @@ def test_score_key_builds_composite_key() -> None:
     entry = _entry("src/foo.py", "compute", crap=5.0)
     result = score_key(entry)
     assert result == "src/foo.py:compute"
+
+
+# ---------------------------------------------------------------------------
+# Receiver disambiguation — same-named methods must not alias each other
+# ---------------------------------------------------------------------------
+
+
+def _method(pkg: str, receiver: str | None, fn: str, crap: float) -> dict:
+    """Build a result dict carrying a receiver, as the detector emits for methods."""
+    return {
+        "target": {"package": pkg, "function": fn, "receiver": receiver},
+        "crap": crap,
+        "gaze_crap": None,
+    }
+
+
+def test_score_key_qualifies_methods_by_receiver() -> None:
+    """Two same-named methods in one file MUST NOT share a key."""
+    a = _method("cli_registry.py", "WriteDeclaration", "to_dict", 2.0)
+    b = _method("cli_registry.py", "CommandEntry", "to_dict", 1.0)
+    assert score_key(a) != score_key(b)
+    assert score_key(a) == "cli_registry.py:WriteDeclaration.to_dict"
+
+
+def test_score_key_leaves_module_level_functions_unqualified() -> None:
+    """A receiver of None must not alter the key, so existing baselines match."""
+    entry = {"target": {"package": "foo.py", "function": "run", "receiver": None}, "crap": 3.0}
+    assert score_key(entry) == "foo.py:run"
+    assert score_key(entry) == legacy_score_key(entry)
+
+
+def test_same_named_methods_do_not_report_phantom_regressions() -> None:
+    """Regression guard for the aliasing that per-function coverage exposed.
+
+    Four `to_dict` methods in one module is ordinary. Keyed bare, they collapse
+    to one entry and the uncovered one (CRAP 2.0) scores against a covered
+    namesake's baseline (CRAP 1.0), reporting a +1.00 regression that no code
+    change caused. With the default epsilon of 0.0 that fails the gate — so a
+    baseline regenerated from a coverage report fails against the very data
+    that produced it.
+    """
+    entries = [
+        _method("cli_registry.py", "CommandArgument", "to_dict", 1.0),
+        _method("cli_registry.py", "CommandFlag", "to_dict", 1.0),
+        _method("cli_registry.py", "WriteDeclaration", "to_dict", 2.0),
+        _method("cli_registry.py", "CommandEntry", "to_dict", 1.0),
+    ]
+    opts = CompareOptions(new_function_threshold=15.0)
+    result = compare(entries, entries, opts)
+
+    assert result.summary.regressions == 0, (
+        f"identical input must produce no regressions, got "
+        f"{[d.crap_delta for d in result.deltas if d.crap_delta > 0]}"
+    )
+    assert result.summary.improvements == 0
+    assert len(result.new_functions) == 0
+    assert len(result.removed_functions) == 0
+
+
+def test_same_named_module_functions_match_one_to_one() -> None:
+    """Receiver cannot disambiguate two module-level namesakes; order must.
+
+    Nested helpers commonly share a name (two `decorator` functions in one
+    module). Grouped positional matching pairs them one-to-one instead of
+    scoring both against whichever the map happened to keep.
+    """
+    entries = [
+        _method("cli_registry.py", None, "decorator", 2.0),
+        _method("cli_registry.py", None, "decorator", 7.0),
+    ]
+    opts = CompareOptions(new_function_threshold=15.0)
+    result = compare(entries, entries, opts)
+
+    assert result.summary.regressions == 0
+    assert result.summary.improvements == 0
+    assert result.summary.unchanged == 2
+
+
+def test_a_real_regression_in_one_overload_is_still_caught() -> None:
+    """Disambiguation must not silence genuine regressions."""
+    baseline = [
+        _method("m.py", "A", "to_dict", 1.0),
+        _method("m.py", "B", "to_dict", 1.0),
+    ]
+    current = [
+        _method("m.py", "A", "to_dict", 1.0),
+        _method("m.py", "B", "to_dict", 9.0),  # B genuinely got worse
+    ]
+    opts = CompareOptions(new_function_threshold=15.0)
+    result = compare(baseline, current, opts)
+
+    assert result.summary.regressions == 1
+    regressed = [d for d in result.deltas if d.crap_delta > 0]
+    assert regressed[0].current["target"]["receiver"] == "B"
+    assert regressed[0].crap_delta == pytest.approx(8.0)
+
+
+def test_pre_0_9_1_baseline_still_matches_via_legacy_key() -> None:
+    """An existing baseline keys methods bare; it must keep matching.
+
+    Without the fallback, every method in every consumer's committed baseline
+    would report as simultaneously removed and new on upgrade.
+    """
+    legacy_baseline = [
+        {"target": {"package": "m.py", "function": "to_dict"}, "crap": 1.0, "gaze_crap": None},
+    ]
+    current = [_method("m.py", "CommandEntry", "to_dict", 1.0)]
+    opts = CompareOptions(new_function_threshold=15.0)
+    result = compare(legacy_baseline, current, opts)
+
+    assert len(result.new_functions) == 0, "method must match its unqualified baseline entry"
+    assert len(result.removed_functions) == 0
+    assert result.summary.unchanged == 1
+
+
+def test_removed_overload_is_reported_individually() -> None:
+    """Deleting one of two namesakes must be reported, not hidden by the survivor."""
+    baseline = [
+        _method("m.py", "A", "to_dict", 1.0),
+        _method("m.py", "B", "to_dict", 1.0),
+    ]
+    current = [_method("m.py", "A", "to_dict", 1.0)]
+    opts = CompareOptions(new_function_threshold=15.0)
+    result = compare(baseline, current, opts)
+
+    assert len(result.removed_functions) == 1
+    assert result.removed_functions[0]["target"]["receiver"] == "B"
 
 
 # ---------------------------------------------------------------------------

@@ -226,8 +226,22 @@ def _validate_baseline_entry(i: int, entry: object, regen_hint: str) -> None:
 def score_key(entry: JsonEntry) -> str:
     """Build the composite lookup key for matching functions.
 
-    Uses ``target.package + ":" + target.function`` — equivalent to
-    Go's ``file + ":" + function`` (D2).
+    Uses ``package:receiver.function`` for methods and ``package:function``
+    for module-level functions. The receiver qualifier matters: without it,
+    every method sharing a name within one file collapses to a single key
+    (four ``to_dict`` methods in one module are ordinary), and the comparator
+    then scores one method against another's baseline.
+
+    That aliasing was latent while coverage was attributed per file — every
+    function in a file shared one coverage value, so same-named functions of
+    equal complexity produced equal CRAP and the mismatch cancelled out. Once
+    coverage became per function (0.9.0), an uncovered method compared against
+    a covered namesake's baseline reports a phantom regression, and with the
+    default epsilon of 0.0 that fails the gate.
+
+    Go's key is ``file + ":" + function`` (D2), which does not need the
+    qualifier: Go methods carry their receiver in the function name already.
+    Qualifying here reproduces that uniqueness rather than departing from it.
 
     Args:
         entry: A result dict from a ``gazepy crap --format=json`` output.
@@ -238,6 +252,27 @@ def score_key(entry: JsonEntry) -> str:
     t = entry["target"]
     if not isinstance(t, dict):
         raise TypeError(f"score_key: expected target dict, got {type(t).__name__}")
+    receiver = t.get("receiver")
+    qualifier = f"{receiver}." if isinstance(receiver, str) and receiver else ""
+    return str(t["package"]) + ":" + qualifier + str(t["function"])
+
+
+def legacy_score_key(entry: JsonEntry) -> str:
+    """Build the pre-0.9.1 unqualified key (``package:function``).
+
+    Baselines generated before receiver qualification key methods without it.
+    Matching falls back to this key so an existing baseline keeps matching
+    instead of reporting every method as simultaneously removed and new.
+
+    Args:
+        entry: A result dict from a ``gazepy crap --format=json`` output.
+
+    Returns:
+        Composite key string without the receiver qualifier.
+    """
+    t = entry["target"]
+    if not isinstance(t, dict):
+        raise TypeError(f"legacy_score_key: expected target dict, got {type(t).__name__}")
     return str(t["package"]) + ":" + str(t["function"])
 
 
@@ -301,22 +336,45 @@ def compare(
         ComparisonResult with per-function deltas, new/removed functions,
         summary counts, and any warnings.
     """
-    # Build lookup map from baseline entries.
-    baseline_map: dict[str, JsonEntry] = {score_key(e): e for e in baseline}
+    # Group baseline entries by key rather than collapsing to one entry each.
+    # A plain dict comprehension keeps only the LAST entry per key, so any
+    # remaining duplicate (two module-level functions of the same name in one
+    # file, or two same-named methods of the same class) would score every
+    # occurrence against that one survivor. Grouping matches them one-to-one in
+    # encounter order, which is the detector's stable AST walk order.
+    baseline_groups: dict[str, list[JsonEntry]] = {}
+    for e in baseline:
+        baseline_groups.setdefault(score_key(e), []).append(e)
+
+    # Fallback index for baselines written before receiver qualification, where
+    # methods are keyed bare. Only consulted when the qualified lookup misses.
+    legacy_groups: dict[str, list[JsonEntry]] = {}
+    for e in baseline:
+        legacy_groups.setdefault(legacy_score_key(e), []).append(e)
 
     result = ComparisonResult()
-    matched: set[str] = set()
+    matched: set[int] = set()
+    consumed: dict[str, int] = {}
 
     for cur in current:
         key = score_key(cur)
-        base = baseline_map.get(key)
+        group = baseline_groups.get(key)
+        lookup_key = key
+        if not group:
+            # Pre-0.9.1 baseline: retry unqualified.
+            lookup_key = legacy_score_key(cur)
+            group = legacy_groups.get(lookup_key)
+
+        offset = consumed.get(lookup_key, 0)
+        base = group[offset] if group is not None and offset < len(group) else None
 
         if base is None:
             # New function — classify in summary.
             result.new_functions.append(cur)
             continue
 
-        matched.add(key)
+        consumed[lookup_key] = offset + 1
+        matched.add(id(base))
 
         # OC-003: None means "not computed" — treat as 0.0 for delta math only.
         # Use explicit isinstance check, not `or 0.0`, to avoid treating crap=0.0 as missing.
@@ -354,10 +412,11 @@ def compare(
             )
         )
 
-    # Unmatched baseline entries are removed functions.
+    # Unmatched baseline entries are removed functions. Identity-based so that
+    # duplicates are reported individually — keying by name here would hide a
+    # genuinely removed overload behind a surviving namesake.
     for base in baseline:
-        key = score_key(base)
-        if key not in matched:
+        if id(base) not in matched:
             result.removed_functions.append(base)
 
     # Large unmatched set warning — likely caused by file renames.
