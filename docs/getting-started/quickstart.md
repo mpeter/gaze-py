@@ -40,10 +40,15 @@ CRAPload (>15.0):    1  [parse_expression]
 | Column | Meaning |
 |---|---|
 | `CC` | Cyclomatic complexity — number of independent code paths |
-| `cov` | Line coverage percentage from pytest |
+| `cov` | Line coverage of *that function*, from pytest — not its file's coverage |
 | `CRAP` | CRAP score — higher is worse |
 | `Q1`–`Q4` | Quadrant (Q4 = high complexity + low coverage = highest risk) |
 | Last column | Recommended fix strategy |
+
+In the sample above `handle_error` shows `cov=0%` even though the file around it
+is well covered. That is the point: coverage is measured per function, so an
+untested function cannot hide behind well-tested neighbours. See
+[How coverage is attributed](../reference/cli/crap.md#how-coverage-is-attributed).
 
 ## Act on the Results
 

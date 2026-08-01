@@ -24,8 +24,9 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from gaze_py.cli.main import _resolve_line_coverage, cli
+from gaze_py.cli.main import _FileCoverage, _resolve_line_coverage, cli
 from gaze_py.report.ai import NoopSynthesizer
+from gaze_py.taxonomy.models import FunctionTarget
 
 # Path to the testdata directory (relative to this test file)
 _TESTDATA = Path(__file__).parent / "testdata" / "analysis"
@@ -788,6 +789,32 @@ def test_crap_coverprofile_path(tmp_path: Path) -> None:
 # that happens to match each specific key format — which would obscure what
 # is actually being tested and make the branch-2 (cwd-relative) case
 # impossible to trigger deterministically.
+#
+# These cases cover *path resolution* only, so they deliberately use degraded
+# entries (no line arrays) and a target with no known extent. That drives the
+# file-level fallback, isolating which key matched from how the fraction is
+# derived. Per-function derivation is covered separately below.
+
+
+def _degraded_coverage(raw: dict[str, float]) -> dict[str, _FileCoverage]:
+    """Build a coverage map with no per-line data, forcing file-level fallback."""
+    return {
+        key: _FileCoverage(percent_covered=pct, executed_lines=None, missing_lines=None)
+        for key, pct in raw.items()
+    }
+
+
+def _extentless_target() -> FunctionTarget:
+    """Build a target with no known line extent (owned_lines is None)."""
+    return FunctionTarget(
+        function="f",
+        file_path="complexity.py",
+        line=1,
+        complexity=1,
+        package="complexity.py",
+        receiver=None,
+        signature="def f()",
+    )
 
 
 @pytest.mark.parametrize(
@@ -847,7 +874,9 @@ def test_resolve_line_coverage_branches(
         unrelated = tmp_path / "unrelated"
         unrelated.mkdir()
         monkeypatch.chdir(unrelated)
-        result = _resolve_line_coverage(py_file, root, coverage_data)
+        result = _resolve_line_coverage(
+            py_file, root, _degraded_coverage(coverage_data), target=_extentless_target()
+        )
         assert result == expected_frac
         return
 
@@ -865,7 +894,9 @@ def test_resolve_line_coverage_branches(
     # so cwd must be tmp_path.
     monkeypatch.chdir(tmp_path)
 
-    result = _resolve_line_coverage(py_file, root, coverage_data)
+    result = _resolve_line_coverage(
+        py_file, root, _degraded_coverage(coverage_data), target=_extentless_target()
+    )
     assert result == expected_frac
 
 

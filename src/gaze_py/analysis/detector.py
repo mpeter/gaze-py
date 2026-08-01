@@ -2225,6 +2225,18 @@ class FileDetector:
                 signature="<module>",
                 caller_count=0,
                 effects=[effect for _, effect in sentinel_pairs],
+                # Module-level code owns every line not belonging to a
+                # function body. Its complexity is fixed at 1, so its CRAP is
+                # bounded by 2.0 and it can never reach the flagging threshold
+                # whatever its coverage resolves to.
+                # module.body is non-empty here (sentinel_pairs is non-empty),
+                # and its last statement ends at the module's last meaningful
+                # line. Derived from the AST rather than splitlines(), which
+                # splits on terminators the Python tokenizer does not treat as
+                # line breaks (\f, \v, U+2028) and would overcount.
+                # See _owned_lines for why the None fallback is required by
+                # mypy --strict but unreachable in practice.
+                owned_lines=_owned_lines(module, 1, _module_end_line(module)),
             )
             targets.append(module_target)
 
@@ -2329,6 +2341,7 @@ class FileDetector:
                 docstring=docstring,
                 class_bases=class_bases,
                 return_type_hint=return_type_hint,
+                owned_lines=_fn_owned_lines(fn_node),
             )
             targets.append(target)
 
@@ -2440,3 +2453,98 @@ def _has_nonlocal(fn_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         if isinstance(stmt, ast.Nonlocal):
             return True
     return False
+
+
+def _module_end_line(module: ast.Module) -> int:
+    """Return the last line of a module's executable extent.
+
+    Derived from the AST rather than ``len(source.splitlines())``: str.splitlines
+    splits on a superset of the terminators the Python tokenizer treats as line
+    breaks (``\\f``, ``\\v``, U+2028, U+2029), so a source containing any of them
+    would yield an extent longer than the file's real last line.
+
+    Args:
+        module: The parsed module. Callers guarantee a non-empty body.
+
+    Returns:
+        The 1-indexed last line of the module's final statement.
+    """
+    last = module.body[-1]
+    # typeshed types end_lineno as int | None; ast populates it on every parsed
+    # node, so the fallback is unreachable in practice but required for
+    # mypy --strict.
+    return last.end_lineno if last.end_lineno is not None else last.lineno
+
+
+def _owned_lines(scope: ast.AST, start: int, end: int) -> frozenset[int]:
+    """Return the lines in [start, end] that `scope` is accountable for.
+
+    Every nested function's *body* is subtracted, because nested functions are
+    scored as independent targets — a parent must not be credited or penalized
+    for its children's coverage.
+
+    The subtraction begins at the nested function's ``body[0].lineno``, so the
+    nested ``def`` line and any decorator lines above it remain owned by
+    `scope`. Those statements execute in the enclosing scope, which is exactly
+    how coverage.py attributes them. Keeping them is not cosmetic: attributing
+    them to the child instead produces systematic off-by-N statement counts for
+    every function that contains a nested definition.
+
+    Docstrings, blank lines, and comments need no special handling here. The
+    caller intersects this set with coverage.py's ``executed_lines`` and
+    ``missing_lines``, neither of which contains non-statement lines, so they
+    drop out naturally.
+
+    Args:
+        scope: The AST node whose descendants are searched for nested
+            definitions. Not itself subtracted.
+        start: First line of the scope's extent (1-indexed, inclusive).
+        end: Last line of the scope's extent (1-indexed, inclusive).
+
+    Returns:
+        The owned line numbers.
+    """
+    owned = set(range(start, end + 1))
+    for child in ast.walk(scope):
+        if child is scope:
+            continue
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            body_start = child.body[0].lineno
+            # typeshed types end_lineno as int | None; ast populates it on
+            # every parsed node, so the fallback is unreachable in practice
+            # but required for mypy --strict.
+            child_end = child.end_lineno if child.end_lineno is not None else body_start
+            owned -= set(range(body_start, child_end + 1))
+    return frozenset(owned)
+
+
+def _fn_owned_lines(fn_node: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[int]:
+    """Return the lines a function is accountable for when scoring coverage.
+
+    The range starts at the function's first body statement, deliberately
+    excluding its own ``def`` line and any decorator lines. Those execute at
+    import time rather than on call, so coverage.py marks them executed for any
+    module that is imported at all. Including them would make 0% coverage
+    arithmetically unreachable — a never-called function would report a small
+    positive fraction instead of zero.
+
+    A body consisting only of a docstring owns nothing and returns an empty
+    set. That is a distinct answer from a non-empty set: it lets the coverage
+    resolver tell "this function has no statements to cover" apart from "this
+    function has statements the coverage report says nothing about", which
+    otherwise look identical and must not be scored the same way.
+
+    Args:
+        fn_node: The function definition AST node.
+
+    Returns:
+        The owned line numbers, excluding nested function bodies. Empty when
+        the body holds no executable statements.
+    """
+    if len(fn_node.body) == 1 and ast.get_docstring(fn_node) is not None:
+        return frozenset()
+
+    body_start = fn_node.body[0].lineno
+    # See _owned_lines for why the None fallback is required but unreachable.
+    end = fn_node.end_lineno if fn_node.end_lineno is not None else body_start
+    return _owned_lines(fn_node, body_start, end)

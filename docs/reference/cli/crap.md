@@ -16,6 +16,21 @@ Use `--max-crapload` as a CI gate to fail when too many high-CRAP functions exis
 
 Use `--baseline` to compare current scores against a previously saved baseline and fail on regressions.
 
+## How coverage is attributed
+
+CRAP is a per-function metric, so coverage is resolved for each function individually — never by applying its file's aggregate percentage. Two functions in the same file get different coverage values, and therefore different CRAP scores.
+
+The lines a function is accountable for are the lines of its body, with two adjustments:
+
+- **Its own `def` line and decorator lines are excluded.** Those execute when the module is imported, not when the function is called, so counting them would make 0% coverage unreachable — a never-called function would report a small positive percentage instead of zero.
+- **Nested function bodies are excluded**, because nested functions are scored as independent targets. The nested `def` line itself stays with the parent, since that statement executes in the parent's scope. This matches how `coverage.py` attributes the same lines.
+
+A function whose body contains no executable statements — a body that is only a docstring, for example — reports 100%, matching what `coverage.py` reports for it. Such a function always has complexity 1, so its CRAP is at most 2.0 and it can never be flagged.
+
+If a coverage report entry omits the `executed_lines` and `missing_lines` arrays, per-function attribution is impossible and every function in that file falls back to the file's aggregate `percent_covered`. Reports produced by `coverage.py` always include both arrays; this fallback exists only for hand-constructed input.
+
+> Upgrading from 0.8.2 or earlier: coverage was applied file-wide, which concealed untested functions behind well-covered file-mates and inflated the scores of well-tested ones. Expect `crapload` and `avg_line_coverage` to change, and regenerate any saved baseline.
+
 ## Options
 
 | Option | Default | Description |

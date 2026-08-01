@@ -184,6 +184,13 @@ class FunctionTarget:
         return_type_hint: String form of the return annotation (e.g.,
             "int", "None"), or None when unannotated. Analysis context for
             the visibility signal (Signal 2); not serialized.
+        owned_lines: The 1-indexed source lines this function is accountable
+            for when resolving line coverage, or None when the extent is
+            unknown (a None extent degrades that function to file-level
+            coverage). Excludes the ``def`` and decorator lines, which execute
+            at import time, and excludes the bodies of nested functions, which
+            are scored as independent targets. Computed by detector.py from
+            the AST; not serialized.
     """
 
     function: str
@@ -200,6 +207,7 @@ class FunctionTarget:
     docstring: str | None = None
     class_bases: list[str] | None = None
     return_type_hint: str | None = None
+    owned_lines: frozenset[int] | None = None
 
 
 @dataclass

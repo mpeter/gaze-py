@@ -1,0 +1,937 @@
+{
+  "files": {
+    "tests/testdata/analysis/coverage_ownership.py": {
+      "classes": {
+        "": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [
+            21,
+            24,
+            26,
+            27,
+            30,
+            38,
+            40,
+            42,
+            45,
+            48,
+            49,
+            50,
+            52,
+            53,
+            56,
+            59,
+            63,
+            66
+          ],
+          "missing_lines": [
+            32,
+            33,
+            34,
+            35,
+            41,
+            60,
+            61
+          ],
+          "start_line": 1,
+          "summary": {
+            "covered_lines": 18,
+            "excluded_lines": 0,
+            "missing_lines": 7,
+            "num_statements": 25,
+            "percent_covered": 72.0,
+            "percent_covered_display": "72",
+            "percent_statements_covered": 72.0,
+            "percent_statements_covered_display": "72"
+          }
+        }
+      },
+      "contexts": {
+        "1": [
+          ""
+        ],
+        "21": [
+          ""
+        ],
+        "24": [
+          ""
+        ],
+        "26": [
+          ""
+        ],
+        "27": [
+          ""
+        ],
+        "30": [
+          ""
+        ],
+        "38": [
+          ""
+        ],
+        "40": [
+          ""
+        ],
+        "42": [
+          ""
+        ],
+        "45": [
+          ""
+        ],
+        "48": [
+          ""
+        ],
+        "49": [
+          ""
+        ],
+        "50": [
+          ""
+        ],
+        "52": [
+          ""
+        ],
+        "53": [
+          ""
+        ],
+        "56": [
+          ""
+        ],
+        "59": [
+          ""
+        ],
+        "63": [
+          ""
+        ],
+        "66": [
+          ""
+        ]
+      },
+      "excluded_lines": [],
+      "executed_lines": [
+        21,
+        24,
+        26,
+        27,
+        30,
+        38,
+        40,
+        42,
+        45,
+        48,
+        49,
+        50,
+        52,
+        53,
+        56,
+        59,
+        63,
+        66
+      ],
+      "functions": {
+        "": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [
+            21,
+            24,
+            30,
+            38,
+            45,
+            56,
+            66
+          ],
+          "missing_lines": [],
+          "start_line": 1,
+          "summary": {
+            "covered_lines": 7,
+            "excluded_lines": 0,
+            "missing_lines": 0,
+            "num_statements": 7,
+            "percent_covered": 100.0,
+            "percent_covered_display": "100",
+            "percent_statements_covered": 100.0,
+            "percent_statements_covered_display": "100"
+          }
+        },
+        "docstring_only": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [],
+          "missing_lines": [],
+          "start_line": 66,
+          "summary": {
+            "covered_lines": 0,
+            "excluded_lines": 0,
+            "missing_lines": 0,
+            "num_statements": 0,
+            "percent_covered": 100.0,
+            "percent_covered_display": "100",
+            "percent_statements_covered": 100.0,
+            "percent_statements_covered_display": "100"
+          }
+        },
+        "fully_covered": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [
+            26,
+            27
+          ],
+          "missing_lines": [],
+          "start_line": 24,
+          "summary": {
+            "covered_lines": 2,
+            "excluded_lines": 0,
+            "missing_lines": 0,
+            "num_statements": 2,
+            "percent_covered": 100.0,
+            "percent_covered_display": "100",
+            "percent_statements_covered": 100.0,
+            "percent_statements_covered_display": "100"
+          }
+        },
+        "has_nested": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [
+            48,
+            52,
+            53
+          ],
+          "missing_lines": [],
+          "start_line": 45,
+          "summary": {
+            "covered_lines": 3,
+            "excluded_lines": 0,
+            "missing_lines": 0,
+            "num_statements": 3,
+            "percent_covered": 100.0,
+            "percent_covered_display": "100",
+            "percent_statements_covered": 100.0,
+            "percent_statements_covered_display": "100"
+          }
+        },
+        "has_nested.inner": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [
+            49,
+            50
+          ],
+          "missing_lines": [],
+          "start_line": 48,
+          "summary": {
+            "covered_lines": 2,
+            "excluded_lines": 0,
+            "missing_lines": 0,
+            "num_statements": 2,
+            "percent_covered": 100.0,
+            "percent_covered_display": "100",
+            "percent_statements_covered": 100.0,
+            "percent_statements_covered_display": "100"
+          }
+        },
+        "has_uncalled_nested": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [
+            59,
+            63
+          ],
+          "missing_lines": [],
+          "start_line": 56,
+          "summary": {
+            "covered_lines": 2,
+            "excluded_lines": 0,
+            "missing_lines": 0,
+            "num_statements": 2,
+            "percent_covered": 100.0,
+            "percent_covered_display": "100",
+            "percent_statements_covered": 100.0,
+            "percent_statements_covered_display": "100"
+          }
+        },
+        "has_uncalled_nested.unused_inner": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [],
+          "missing_lines": [
+            60,
+            61
+          ],
+          "start_line": 59,
+          "summary": {
+            "covered_lines": 0,
+            "excluded_lines": 0,
+            "missing_lines": 2,
+            "num_statements": 2,
+            "percent_covered": 0.0,
+            "percent_covered_display": "0",
+            "percent_statements_covered": 0.0,
+            "percent_statements_covered_display": "0"
+          }
+        },
+        "never_called": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [],
+          "missing_lines": [
+            32,
+            33,
+            34,
+            35
+          ],
+          "start_line": 30,
+          "summary": {
+            "covered_lines": 0,
+            "excluded_lines": 0,
+            "missing_lines": 4,
+            "num_statements": 4,
+            "percent_covered": 0.0,
+            "percent_covered_display": "0",
+            "percent_statements_covered": 0.0,
+            "percent_statements_covered_display": "0"
+          }
+        },
+        "partially_covered": {
+          "contexts": {
+            "1": [
+              ""
+            ],
+            "21": [
+              ""
+            ],
+            "24": [
+              ""
+            ],
+            "26": [
+              ""
+            ],
+            "27": [
+              ""
+            ],
+            "30": [
+              ""
+            ],
+            "38": [
+              ""
+            ],
+            "40": [
+              ""
+            ],
+            "42": [
+              ""
+            ],
+            "45": [
+              ""
+            ],
+            "48": [
+              ""
+            ],
+            "49": [
+              ""
+            ],
+            "50": [
+              ""
+            ],
+            "52": [
+              ""
+            ],
+            "53": [
+              ""
+            ],
+            "56": [
+              ""
+            ],
+            "59": [
+              ""
+            ],
+            "63": [
+              ""
+            ],
+            "66": [
+              ""
+            ]
+          },
+          "excluded_lines": [],
+          "executed_lines": [
+            40,
+            42
+          ],
+          "missing_lines": [
+            41
+          ],
+          "start_line": 38,
+          "summary": {
+            "covered_lines": 2,
+            "excluded_lines": 0,
+            "missing_lines": 1,
+            "num_statements": 3,
+            "percent_covered": 66.66666666666667,
+            "percent_covered_display": "67",
+            "percent_statements_covered": 66.66666666666667,
+            "percent_statements_covered_display": "67"
+          }
+        }
+      },
+      "missing_lines": [
+        32,
+        33,
+        34,
+        35,
+        41,
+        60,
+        61
+      ],
+      "summary": {
+        "covered_lines": 18,
+        "excluded_lines": 0,
+        "missing_lines": 7,
+        "num_statements": 25,
+        "percent_covered": 72.0,
+        "percent_covered_display": "72",
+        "percent_statements_covered": 72.0,
+        "percent_statements_covered_display": "72"
+      }
+    }
+  },
+  "meta": {
+    "branch_coverage": false,
+    "format": 3,
+    "show_contexts": true,
+    "timestamp": "2026-08-01T11:11:25.279771",
+    "version": "7.14.1"
+  },
+  "totals": {
+    "covered_lines": 24,
+    "excluded_lines": 0,
+    "missing_lines": 7,
+    "num_statements": 31,
+    "percent_covered": 77.41935483870968,
+    "percent_covered_display": "77",
+    "percent_statements_covered": 77.41935483870968,
+    "percent_statements_covered_display": "77"
+  }
+}
