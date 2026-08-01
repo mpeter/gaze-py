@@ -143,13 +143,24 @@ jobs:
       - name: Smoke test published package
         run: |
           VER="${RELEASE_TAG#v}"
+          # Capture stderr rather than discarding it. Discarding made every
+          # failure look like PyPI propagation lag: `gazepy --version` did not
+          # exist until 0.9.2, so this step failed on every release with a
+          # "timed out after 300s" message that pointed at the CDN instead of
+          # at the missing option.
           for i in $(seq 1 10); do
             sleep 30
-            if uvx --from "gaze-py==${VER}" gazepy --version 2>/dev/null | grep -q "${VER}"; then
-              echo "Smoke test passed: gaze-py ${VER} is available on PyPI."
-              exit 0
+            if out=$(uvx --refresh --from "gaze-py==${VER}" gazepy --version 2>&1); then
+              if printf '%s' "$out" | grep -q "${VER}"; then
+                echo "Smoke test passed: gaze-py ${VER} is available on PyPI and reports its version."
+                exit 0
+              fi
+              echo "::error::Published gaze-py ${VER} ran but did not report ${VER}: ${out}"
+              exit 1
             fi
             echo "Attempt $i: not yet available, retrying in 30s..."
+            last_error="$out"
           done
-          echo "::error::Smoke test timed out after 300s — verify manually at https://pypi.org/p/gaze-py"
+          echo "::error::Smoke test timed out after 300s — last error: ${last_error:-none}"
+          echo "Verify manually at https://pypi.org/p/gaze-py"
           exit 1

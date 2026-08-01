@@ -4,6 +4,36 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-08-01
+
+### Added
+
+- **`gazepy --version` (and `-V`)**. The CLI had no way to report its own
+  version: the group exposed only `--help`, and while `__version__` was
+  already used for `init` scaffolding and emitted as `gaze_version` in JSON
+  metadata, nothing surfaced it on the command line.
+
+### Fixed
+
+- **The release workflow's smoke test failed on every release.** It runs the
+  published artifact as `gazepy --version` and greps for the tag — an option
+  that did not exist, so the command exited non-zero every time. The step
+  retried ten times and failed with "Smoke test timed out after 300s", which
+  reads as PyPI propagation lag. It is not: publishing, tagging and the
+  GitHub release all succeeded on 0.8.2, 0.9.0 and 0.9.1, and each package
+  was live on PyPI immediately.
+
+  The step also discarded stderr (`2>/dev/null`), which is what made the real
+  cause invisible across three releases — the actual message was
+  `Error: No such option '--version'`. It now captures stderr, reports the
+  last error when it gives up, and fails fast with the output when the
+  published artifact runs but reports the wrong version, rather than
+  retrying as though the package were missing.
+
+  With `--version` in place the smoke test also becomes meaningful for the
+  first time: it verifies the published artifact reports the version that was
+  tagged, instead of only proving that something installable exists.
+
 ## [0.9.1] — 2026-08-01
 
 ### Fixed
