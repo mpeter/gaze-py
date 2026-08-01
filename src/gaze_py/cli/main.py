@@ -1485,6 +1485,7 @@ def _resolve_line_coverage(
     py_file: Path,
     root: Path,
     coverage_data: dict[str, _FileCoverage] | None,
+    *,
     target: FunctionTarget,
 ) -> float | None:
     """Resolve the line coverage fraction for a single function.
@@ -1999,7 +2000,7 @@ def _run_crap(
 
     for target in targets:
         abs_file = root / target.file_path
-        line_coverage_frac = _resolve_line_coverage(abs_file, root, coverage_data, target)
+        line_coverage_frac = _resolve_line_coverage(abs_file, root, coverage_data, target=target)
         _score_target(target, line_coverage_frac=line_coverage_frac, config=config)
 
     summary = _build_summary(targets, config=config, coverage_data=coverage_data)

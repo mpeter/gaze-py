@@ -37,8 +37,9 @@ The subtraction must start at the nested function's **body**, not its `def`
 line: the `def` statement itself executes in the *parent's* scope, so the parent
 legitimately owns it. This is exactly what coverage.py does.
 
-**This rule is not cosmetic.** Validation against coverage.py's own `functions`
-map across a real project:
+**This rule is not cosmetic.** Out-of-band validation against coverage.py's own
+`functions` map across the `fieldkit-cmd` consumer project (not reproducible
+from this repo — that project is not vendorable here):
 
 | | Functions matching coverage.py |
 |---|---|
@@ -49,7 +50,19 @@ The 55 mismatches without rule B were systematic off-by-N errors
 (e.g. `declare_write` counted 4 statements instead of 5; `make_lazy_group`
 2 instead of 4) — every one a function containing nested definitions.
 
-This 1455/1455 cross-check is the acceptance test, not an anecdote.
+The **in-repo** acceptance test is `tests/test_coverage_ownership.py`, which
+runs the same comparison against a committed coverage.py report over
+`tests/testdata/analysis/coverage_ownership.py`. That fixture is small (8
+function entries) but deliberately covers every case the rules distinguish:
+a never-called function, a partially covered one, a parent with a covered
+nested function, a parent with an *uncovered* nested function, and a
+docstring-only body. Both rules are mutation-verified — reverting rule A fails
+6 tests, reverting rule B fails 2, including the statement-set comparison.
+
+The same comparison was also run over gaze-py's own source at 256/256 exact
+set match, with the end-to-end resolver reproducing coverage.py's per-function
+percentages 256/256 (198/256 without rule A, and 0 of the 4 truly-0% functions
+reported as 0%).
 
 ## Zero-statement functions
 

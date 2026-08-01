@@ -49,14 +49,19 @@ coverage arithmetically unreachable for a never-called function.
 
 ### Requirement: Nested function extents are subtracted from the parent, keeping the nested def line
 
-When a function contains nested function or class definitions, each nested
-definition's line extent MUST be removed from the parent's owned lines.
-The removal MUST begin at the nested definition's **body**
+When a function contains nested function definitions (`def` or `async def`),
+each nested definition's line extent MUST be removed from the parent's owned
+lines. The removal MUST begin at the nested definition's **body**
 (`nested.body[0].lineno`), so the nested `def` line itself remains owned by the
 parent — that statement executes in the parent's scope.
 
 Nested functions are scored as independent targets, so without this subtraction
 a parent would be credited or penalized for its children's coverage.
+
+Nested **class** bodies MUST NOT be subtracted. A class body executes in the
+enclosing scope at definition time, so its statements belong to the enclosing
+function. The class's methods are still subtracted, because each is itself a
+nested function definition and an independently scored target.
 
 #### Scenario: Statement counts match coverage.py exactly
 - **GIVEN** a project analyzed with a coverage.py JSON report that includes the

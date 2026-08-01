@@ -34,9 +34,15 @@ with CRAP 18.3.
 
 ## What Changes
 
-- `FunctionTarget` gains an `end_line` field so a function's line extent is
-  known to the scorer. **Not serialized** — the JSON formatter reads only
-  `ft.line` (`json_formatter.py:183`), so Go schema compatibility is preserved.
+- `FunctionTarget` gains an `owned_lines: frozenset[int] | None` field holding
+  the exact lines a function is accountable for, computed in the detector where
+  the AST is available. **Not serialized** — `json_formatter.py` builds target
+  entries field-by-field and never applies `asdict()` to a `FunctionTarget`, so
+  Go schema compatibility is preserved. (This supersedes the originally planned
+  `end_line: int` field: rules A and B below need each function's
+  `body[0].lineno` and its nested children's extents, which a line range cannot
+  express and the CLI layer cannot recover. See `design.md` §"Where ownership is
+  computed".)
 - The coverage loader carries per-file `executed_lines` / `missing_lines`
   instead of collapsing each file to a single `percent_covered` float.
 - Coverage resolution computes each function's own covered-line fraction from
@@ -72,12 +78,18 @@ This matches Go `analyze.go:420` (`totalCov / n` over scored functions).
 
 ## Impact
 
-- `src/gaze_py/taxonomy/models.py` — `FunctionTarget.end_line` field + docstring
-- `src/gaze_py/analysis/detector.py` — two `FunctionTarget(...)` construction
-  sites (`<module>` sentinel at `:2216`, real target at `:2319`)
-- `src/gaze_py/cli/main.py` — `_load_coverage_json`, `_resolve_line_coverage`,
-  and the `coverage_data` type annotation at its six other mention sites
-- `tests/testdata/coverage_sample.json` + new per-function fixtures
+- `src/gaze_py/taxonomy/models.py` — `FunctionTarget.owned_lines` field + docstring
+- `src/gaze_py/analysis/detector.py` — the `_owned_lines` / `_fn_owned_lines`
+  helpers, plus both `FunctionTarget(...)` construction sites (`<module>`
+  sentinel and the real per-function target)
+- `src/gaze_py/cli/main.py` — `_FileCoverage`, `_line_set`, `_load_coverage_json`,
+  `_resolve_line_coverage`, and the `coverage_data` type annotation at its six
+  other mention sites
+- `tests/test_coverage_ownership.py` + `tests/testdata/analysis/coverage_ownership.py`
+  and `tests/testdata/coverage_ownership.json` (a real coverage.py report over
+  that fixture, committed so the cross-check runs without a subprocess).
+  `tests/testdata/coverage_sample.json` is left untouched — summary-only entries
+  exercise the documented file-level fallback.
 - Docs: `docs/getting-started/quickstart.md`,
   `docs/reference/cli/crap.md`, `docs/reference/cli/report.md`
 - **Consumer impact**: reported `crapload` and `avg_line_coverage` will change
@@ -97,6 +109,6 @@ This matches Go `analyze.go:420` (`totalCov / n` over scored functions).
   | `report/text_formatter.py::comparison_to_text` | 71.79% | 80.30% |
 
   This repo enforces no crapload gate (only `--cov-fail-under=85`, which passes
-  at 95.46%), so nothing protected is breached. Closing these gaps is followup
+  at 95.50%), so nothing protected is breached. Closing these gaps is followup
   work, deliberately not bundled here — this change must not mix a measurement
   correction with the test-writing it exposes.

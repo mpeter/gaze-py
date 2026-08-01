@@ -875,7 +875,7 @@ def test_resolve_line_coverage_branches(
         unrelated.mkdir()
         monkeypatch.chdir(unrelated)
         result = _resolve_line_coverage(
-            py_file, root, _degraded_coverage(coverage_data), _extentless_target()
+            py_file, root, _degraded_coverage(coverage_data), target=_extentless_target()
         )
         assert result == expected_frac
         return
@@ -895,7 +895,7 @@ def test_resolve_line_coverage_branches(
     monkeypatch.chdir(tmp_path)
 
     result = _resolve_line_coverage(
-        py_file, root, _degraded_coverage(coverage_data), _extentless_target()
+        py_file, root, _degraded_coverage(coverage_data), target=_extentless_target()
     )
     assert result == expected_frac
 

@@ -2234,7 +2234,9 @@ class FileDetector:
                 # line. Derived from the AST rather than splitlines(), which
                 # splits on terminators the Python tokenizer does not treat as
                 # line breaks (\f, \v, U+2028) and would overcount.
-                owned_lines=_owned_lines(module, 1, module.body[-1].end_lineno or 1),
+                # See _owned_lines for why the None fallback is required by
+                # mypy --strict but unreachable in practice.
+                owned_lines=_owned_lines(module, 1, _module_end_line(module)),
             )
             targets.append(module_target)
 
@@ -2451,6 +2453,27 @@ def _has_nonlocal(fn_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         if isinstance(stmt, ast.Nonlocal):
             return True
     return False
+
+
+def _module_end_line(module: ast.Module) -> int:
+    """Return the last line of a module's executable extent.
+
+    Derived from the AST rather than ``len(source.splitlines())``: str.splitlines
+    splits on a superset of the terminators the Python tokenizer treats as line
+    breaks (``\\f``, ``\\v``, U+2028, U+2029), so a source containing any of them
+    would yield an extent longer than the file's real last line.
+
+    Args:
+        module: The parsed module. Callers guarantee a non-empty body.
+
+    Returns:
+        The 1-indexed last line of the module's final statement.
+    """
+    last = module.body[-1]
+    # typeshed types end_lineno as int | None; ast populates it on every parsed
+    # node, so the fallback is unreachable in practice but required for
+    # mypy --strict.
+    return last.end_lineno if last.end_lineno is not None else last.lineno
 
 
 def _owned_lines(scope: ast.AST, start: int, end: int) -> frozenset[int]:
