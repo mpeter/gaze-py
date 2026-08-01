@@ -70,6 +70,7 @@ from gaze_py.taxonomy.models import (
 
 
 @click.group()
+@click.version_option(_version, "-V", "--version", prog_name="gazepy")
 def cli() -> None:
     """gaze-py — Python side-effect detector and CRAP scorer."""
 

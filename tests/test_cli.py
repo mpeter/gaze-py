@@ -14,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -24,6 +25,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
+from gaze_py import __version__ as _gaze_version
 from gaze_py.cli.main import _FileCoverage, _resolve_line_coverage, cli
 from gaze_py.report.ai import NoopSynthesizer
 from gaze_py.taxonomy.models import FunctionTarget
@@ -695,6 +697,37 @@ def test_help_exits_zero_and_shows_analyze() -> None:
     result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
     assert "analyze" in result.output
+
+
+@pytest.mark.parametrize("flag", ["--version", "-V"], ids=["long", "short"])
+def test_version_flag_reports_the_installed_version(flag: str) -> None:
+    """gazepy --version exits 0 and prints the package version.
+
+    The release workflow's smoke test runs the published artifact with
+    `--version` and greps for the tag. Until 0.9.2 the option did not exist,
+    so that step failed on every release with a message blaming PyPI
+    propagation rather than the missing option. This pins the contract the
+    smoke test depends on.
+    """
+    runner = CliRunner()
+    result = runner.invoke(cli, [flag])
+    assert result.exit_code == 0
+    assert _gaze_version in result.output
+
+
+def test_version_output_satisfies_the_release_smoke_test_grep() -> None:
+    """The release workflow greps the raw version out of the output.
+
+    Guards the *shape* as well as the exit code: a message that omitted the
+    bare version string would pass the assertion above only by accident of
+    substring matching, but must keep satisfying `grep -q "$VER"`.
+    """
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--version"])
+    assert result.exit_code == 0
+    assert re.search(rf"\b{re.escape(_gaze_version)}\b", result.output), (
+        f"release smoke test greps for {_gaze_version!r}; got {result.output!r}"
+    )
 
 
 def test_analyze_help_exits_zero() -> None:
