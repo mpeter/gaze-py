@@ -54,6 +54,14 @@ The mapper MUST NOT give stream credit for output captured before the target cal
 - **WHEN** only stderr is asserted for a stdout-only target, or the target call appears only in an unexecuted nested definition
 - **THEN** no stdout coverage is credited
 
+#### Scenario: qualified target identity
+- **WHEN** a qualified call uses a statically resolved, unshadowed import alias for the exact target module
+- **THEN** its captured stream can be attributed to that target
+
+#### Scenario: same-name collision or shadowed alias
+- **WHEN** a qualified call names an unrelated receiver, a different module with the same basename, an unresolved import, or an alias shadowed in the test
+- **THEN** matching the target function name alone MUST NOT credit its stream effect
+
 ### Requirement: capture-mapping-pipeline-integration
 
 The normal quality pipeline MUST provide test context to capture-aware mapping. The repair MUST preserve taxonomy, schemas, classification and score formulas, and MUST analyze source without executing or importing it.

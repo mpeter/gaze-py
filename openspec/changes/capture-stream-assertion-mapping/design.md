@@ -17,6 +17,7 @@ Non-goals: general Python symbolic execution, execution/import of analyzed modul
 3. Identify stream assertions structurally, not by names such as `out` or substrings in effect targets. Handle tuple capture, result attributes, direct/inline attributes and bounded value-preserving operations needed by real JSON assertions. Do not infer arbitrary helper-call semantics. Treat stdout and stderr independently; assertions mixing both streams remain conservative.
 4. Preserve first-match behavior for return/error assertions. A capture-aware pass runs before semantic fallback for remaining assertions, and requires that the matching stream effect exists on the target. Captured stream assertions that cannot be safely attributed must not acquire stdout/stderr credit through the old name-overlap fallback.
 5. No new runtime dependency. Tests parse synthetic source as AST; they never execute analyzed source. Existing public pipeline fixtures verify measured coverage and diagnostic output, not only helper internals.
+6. Qualified capture-producing calls require exact target-module identity from statically parsed import context. Retain bounded import context on the internal test model and pass target identity to the capture helper; do not equate module basenames or arbitrary receiver method names. Shadowed aliases and unresolved identities remain unsupported. This is a capture-provenance check, not a replacement pairing engine, and does not change serialized schemas.
 
 ## Porting Contract Alignment
 

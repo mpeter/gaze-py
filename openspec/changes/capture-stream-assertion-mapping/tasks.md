@@ -9,6 +9,7 @@
 - [ ] 2.2 Pass test context through the normal quality pipeline and verify measured coverage with synthetic source fixtures.
 - [ ] 2.3 Document supported patterns, conservative limitations and release notes.
 - [ ] 2.4 Prepare matching 0.9.3 package version metadata and lockfile without upgrading unrelated dependencies.
+- [ ] 2.5 Carry bounded static import context into capture attribution and test exact qualified identity, module-name collisions and shadowed aliases without changing public schemas.
 
 ## 3. Verification and delivery
 
