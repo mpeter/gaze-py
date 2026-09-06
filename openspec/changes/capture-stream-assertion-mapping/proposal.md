@@ -8,6 +8,7 @@ Issue #82 reproduces a gap in the mapper: the recommended pytest `capsys` assert
 - Preserve stream identity, call/capture ordering and reassignment boundaries; ambiguous captures remain unmapped.
 - Integrate the analysis into normal quality reporting and add regression fixtures.
 - Document supported patterns and limitations without changing taxonomy, classification, formulas, schemas or thresholds.
+- Prepare patch release 0.9.3 with matching package metadata and lockfile; publish only after reviewed merge and verified artifact tests.
 
 ## Capabilities
 

@@ -8,6 +8,7 @@
 - [ ] 2.1 Implement bounded AST-only capture provenance and integrate it before semantic fallback without altering existing return/exception precedence.
 - [ ] 2.2 Pass test context through the normal quality pipeline and verify measured coverage with synthetic source fixtures.
 - [ ] 2.3 Document supported patterns, conservative limitations and release notes.
+- [ ] 2.4 Prepare matching 0.9.3 package version metadata and lockfile without upgrading unrelated dependencies.
 
 ## 3. Verification and delivery
 
