@@ -139,6 +139,7 @@ def assess(
     for test_func in test_funcs:
         report = _process_test_func(
             test_func,
+            source_path=src_path,
             source_targets=source_targets,
             target_map=target_map,
             config=config,
@@ -208,6 +209,7 @@ def _resolve_target(
 def _process_test_func(
     test_func: TestFunc,
     *,
+    source_path: Path,
     source_targets: list[FunctionTarget],
     target_map: dict[str, list[FunctionTarget]],
     config: GazeConfig,
@@ -218,6 +220,7 @@ def _process_test_func(
 
     Args:
         test_func: The test function to process.
+        source_path: Source file or root used to resolve exact target paths.
         source_targets: All production FunctionTargets from the source analysis.
         target_map: Lookup map from function name to FunctionTarget.
         config: GazeConfig with classification thresholds.
@@ -271,7 +274,13 @@ def _process_test_func(
     bindings = build_call_bindings(test_func, pair.target_name)
 
     # Map assertions to effects.
-    mapped = map_assertions_to_effects(assertions, production_target, bindings)
+    mapped = map_assertions_to_effects(
+        assertions,
+        production_target,
+        bindings,
+        test_func=test_func,
+        target_path=_target_path(source_path, production_target),
+    )
 
     # Compute contract coverage.
     coverage = compute_contract_coverage(production_target, mapped, config=config)
@@ -303,6 +312,13 @@ def _process_test_func(
         assertion_count=total_assertions,
         assertion_detection_confidence=assertion_confidence,
     )
+
+
+def _target_path(source_path: Path, target: FunctionTarget) -> Path:
+    """Resolve a FunctionTarget's project-relative file to a concrete path."""
+    if source_path.is_file():
+        return source_path.resolve()
+    return (source_path.resolve() / target.file_path).resolve()
 
 
 def _untested_reports(

@@ -1,12 +1,13 @@
 """A.3 — Assertion-to-effect mapping for the O1 quality assessment pipeline.
 
 Maps each assertion site to the side effect type it most likely exercises,
-using three passes in first-match-wins order:
+using four passes in first-match-wins order:
 
 Pass 1 — Binding match: assertion references a name bound to the target's
     return value or error return (from call_bindings).
 Pass 2 — Exception match: assertion is a raises-kind assertion.
-Pass 3 — Name/semantic match: assertion references a name that appears in
+Pass 3 — Capture match: assertion reads attributable pytest-captured output.
+Pass 4 — Name/semantic match: assertion references a name that appears in
     the target attribute of a detected side effect.
 
 Output length always equals input length (one entry per assertion).
@@ -15,7 +16,9 @@ Output length always equals input length (one entry per assertion).
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 
+from gaze_py.quality.capture import map_capture_assertions
 from gaze_py.quality.models import TestFunc
 from gaze_py.taxonomy.effects import SideEffectType
 from gaze_py.taxonomy.models import AssertionKind, AssertionSite, FunctionTarget
@@ -114,10 +117,13 @@ def map_assertions_to_effects(
     assertions: list[AssertionSite],
     target: FunctionTarget,
     call_bindings: dict[str, str],
+    *,
+    test_func: TestFunc | None = None,
+    target_path: Path | None = None,
 ) -> list[tuple[AssertionSite, SideEffectType | None]]:
     """Map each assertion to the side effect type it most likely exercises.
 
-    Uses three passes in first-match-wins order. Once an assertion is matched
+    Uses four passes in first-match-wins order. Once an assertion is matched
     in an earlier pass, it is not re-evaluated in later passes. This prevents
     double-counting when multiple passes could match the same assertion.
 
@@ -127,7 +133,9 @@ def map_assertions_to_effects(
         Assertion references a name in call_bindings → ReturnValue or ErrorReturn.
     Pass 2 — Exception match:
         Assertion kind is STDLIB_RAISES or UNITTEST_RAISES → ErrorReturn.
-    Pass 3 — Name/semantic match:
+    Pass 3 — Capture match:
+        Attributable pytest capture output → StdoutWrite or StderrWrite.
+    Pass 4 — Name/semantic match:
         Assertion references a name that appears in a side effect's target field.
         Maps to that effect's type (contractual or incidental).
 
@@ -135,6 +143,8 @@ def map_assertions_to_effects(
         assertions: All assertion sites from detect_assertions().
         target: The production FunctionTarget with its detected side effects.
         call_bindings: Mapping from variable name → role, from build_call_bindings().
+        test_func: Optional AST context for ordered capture provenance.
+        target_path: Exact production file path for qualified-call identity.
 
     Returns:
         List of (AssertionSite, SideEffectType | None) tuples, one per assertion.
@@ -145,9 +155,57 @@ def map_assertions_to_effects(
 
     _pass1_binding(assertions, call_bindings, result=result, matched=matched)
     _pass2_exception(assertions, result, matched)
+    if test_func is not None:
+        _pass_capture(
+            assertions,
+            target,
+            test_func,
+            target_path=target_path,
+            result=result,
+            matched=matched,
+        )
     _pass3_semantic(assertions, target, result=result, matched=matched)
 
     return result
+
+
+def _pass_capture(
+    assertions: list[AssertionSite],
+    target: FunctionTarget,
+    test_func: TestFunc,
+    *,
+    target_path: Path | None,
+    result: list[tuple[AssertionSite, SideEffectType | None]],
+    matched: set[int],
+) -> None:
+    """Map structurally attributable pytest capture assertions."""
+    capture_mappings = map_capture_assertions(
+        test_func,
+        target.function,
+        target_path=target_path,
+    )
+    available_effects = {effect.type for effect in target.effects}
+    for index, assertion in enumerate(assertions):
+        if index in matched or assertion.depth != 0:
+            continue
+        position = _assertion_position(assertion.location, test_func.filename)
+        if position is None:
+            continue
+        if position not in capture_mappings:
+            continue
+        effect_type = capture_mappings[position]
+        result.append((assertion, effect_type if effect_type in available_effects else None))
+        matched.add(index)
+
+
+def _assertion_position(location: str, expected_filename: str) -> tuple[int, int] | None:
+    """Extract a same-file line/column suffix, tolerating legacy locations."""
+    parts = location.rsplit(":", maxsplit=2)
+    if len(parts) != 3 or parts[0] != expected_filename:
+        return None
+    if not parts[1].isdigit() or not parts[2].isdigit():
+        return None
+    return int(parts[1]), int(parts[2])
 
 
 def _pass1_binding(

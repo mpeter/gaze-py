@@ -61,6 +61,106 @@ def test_simple_fixture_full_coverage() -> None:
     assert report.contract_coverage.percentage == 100.0
 
 
+def test_capture_stream_mapping_reaches_public_quality_pipeline(tmp_path: Path) -> None:
+    """Return and parsed captured stdout assertions cover only their target effects."""
+    source_path = tmp_path / "output.py"
+    source_path.write_text(
+        """
+def render_payload() -> int:
+    print('{\"ok\": true}')
+    return 0
+
+def unrelated_output() -> None:
+    print("unrelated")
+""",
+        encoding="utf-8",
+    )
+    tests_path = tmp_path / "test_output.py"
+    tests_path.write_text(
+        """
+import json
+
+def test_render_payload(capsys) -> None:
+    result = render_payload()
+    assert result == 0
+    captured = capsys.readouterr()
+    actual = json.loads(captured.out)
+    assert actual == {"ok": True}
+""",
+        encoding="utf-8",
+    )
+
+    result = assess(
+        source_path,
+        tests_path,
+        config=GazeConfig(contractual_threshold=50),
+    )
+    assert result
+    report = next(
+        item
+        for item in result.reports
+        if isinstance(item.target_function, FunctionTarget)
+        and item.target_function.function == "render_payload"
+    )
+    assert report.contract_coverage is not None
+    assert report.contract_coverage.covered_count == 2
+    assert report.contract_coverage.total_contractual == 2
+    assert report.contract_coverage.percentage == 100.0
+    unrelated = next(
+        item
+        for item in result.untested
+        if isinstance(item.target_function, FunctionTarget)
+        and item.target_function.function == "unrelated_output"
+    )
+    assert unrelated.contract_coverage is not None
+    assert unrelated.contract_coverage.reason == "no_test_coverage"
+
+
+def test_qualified_capture_call_uses_exact_imported_module_identity(tmp_path: Path) -> None:
+    """Pipeline retains imports so a qualified call maps only its exact target output."""
+    source_root = tmp_path / "src"
+    target_dir = source_root / "pkg"
+    target_dir.mkdir(parents=True)
+    (target_dir / "example.py").write_text(
+        """
+def example_fn() -> None:
+    print("expected")
+""",
+        encoding="utf-8",
+    )
+    tests_path = tmp_path / "test_output.py"
+    tests_path.write_text(
+        """
+import pkg.example as module
+from unittest.mock import patch
+
+def test_example(capsys) -> None:
+    with patch.object(module, "dependency", return_value=None):
+        capsys.readouterr()
+        module.example_fn()
+        captured = capsys.readouterr()
+    assert "expected" in captured.out
+""",
+        encoding="utf-8",
+    )
+
+    result = assess(
+        source_root,
+        tests_path,
+        config=GazeConfig(contractual_threshold=50),
+    )
+    assert result
+    report = next(
+        item
+        for item in result.reports
+        if isinstance(item.target_function, FunctionTarget)
+        and item.target_function.function == "example_fn"
+    )
+    assert report.contract_coverage is not None
+    assert report.contract_coverage.covered_count == 1
+    assert report.contract_coverage.percentage == 100.0
+
+
 # ---------------------------------------------------------------------------
 # raises fixture: RaiseException effect covered
 # ---------------------------------------------------------------------------

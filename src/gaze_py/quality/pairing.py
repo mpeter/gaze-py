@@ -22,6 +22,7 @@ import astroid.exceptions
 import astroid.util
 from astroid import MANAGER
 
+from gaze_py.quality.capture_identity import collect_module_aliases
 from gaze_py.quality.models import TestFunc
 from gaze_py.taxonomy.models import FunctionTarget, TestTargetPair
 
@@ -51,6 +52,7 @@ def find_test_functions(filepath: Path) -> list[TestFunc]:
 
     results: list[TestFunc] = []
     filename = str(filepath)
+    module_aliases = collect_module_aliases(module)
 
     for node in module.body:
         if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
@@ -60,6 +62,7 @@ def find_test_functions(filepath: Path) -> list[TestFunc]:
                     filename=filename,
                     lineno=node.lineno,
                     node=node,
+                    module_aliases=module_aliases,
                 )
             )
         elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
@@ -71,6 +74,7 @@ def find_test_functions(filepath: Path) -> list[TestFunc]:
                             filename=filename,
                             lineno=item.lineno,
                             node=item,
+                            module_aliases=module_aliases,
                         )
                     )
 

@@ -99,6 +99,47 @@ gazepy quality src/ --format=json
 gazepy quality src/ --min-contract-coverage 80
 ```
 
+### Assert captured output
+
+Assert the returned value and emitted content separately so quality reports can
+distinguish the two contracts. For a function that returns zero and writes
+`ready` to stdout, a pytest test can use:
+
+```python
+def test_run_example(capsys):
+    result = run_example()
+    assert result == 0
+    stdout, _ = capsys.readouterr()
+    assert stdout == "ready\n"
+```
+
+The mapper recognizes `capsys` and `capfd` fixture parameters, tuple unpacking,
+saved capture results such as `captured.out`, directly assigned
+`stdout = capsys.readouterr().out`, and inline captured-stream assertions.
+Assertions on `.out` cover stdout; assertions on `.err` cover stderr. Direct
+JSON parsing of a captured stream is also recognized.
+
+Qualified calls need a resolvable, unshadowed module import that identifies the
+target source file. A matching method name on an unrelated object or module is
+not enough; unresolved imports remain uncovered.
+
+Capture reads drain the buffer. A later read without another target call does
+not verify the earlier output; a saved captured value remains usable until it
+is overwritten. Keep the target call and capture in a clear sequence. The
+mapper leaves uncertain provenance uncovered, including unsupported control
+flow, unrelated producers, arbitrary helper transformations and nested
+definitions. It analyzes syntax and never executes analyzed code.
+
+When a test uses a context manager, isolate its lifecycle from the output being
+tested: drain the fixture after entering the context, call the target, and save
+the captured output before leaving the context. Assertions can inspect that
+saved snapshot afterward. A fresh capture after context exit may include
+unrelated output and is left uncovered. Concurrent/background writers cannot
+be attributed by this bounded static analysis.
+
+See [Understanding the output](#understanding-the-output) for the measured
+fields and the [changelog](CHANGELOG.md) for mapping corrections.
+
 ## Understanding the output
 
 Each function in the output includes:

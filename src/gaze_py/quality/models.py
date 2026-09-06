@@ -8,7 +8,20 @@ for all output types.
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class ModuleAlias:
+    """Static module import alias retained for qualified-call identity.
+
+    Attributes:
+        name: Local name used as the qualified call receiver.
+        module: Absolute dotted module path declared by the import.
+    """
+
+    name: str
+    module: str
 
 
 @dataclass
@@ -25,9 +38,11 @@ class TestFunc:
         node: The parsed AST node for this function. Read-only in practice;
             MUST NOT be mutated. Stored as a mutable type, so the dataclass
             cannot be frozen.
+        module_aliases: Static top-level module imports visible to the test.
     """
 
     name: str
     filename: str
     lineno: int
     node: ast.FunctionDef  # read-only; mutable type, so @dataclass (not frozen)
+    module_aliases: tuple[ModuleAlias, ...] = field(default_factory=tuple)
