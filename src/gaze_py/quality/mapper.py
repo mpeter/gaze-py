@@ -1,13 +1,16 @@
 """A.3 — Assertion-to-effect mapping for the O1 quality assessment pipeline.
 
 Maps each assertion site to the side effect type it most likely exercises,
-using three passes in first-match-wins order:
+using first-match-wins precedence:
 
-Pass 1 — Binding match: assertion references a name bound to the target's
-    return value or error return (from call_bindings).
-Pass 2 — Exception match: assertion is a raises-kind assertion.
-Pass 3 — Name/semantic match: assertion references a name that appears in
-    the target attribute of a detected side effect.
+Context-aware evidence — one ordered analyzer owns live return roles and
+    captured-stream provenance. Explicitly blocked capture evidence wins.
+Exception match — assertion is a raises-kind assertion.
+Name/semantic match — assertion references a name that appears in the target
+    attribute of a detected side effect.
+
+Callers without test AST context retain the legacy binding pass before exception
+and semantic matching.
 
 Output length always equals input length (one entry per assertion).
 """
@@ -15,7 +18,9 @@ Output length always equals input length (one entry per assertion).
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 
+from gaze_py.quality.capture import _map_assertion_evidence
 from gaze_py.quality.models import TestFunc
 from gaze_py.taxonomy.effects import SideEffectType
 from gaze_py.taxonomy.models import AssertionKind, AssertionSite, FunctionTarget
@@ -114,20 +119,25 @@ def map_assertions_to_effects(
     assertions: list[AssertionSite],
     target: FunctionTarget,
     call_bindings: dict[str, str],
+    *,
+    test_func: TestFunc | None = None,
+    target_path: Path | None = None,
+    import_root: Path | None = None,
 ) -> list[tuple[AssertionSite, SideEffectType | None]]:
     """Map each assertion to the side effect type it most likely exercises.
 
-    Uses three passes in first-match-wins order. Once an assertion is matched
+    Uses first-match-wins precedence. Once an assertion is matched
     in an earlier pass, it is not re-evaluated in later passes. This prevents
     double-counting when multiple passes could match the same assertion.
 
     Output length always equals input length — every assertion gets an entry.
 
-    Pass 1 — Binding match:
-        Assertion references a name in call_bindings → ReturnValue or ErrorReturn.
-    Pass 2 — Exception match:
+    Context-aware evidence:
+        Ordered live return roles and capture provenance, including blocked evidence.
+        Without test_func, legacy call_bindings provide ReturnValue or ErrorReturn.
+    Exception match:
         Assertion kind is STDLIB_RAISES or UNITTEST_RAISES → ErrorReturn.
-    Pass 3 — Name/semantic match:
+    Name/semantic match:
         Assertion references a name that appears in a side effect's target field.
         Maps to that effect's type (contractual or incidental).
 
@@ -135,6 +145,14 @@ def map_assertions_to_effects(
         assertions: All assertion sites from detect_assertions().
         target: The production FunctionTarget with its detected side effects.
         call_bindings: Mapping from variable name → role, from build_call_bindings().
+        test_func: Optional AST context for ordered return and capture provenance.
+            Capture attribution requires this together with target_path and
+            import_root. Providing incomplete context keeps capture assertions
+            conservatively unmapped.
+        target_path: Exact production file path for qualified-call identity.
+            Required with test_func and import_root for capture attribution.
+        import_root: Authoritative root for the target's canonical module name.
+            Required with test_func and target_path for capture attribution.
 
     Returns:
         List of (AssertionSite, SideEffectType | None) tuples, one per assertion.
@@ -143,11 +161,64 @@ def map_assertions_to_effects(
     result: list[tuple[AssertionSite, SideEffectType | None]] = []
     matched: set[int] = set()  # indices of already-matched assertions
 
-    _pass1_binding(assertions, call_bindings, result=result, matched=matched)
+    if test_func is None:
+        _pass1_binding(assertions, call_bindings, result=result, matched=matched)
+    else:
+        _pass_ordered_evidence(
+            assertions,
+            target,
+            test_func,
+            target_path=target_path,
+            import_root=import_root,
+            result=result,
+            matched=matched,
+        )
     _pass2_exception(assertions, result, matched)
     _pass3_semantic(assertions, target, result=result, matched=matched)
 
     return result
+
+
+def _pass_ordered_evidence(
+    assertions: list[AssertionSite],
+    target: FunctionTarget,
+    test_func: TestFunc,
+    *,
+    target_path: Path | None,
+    import_root: Path | None,
+    result: list[tuple[AssertionSite, SideEffectType | None]],
+    matched: set[int],
+) -> None:
+    """Map assertion-time return roles and captured-stream provenance."""
+    evidence = _map_assertion_evidence(
+        test_func,
+        target.function,
+        target_path=target_path,
+        import_root=import_root,
+        receiver=target.receiver,
+    )
+    available_effects = {effect.type for effect in target.effects}
+    for index, assertion in enumerate(assertions):
+        if index in matched or assertion.depth != 0:
+            continue
+        position = _assertion_position(assertion.location, test_func.filename)
+        if position is None:
+            continue
+        if position not in evidence:
+            continue
+        effect_type = evidence[position]
+        result.append((assertion, effect_type if effect_type in available_effects else None))
+        matched.add(index)
+
+
+def _assertion_position(location: str, expected_filename: str) -> tuple[int, int] | None:
+    """Extract a same-file line/column suffix, tolerating legacy locations."""
+    parts = location.rsplit(":", maxsplit=2)
+    if len(parts) != 3 or parts[0] != expected_filename:
+        return None
+    if not parts[1].isdigit() or not parts[2].isdigit():
+        return None
+    return int(parts[1]), int(parts[2])
 
 
 def _pass1_binding(

@@ -4,6 +4,31 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+## [0.9.3] — pending release
+
+### Fixed
+
+- Pytest captured-output assertions now contribute to contract coverage when
+  the mapper can attribute the captured stream to the target call (#82).
+  Tuple capture, saved `.out`/`.err`, inline capture and direct JSON parsing
+  no longer require assertion variable names that resemble the production
+  function. Stdout and stderr remain separate effects.
+- Captures before the target call, drained or overwritten values, and
+  ambiguous producer sequences do not receive stream credit. The analysis
+  remains AST-only; supported patterns and conservative limits are described
+  in [Assert captured output](README.md#assert-captured-output).
+- Capture attribution checks canonical import identity and assertion-time
+  bindings. Conditional drains, deferred calls, unsupported transformations
+  and mutation through nested JSON aliases cannot establish stream coverage.
+  Incorrect coverage credit may decrease as these false matches are rejected.
+
+Active mapping contract: [capture-stream assertion mapping specification](openspec/changes/capture-stream-assertion-mapping/specs/quality-mapper/spec.md).
+
+No effect taxonomy, JSON schema, classification threshold, score formula or
+quality gate changes. Correctly recognized assertions can improve reported
+contract coverage and GazeCRAP scores; verify existing baselines rather than
+regenerating them merely to make a gate pass.
+
 ## [0.9.2] — 2026-08-01
 
 ### Added

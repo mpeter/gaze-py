@@ -3,8 +3,8 @@
 Orchestrates the full pipeline:
   1. Detect and classify side effects in the source path.
   2. Discover test functions in the tests path.
-  3. For each test function: pair → detect assertions → build bindings →
-     map assertions → compute coverage → build QualityReport.
+  3. For each test function: pair → detect assertions → map assertions →
+     compute coverage → build QualityReport.
 """
 
 from __future__ import annotations
@@ -18,9 +18,10 @@ from pathlib import Path
 from gaze_py.analysis.files import collect_py_files
 from gaze_py.analysis.runner import detect_and_classify, project_docs_text
 from gaze_py.config.loader import GazeConfig
+from gaze_py.quality._identity import _import_root
 from gaze_py.quality.assertions import detect_assertions
 from gaze_py.quality.coverage import compute_contract_coverage
-from gaze_py.quality.mapper import build_call_bindings, map_assertions_to_effects
+from gaze_py.quality.mapper import map_assertions_to_effects
 from gaze_py.quality.models import TestFunc
 from gaze_py.quality.pairing import _build_astroid_graph, find_test_functions, pair_to_targets
 from gaze_py.taxonomy.models import (
@@ -139,6 +140,7 @@ def assess(
     for test_func in test_funcs:
         report = _process_test_func(
             test_func,
+            source_path=src_path,
             source_targets=source_targets,
             target_map=target_map,
             config=config,
@@ -208,6 +210,7 @@ def _resolve_target(
 def _process_test_func(
     test_func: TestFunc,
     *,
+    source_path: Path,
     source_targets: list[FunctionTarget],
     target_map: dict[str, list[FunctionTarget]],
     config: GazeConfig,
@@ -218,6 +221,7 @@ def _process_test_func(
 
     Args:
         test_func: The test function to process.
+        source_path: Source file or root used to resolve exact target paths.
         source_targets: All production FunctionTargets from the source analysis.
         target_map: Lookup map from function name to FunctionTarget.
         config: GazeConfig with classification thresholds.
@@ -267,11 +271,16 @@ def _process_test_func(
             test_location=f"{test_func.filename}:{test_func.lineno}",
         )
 
-    # Build call bindings (which variable holds the return value).
-    bindings = build_call_bindings(test_func, pair.target_name)
-
     # Map assertions to effects.
-    mapped = map_assertions_to_effects(assertions, production_target, bindings)
+    resolved_target_path = _target_path(source_path, production_target)
+    mapped = map_assertions_to_effects(
+        assertions,
+        production_target,
+        {},
+        test_func=test_func,
+        target_path=resolved_target_path,
+        import_root=_capture_import_root(source_path, resolved_target_path),
+    )
 
     # Compute contract coverage.
     coverage = compute_contract_coverage(production_target, mapped, config=config)
@@ -303,6 +312,23 @@ def _process_test_func(
         assertion_count=total_assertions,
         assertion_detection_confidence=assertion_confidence,
     )
+
+
+def _target_path(source_path: Path, target: FunctionTarget) -> Path:
+    """Resolve a FunctionTarget's project-relative file to a concrete path."""
+    if source_path.is_file():
+        return source_path.resolve()
+    return (source_path.resolve() / target.file_path).resolve()
+
+
+def _capture_import_root(source_path: Path, target_path: Path) -> Path:
+    """Return package ancestry or the caller's authoritative namespace root."""
+    package_root = _import_root(target_path)
+    if package_root != target_path.parent:
+        return package_root
+    if source_path.is_dir():
+        return source_path.resolve()
+    return target_path.parent
 
 
 def _untested_reports(

@@ -10,6 +10,9 @@ from pathlib import Path
 import astroid
 import pytest
 
+# CR-004: testing canonical import-root derivation directly because the public
+# pairing graph only exposes its downstream astroid behavior.
+from gaze_py.quality._identity import _import_root
 from gaze_py.quality.models import TestFunc
 
 # CR-004: testing _extract_call_name directly because pair_to_targets() requires a
@@ -726,8 +729,6 @@ def test_build_astroid_graph_resolves_imports_without_project_on_sys_path(
 
 def test_import_root_flat_src_and_standalone_layouts(tmp_path: Path) -> None:
     """_import_root returns the directory Python needs on sys.path per layout."""
-    from gaze_py.quality.pairing import _import_root
-
     # flat layout: root/mypkg/mod.py → root
     flat = tmp_path / "flat"
     (flat / "mypkg").mkdir(parents=True)

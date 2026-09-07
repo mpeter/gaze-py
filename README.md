@@ -99,6 +99,76 @@ gazepy quality src/ --format=json
 gazepy quality src/ --min-contract-coverage 80
 ```
 
+### Assert captured output
+
+Assert the returned value and emitted content separately so quality reports can
+distinguish the two contracts. For example, put this function in `example.py`:
+
+```python
+def run_example():
+    print("ready")
+    return 0
+```
+
+In `test_example.py`, import the function explicitly so the mapper can identify
+the source of the captured output:
+
+```python
+from example import run_example
+
+
+def test_run_example(capsys):
+    result = run_example()
+    assert result == 0
+    stdout, _ = capsys.readouterr()
+    assert stdout == "ready\n"
+```
+
+The mapper recognizes `capsys` and `capfd` fixture parameters, tuple unpacking,
+saved capture results such as `captured.out`, directly assigned
+`stdout = capsys.readouterr().out`, and inline captured-stream assertions.
+Assertions on `.out` cover stdout; assertions on `.err` cover stderr.
+
+For JSON output, use an unshadowed `import json` and
+`payload = json.loads(captured.out)`, with exactly one positional argument and
+no keywords. Read-only indexing and equality or membership assertions retain
+the stream provenance. Aliases of `json`, imported `loads` functions, decoding
+hooks, arbitrary methods and helper transformations are outside this supported
+subset. Mutating a parsed value or any nested descendant, or passing it to an
+unknown helper, invalidates provenance for the entire parsed value and its aliases.
+
+Calls need a resolvable, unshadowed import that identifies the exact target module
+and function. Direct function imports and supported module imports can establish
+that identity; a matching bare name or method name is not enough. Package identity
+uses the import root, not a source-path suffix. Unresolved imports and namespace
+packages without an authoritative import root remain uncovered.
+
+Capture reads drain the buffer. A later read without another target call does
+not verify the earlier output; a saved captured value remains usable until it
+is overwritten. Keep the target call and capture in a clear sequence. The
+mapper leaves uncertain provenance uncovered, including unsupported control
+flow, unrelated producers, arbitrary helper transformations and nested
+definitions. A conditional capture read can consume output and invalidate pending
+attribution; it cannot establish a clean buffer. Only a definite read followed by
+a supported target call can restore that isolation. It analyzes syntax and never
+executes analyzed code.
+
+Return bindings are checked at the assertion's position. Reassigning a return
+variable to a capture does not preserve return credit. A live return keeps
+precedence when mixed with a supported captured stream, but an assertion that
+mixes a return with unsupported capture provenance remains unmapped. Keep those
+assertions separate to make both contracts visible.
+
+When a test uses a context manager, isolate its lifecycle from the output being
+tested: drain the fixture after entering the context, call the target, and save
+the captured output before leaving the context. Assertions can inspect that
+saved snapshot afterward. A fresh capture after context exit may include
+unrelated output and is left uncovered. Concurrent/background writers cannot
+be attributed by this bounded static analysis.
+
+See [Understanding the output](#understanding-the-output) for the measured
+fields and the [changelog](CHANGELOG.md) for mapping corrections.
+
 ## Understanding the output
 
 Each function in the output includes:
