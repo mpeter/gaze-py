@@ -4,7 +4,7 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
-## [0.9.3] — pending release
+## [0.9.3] — 2026-09-07
 
 ### Fixed
 
