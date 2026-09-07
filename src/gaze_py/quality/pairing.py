@@ -22,7 +22,7 @@ import astroid.exceptions
 import astroid.util
 from astroid import MANAGER
 
-from gaze_py.quality.capture_identity import collect_module_aliases
+from gaze_py.quality._identity import _collect_module_aliases, _import_root
 from gaze_py.quality.models import TestFunc
 from gaze_py.taxonomy.models import FunctionTarget, TestTargetPair
 
@@ -52,7 +52,7 @@ def find_test_functions(filepath: Path) -> list[TestFunc]:
 
     results: list[TestFunc] = []
     filename = str(filepath)
-    module_aliases = collect_module_aliases(module)
+    module_aliases = _collect_module_aliases(module)
 
     for node in module.body:
         if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
@@ -208,34 +208,6 @@ def _build_astroid_graph(
                 sys.path.remove(r)
 
     return dict(graph)
-
-
-def _import_root(file_path: Path) -> Path:
-    """Return the directory that must be on sys.path to import file_path.
-
-    Walks up from the file's directory while ``__init__.py`` is present:
-    the first ancestor WITHOUT one is the package import root — the exact
-    directory Python (and astroid) needs on ``sys.path`` for the file's
-    dotted module name to resolve. Handles all layouts uniformly:
-
-    - flat layout (``root/mypkg/mod.py``) → root
-    - src layout (``root/src/mypkg/mod.py``) → root/src
-    - standalone module (``root/script.py``, no __init__.py) → root
-    - tests package (``root/tests/__init__.py``) → root
-
-    Args:
-        file_path: Resolved path to a Python source file.
-
-    Returns:
-        The import-root directory for the file.
-    """
-    current = file_path.parent
-    while (current / "__init__.py").exists():
-        parent = current.parent
-        if parent == current:  # filesystem root — cannot walk further
-            break
-        current = parent
-    return current
 
 
 def _find_project_root(start: Path) -> Path:

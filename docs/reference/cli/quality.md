@@ -16,6 +16,10 @@ When `--tests` is not provided, gaze-py auto-discovers the test directory by sea
 
 Use `--min-contract-coverage` as a CI gate.
 
+For pytest output assertions, follow [Assert captured output](../../../README.md#assert-captured-output)
+for exact imports, capture boundaries, supported JSON parsing and conservative
+limitations. Uncertain output attribution remains uncovered.
+
 ## Options
 
 | Option | Default | Description |

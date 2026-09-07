@@ -17,11 +17,13 @@ class ModuleAlias:
 
     Attributes:
         name: Local name used as the qualified call receiver.
-        module: Absolute dotted module path declared by the import.
+        module: Absolute dotted module containing the binding.
+        symbol: Imported symbol for a direct ``from`` import, otherwise None.
     """
 
     name: str
     module: str
+    symbol: str | None = None
 
 
 @dataclass

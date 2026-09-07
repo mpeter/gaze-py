@@ -13,7 +13,7 @@
 
 ## 3. Verification and delivery
 
-- [ ] 3.1 Run Ruff check/format, strict mypy and full pytest with unchanged 85% coverage floor; validate the repaired revision. The earlier pass at `add2733` does not verify the council repairs.
+- [x] 3.1 Run Ruff check/format, strict mypy and full pytest with unchanged 85% coverage floor; validate the repaired revision. Both CI-style and full suites pass 1,218 tests at 95.19% coverage. The earlier pass at `add2733` is superseded.
 - [ ] 3.2 Obtain all discovered review-council approvals and resolve findings before PR submission.
 - [ ] 3.3 Submit PR, wait for green CI and required approval, merge, verify merged behavior and reconcile OpenSpec.
 - [ ] 3.4 Verify a built/released artifact or full-commit dependency pin before downstream adoption; retain evidence on issue #82.
@@ -24,10 +24,10 @@ Items 1 and 2 record the initial implementation, not council acceptance. Round o
 returned eight REQUEST CHANGES and one APPROVE. These repairs remain outstanding.
 
 - [x] 4.1 Review and commit the ordered-analysis design amendment before Python edits. Independent Astra design review approved the amended contract, including possible drains, nested JSON mutation and blocked-capture precedence; this is not council approval.
-- [ ] 4.2 Demonstrate public mapper regressions for every acceptance-matrix row against `add2733`, including semantic-fallback traps.
-- [ ] 4.3 Replace competing capture scans with one ordered assertion-time evidence owner; preserve no-context and non-capture compatibility.
-- [ ] 4.4 Reuse canonical root identity with exact scoped direct/local/module imports and pipeline tests for package roots, namespace uncertainty and suffix collisions.
-- [ ] 4.5 Implement blocked storage/transform provenance, alias mutation invalidation and independent producer taint.
-- [ ] 4.6 Cover uncertain drains, headers, unreachable assertions and explicit patch-context capture isolation through public APIs.
+- [x] 4.2 Demonstrate public mapper regressions for every acceptance-matrix row against `add2733`, including semantic-fallback traps. The initial valid red run had 22 failures; Python review added regressions for five further defect classes before its approving recheck.
+- [x] 4.3 Replace competing capture scans with one ordered assertion-time evidence owner; preserve no-context and non-capture compatibility.
+- [x] 4.4 Reuse canonical root identity with exact scoped direct/local/module imports and pipeline tests for package roots, namespace uncertainty and suffix collisions.
+- [x] 4.5 Implement blocked storage/transform provenance, alias mutation invalidation and independent producer taint.
+- [x] 4.6 Cover uncertain drains, headers, unreachable assertions and explicit patch-context capture isolation through public APIs.
 - [ ] 4.7 Document the bounded JSON subset and quality-reference link; make internal machinery private or fully document it; link the canonical spec from release notes and verify release compatibility.
 - [ ] 4.8 Rerun full gates and artifact smoke, then all nine council personas against the complete new diff. Preserve the existing council iteration count.

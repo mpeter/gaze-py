@@ -31,6 +31,11 @@ def _default_config() -> GazeConfig:
     return GazeConfig()
 
 
+def _mark_project(tmp_path: Path) -> None:
+    """Bound project doc discovery to one temporary integration fixture."""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'fixture'\n", encoding="utf-8")
+
+
 # ---------------------------------------------------------------------------
 # simple fixture: 100% coverage expected
 # ---------------------------------------------------------------------------
@@ -63,6 +68,7 @@ def test_simple_fixture_full_coverage() -> None:
 
 def test_capture_stream_mapping_reaches_public_quality_pipeline(tmp_path: Path) -> None:
     """Return and parsed captured stdout assertions cover only their target effects."""
+    _mark_project(tmp_path)
     source_path = tmp_path / "output.py"
     source_path.write_text(
         """
@@ -79,6 +85,7 @@ def unrelated_output() -> None:
     tests_path.write_text(
         """
 import json
+from output import render_payload
 
 def test_render_payload(capsys) -> None:
     result = render_payload()
@@ -118,6 +125,7 @@ def test_render_payload(capsys) -> None:
 
 def test_qualified_capture_call_uses_exact_imported_module_identity(tmp_path: Path) -> None:
     """Pipeline retains imports so a qualified call maps only its exact target output."""
+    _mark_project(tmp_path)
     source_root = tmp_path / "src"
     target_dir = source_root / "pkg"
     target_dir.mkdir(parents=True)
@@ -159,6 +167,107 @@ def test_example(capsys) -> None:
     assert report.contract_coverage is not None
     assert report.contract_coverage.covered_count == 1
     assert report.contract_coverage.percentage == 100.0
+
+
+@pytest.mark.parametrize("analyze_package_only", [False, True])
+def test_capture_identity_uses_package_root_for_project_and_subdirectory_analysis(
+    tmp_path: Path,
+    analyze_package_only: bool,
+) -> None:
+    """Ordinary package ancestry keeps pkg.example canonical from either source scope."""
+    _mark_project(tmp_path)
+    source_root = tmp_path / "src"
+    package = source_root / "pkg"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "example.py").write_text(
+        'def example_fn() -> None:\n    print("expected")\n', encoding="utf-8"
+    )
+    tests_path = tmp_path / "test_output.py"
+    tests_path.write_text(
+        "import pkg.example as module\n\n"
+        "def test_example(capsys) -> None:\n"
+        "    module.example_fn()\n"
+        "    assert 'expected' in capsys.readouterr().out\n",
+        encoding="utf-8",
+    )
+
+    result = assess(
+        package if analyze_package_only else source_root,
+        tests_path,
+        config=GazeConfig(contractual_threshold=50),
+    )
+    assert result
+    report = next(
+        item
+        for item in result.reports
+        if item.target_function is not None and item.target_function.function == "example_fn"
+    )
+    assert report.contract_coverage is not None
+    assert report.contract_coverage.covered_count == 1
+
+
+def test_blocked_capture_cannot_regain_pipeline_semantic_credit(tmp_path: Path) -> None:
+    """Unsupported capture transforms stay uncovered through the public pipeline."""
+    _mark_project(tmp_path)
+    source_path = tmp_path / "example.py"
+    source_path.write_text(
+        'def example_fn() -> None:\n    print("transformed")\n', encoding="utf-8"
+    )
+    tests_path = tmp_path / "test_output.py"
+    tests_path.write_text(
+        "from example import example_fn\n\n"
+        "def test_example(capsys) -> None:\n"
+        "    example_fn()\n"
+        "    captured = capsys.readouterr()\n"
+        "    transformed = captured.out.split()\n"
+        "    assert transformed == ['transformed']\n",
+        encoding="utf-8",
+    )
+
+    result = assess(
+        source_path,
+        tests_path,
+        config=GazeConfig(contractual_threshold=50),
+    )
+    assert result
+    report = next(item for item in result.reports if item.target_function is not None)
+    assert report.contract_coverage is not None
+    assert report.contract_coverage.covered_count == 0
+
+
+@pytest.mark.parametrize("wrong_module", ["example", "src.pkg.example"])
+def test_pipeline_rejects_noncanonical_suffix_imports(
+    tmp_path: Path,
+    wrong_module: str,
+) -> None:
+    """Path suffixes cannot substitute for exact pkg.example identity."""
+    _mark_project(tmp_path)
+    source_root = tmp_path / "src"
+    package = source_root / "pkg"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "example.py").write_text(
+        'def example_fn() -> None:\n    print("expected")\n', encoding="utf-8"
+    )
+    tests_path = tmp_path / "test_output.py"
+    tests_path.write_text(
+        f"import {wrong_module} as module\n\n"
+        "def test_example(capsys) -> None:\n"
+        "    module.example_fn()\n"
+        "    assert 'expected' in capsys.readouterr().out\n",
+        encoding="utf-8",
+    )
+
+    result = assess(
+        source_root,
+        tests_path,
+        config=GazeConfig(contractual_threshold=50),
+    )
+    assert result
+    report = next(item for item in result.reports if item.target_function is not None)
+    assert report.contract_coverage is not None
+    assert report.contract_coverage.covered_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -530,6 +639,7 @@ def test_assess_untested_not_suppressed_by_unrelated_same_named_tested_function(
     test targets — even a fully-correct pairing decision is not enough if
     the untested-collection step re-collides on the bare name afterward.
     """
+    _mark_project(tmp_path)
     src_dir = tmp_path / "src"
     src_dir.mkdir()
     (src_dir / "gh_store.py").write_text(
@@ -590,6 +700,7 @@ def test_assess_inferred_target_not_in_source_map(
     at lines 167-175 then produces a QualityReport with contract_coverage=None
     and a warning containing "not found".
     """
+    _mark_project(tmp_path)
     import gaze_py.quality.pipeline as pipeline_mod
     from gaze_py.taxonomy.models import TestTargetPair
 
@@ -882,6 +993,7 @@ def test_assess_uses_project_docs_for_classification(tmp_path: Path) -> None:
     signal (+15) → 90 — contractual, so the paired test gets a real coverage
     percentage instead of reason="all_effects_ambiguous".
     """
+    _mark_project(tmp_path)
     src_dir = tmp_path / "src"
     src_dir.mkdir()
     (src_dir / "mod.py").write_text(

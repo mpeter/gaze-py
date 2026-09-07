@@ -16,7 +16,13 @@ All notable changes to gaze-py are documented here.
 - Captures before the target call, drained or overwritten values, and
   ambiguous producer sequences do not receive stream credit. The analysis
   remains AST-only; supported patterns and conservative limits are described
-  in the README's quality-assessment section.
+  in [Assert captured output](README.md#assert-captured-output).
+- Capture attribution checks canonical import identity and assertion-time
+  bindings. Conditional drains, deferred calls, unsupported transformations
+  and mutation through nested JSON aliases cannot establish stream coverage.
+  Incorrect coverage credit may decrease as these false matches are rejected.
+
+Mapping contract: [quality-mapper specification](openspec/specs/quality-mapper/spec.md).
 
 No effect taxonomy, JSON schema, classification threshold, score formula or
 quality gate changes. Correctly recognized assertions can improve reported
