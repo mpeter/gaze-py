@@ -2,11 +2,15 @@
 
 ### Requirement: first-match-wins
 
-The mapper MUST apply return binding, exception, captured stream and semantic mapping in that order. Once an assertion is matched, later passes MUST NOT re-evaluate it. The mapper MUST preserve one output entry per input assertion and prevent double-counting.
+The mapper MUST apply valid return binding, exception, captured stream and semantic mapping in that order. With test context, binding precedence MUST use assertion-time evidence; unsupported or unreachable capture assertions MUST remain unmapped before legacy fallback. Once an assertion is matched, later passes MUST NOT re-evaluate it. The mapper MUST preserve one output entry per input assertion and prevent double-counting.
 
 #### Scenario: return binding keeps precedence
-- **WHEN** an assertion references a bound return value and a captured stream
+- **WHEN** an assertion references a live bound return value and a supported attributable captured stream
 - **THEN** the return binding keeps precedence and the assertion is not counted twice
+
+#### Scenario: blocked capture overrides return precedence
+- **WHEN** an assertion references both a live return value and unsupported capture provenance
+- **THEN** the assertion MUST remain unmapped rather than bypass the blocked capture through return matching
 
 #### Scenario: captured stream precedes semantic overlap
 - **WHEN** a remaining assertion checks an attributable captured stdout value
@@ -69,3 +73,63 @@ The normal quality pipeline MUST provide test context to capture-aware mapping. 
 #### Scenario: measured contract coverage
 - **WHEN** a fixture target has contractual return and stdout effects with separate direct return and attributable output assertions
 - **THEN** the public quality result reports both effects covered and unrelated targets remain uncovered
+
+### Requirement: ordered-execution-evidence
+
+The context-aware mapper MUST use one ordered analysis for live return roles and capture provenance. Structural inspection of unsupported or deferred syntax MUST NOT establish executed target calls or drains. Possible producers MUST taint pending output independently of capture-value propagation. Unsupported capture assertions MUST remain blocked from legacy fallback.
+
+#### Scenario: unreachable or deferred target
+- **WHEN** a target or capture assertion occurs after unconditional return/raise, in unsupported conditional/loop syntax, or only in a deferred lambda body
+- **THEN** that syntax MUST NOT establish target coverage, and contained capture assertions MUST remain unmapped
+
+#### Scenario: uncertain drain cannot clean a window
+- **WHEN** a possible producer taints a window and a conditional or deferred read precedes the target
+- **THEN** the read MUST NOT clear ambiguity and the subsequent capture MUST remain unmapped
+
+#### Scenario: definite drain restores isolation
+- **WHEN** a supported definite fixture drain follows an unknown producer or context entry, then an exact target call precedes a saved capture
+- **THEN** the saved snapshot MAY credit its stream despite a later context exit or drain
+
+#### Scenario: possible drain consumes pending output
+- **WHEN** a target call is followed by a conditional capture read and then another asserted capture read
+- **THEN** the possible drain MUST invalidate pending target attribution without establishing a clean window
+
+#### Scenario: definition header producer
+- **WHEN** a definition default, decorator or annotation can emit output, including positional-only, vararg or kwarg annotations
+- **THEN** it MUST taint the pending capture window without executing the nested body
+
+### Requirement: canonical-scoped-capture-identity
+
+Capture attribution MUST use canonical import-root/module identity and ordered lexical bindings. Unknown bare names, suffix matches and known conflicting bindings MUST NOT prove target identity. Attribute writes MUST distinguish rebinding a module name from replacing its target callable. Namespace-package capture identity MUST remain unsupported without an authoritative root.
+
+#### Scenario: canonical package identity
+- **WHEN** the file is `/project/src/pkg/example.py` with import root `/project/src`
+- **THEN** exact `pkg.example` imports MAY prove identity and `example` or `src.pkg.example` imports MUST NOT
+
+#### Scenario: direct local import and lexical shadowing
+- **WHEN** a supported local import binds the exact target before its call
+- **THEN** it MAY prove identity, while unrelated imports, parameters of any kind, definitions, conditional imports or a not-yet-assigned local name MUST NOT
+
+#### Scenario: module member writes
+- **WHEN** a test writes an unrelated module attribute and then definitely drains the fixture before calling the imported target
+- **THEN** the module alias MAY still establish identity, but replacement of the target member MUST invalidate that callable
+
+### Requirement: assertion-time-value-provenance
+
+The mapper MUST evaluate RHS provenance before updating assignment destinations and use live roles at each assertion. Unsupported storage and transformations MUST retain blocked capture provenance. Mutable parsed JSON aliases MUST lose trusted provenance after mutation or escape to an unknown call. Such calls MUST also taint pending output.
+
+#### Scenario: capture overwrites return
+- **WHEN** `result` first receives a target return and then a fixture capture before `assert result.out`
+- **THEN** the assertion MUST map only to attributable StdoutWrite, never the stale ReturnValue
+
+#### Scenario: unsupported storage cannot revive credit
+- **WHEN** capture output passes through chained assignment, attribute/subscript storage or an arbitrary receiver method
+- **THEN** assertions on that value MUST NOT regain stream credit through semantic fallback
+
+#### Scenario: parsed JSON alias mutation
+- **WHEN** a saved JSON value derived from capture, or a nested descendant reached by indexing, is mutated through an alias or passed to an unknown helper
+- **THEN** subsequent assertions through the parent containers, descendants and aliases in that parse's provenance family MUST NOT credit its former stream provenance
+
+#### Scenario: bounded JSON support
+- **WHEN** an unshadowed `import json` binding supplies `json.loads(stream)` with one positional argument and no keywords, followed by read-only indexing or equality/membership checks
+- **THEN** a single attributable stream MAY retain provenance; hooks, shadowed bindings, arbitrary methods and mixed streams MUST remain unsupported
