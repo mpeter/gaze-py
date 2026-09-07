@@ -22,7 +22,7 @@ All notable changes to gaze-py are documented here.
   and mutation through nested JSON aliases cannot establish stream coverage.
   Incorrect coverage credit may decrease as these false matches are rejected.
 
-Active mapping contract: [capture-stream assertion mapping specification](openspec/changes/capture-stream-assertion-mapping/specs/quality-mapper/spec.md).
+Mapping contract: [quality-mapper specification](openspec/specs/quality-mapper/spec.md).
 
 No effect taxonomy, JSON schema, classification threshold, score formula or
 quality gate changes. Correctly recognized assertions can improve reported

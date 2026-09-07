@@ -15,8 +15,8 @@
 
 - [x] 3.1 Run Ruff check/format, strict mypy and full pytest with unchanged 85% coverage floor; validate the repaired revision. The final revision passes 1,253 tests at 95.30% coverage on Python 3.11, 3.12 and 3.13.
 - [x] 3.2 Obtain all discovered review-council approvals and resolve findings before PR submission. All nine personas approved the final repair recheck.
-- [ ] 3.3 Submit PR, wait for green CI and required approval, merge, verify merged behavior and reconcile OpenSpec.
-- [ ] 3.4 Verify a built/released artifact or full-commit dependency pin before downstream adoption; retain evidence on issue #82.
+- [x] 3.3 Submit PR, wait for green CI and required approval, merge, verify merged behavior and reconcile OpenSpec. PR #83 merged as `d5039a7` after all three CI matrix jobs passed; this archive applies the delta to the canonical specification.
+- [x] 3.4 Verify a built/released artifact or full-commit dependency pin before downstream adoption; retain evidence on issue #82. Thirty installed-wheel checks passed for the merged source commit's 0.9.3 wheel, SHA-256 `be9a83a076f568289c349a3c8132ca841a49894c5f555d7562e599c76d495e1b`.
 
 ## 4. Council round-one repairs (before repeating delivery gates)
 
