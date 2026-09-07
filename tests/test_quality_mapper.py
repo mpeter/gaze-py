@@ -1370,3 +1370,342 @@ def test_review_nested_json_source_call_taints_later_capture() -> None:
         [_make_effect(SideEffectType.StdoutWrite, target="out")],
     )
     assert mapped == [None]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        'payload["items"] *= 0',
+        'del payload["items"]',
+        'if flag:\n        payload["items"] = []',
+    ],
+)
+def test_council2_json_storage_mutation_invalidates_parent(mutation: str) -> None:
+    """Every direct or possible JSON storage mutation blocks its provenance family."""
+    mapped = _map_source(
+        "import json\n\n"
+        "def test_example(capsys, flag=False) -> None:\n"
+        "    example_fn()\n"
+        "    payload = json.loads(capsys.readouterr().out)\n"
+        f"    {mutation}\n"
+        '    assert payload == {"items": []}\n',
+        [_make_effect(SideEffectType.StdoutWrite, target="payload items")],
+    )
+    assert mapped == [None]
+
+
+def test_council2_context_argument_escape_invalidates_json_family() -> None:
+    """Passing captured JSON to a context manager blocks later parent assertions."""
+    mapped = _map_source(
+        """
+        import json
+
+        def test_example(capsys) -> None:
+            example_fn()
+            payload = json.loads(capsys.readouterr().out)
+            with mutating_context(payload):
+                pass
+            assert payload == {"items": []}
+        """,
+        [_make_effect(SideEffectType.StdoutWrite, target="payload")],
+    )
+    assert mapped == [None]
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "if flag:\n        from other.example import example_fn",
+        "if flag:\n        import other.example as module",
+        "if flag:\n        module.example_fn = replacement",
+    ],
+)
+def test_council2_conditional_import_or_member_replacement_revokes_identity(
+    tmp_path: Path,
+    replacement: str,
+) -> None:
+    """A possible local import or target-member write cannot leave trusted identity."""
+    if "from other" in replacement:
+        setup = "from pkg.example import example_fn"
+        call = "example_fn()"
+    else:
+        setup = "import pkg.example as module"
+        call = "module.example_fn()"
+    mapped = _map_import_source(
+        tmp_path,
+        f"{setup}\n\ndef test_example(capsys, flag) -> None:\n"
+        f"    {replacement}\n"
+        "    capsys.readouterr()\n"
+        f"    {call}\n"
+        '    assert "out" in capsys.readouterr().out\n',
+        [_make_effect(SideEffectType.StdoutWrite, target="out")],
+        target_path=Path("/project/src/pkg/example.py"),
+    )
+    assert mapped == [None]
+
+
+@pytest.mark.parametrize(
+    "fixture_import",
+    ["import fake_capture as capsys", "from fake_capture import fixture as capsys"],
+)
+def test_council2_import_destination_revokes_capture_fixture(
+    fixture_import: str,
+) -> None:
+    """A definite import over a fixture parameter removes fixture provenance."""
+    mapped = _map_source(
+        f"""
+        def test_example(capsys) -> None:
+            {fixture_import}
+            capsys.readouterr()
+            example_fn()
+            assert "out" in capsys.readouterr().out
+        """,
+        [_make_effect(SideEffectType.StdoutWrite, target="out")],
+    )
+    assert mapped == [None]
+
+
+@pytest.mark.parametrize(
+    "definition", ["def capsys():\n        pass", "class capsys:\n        pass"]
+)
+def test_council2_definition_revokes_capture_fixture(definition: str) -> None:
+    """A local definition over a fixture parameter removes fixture provenance."""
+    mapped = _map_source(
+        "def test_example(capsys) -> None:\n"
+        f"    {definition}\n"
+        "    capsys.readouterr()\n"
+        "    example_fn()\n"
+        '    assert "out" in capsys.readouterr().out\n',
+        [_make_effect(SideEffectType.StdoutWrite, target="out")],
+    )
+    assert mapped == [None]
+
+
+def test_council2_legacy_tuple_return_and_error_roles_survive_context() -> None:
+    """Context-aware mapping preserves the canonical tuple binding roles."""
+    mapped = _map_source(
+        """
+        def test_example() -> None:
+            value, err = example_fn()
+            assert value == 1
+            assert err is None
+        """,
+        [
+            _make_effect(SideEffectType.ReturnValue, target="value"),
+            _make_effect(SideEffectType.ErrorReturn, target="err"),
+        ],
+    )
+    assert mapped == [SideEffectType.ReturnValue, SideEffectType.ErrorReturn]
+
+
+@pytest.mark.parametrize(
+    "assertion",
+    [
+        "assert result.code == 42",
+        "assert len(result) == 3",
+        "assert isinstance(result, list)",
+        "assert helper(result)",
+    ],
+)
+def test_council2_legacy_return_uses_survive_context(assertion: str) -> None:
+    """Return attributes and helper-call assertions retain legacy ReturnValue credit."""
+    mapped = _map_source(
+        f"def test_example() -> None:\n    result = example_fn()\n    {assertion}\n",
+        [_make_effect(SideEffectType.ReturnValue, target="result")],
+    )
+    assert mapped == [SideEffectType.ReturnValue]
+
+
+@pytest.mark.parametrize(
+    "assertion",
+    [
+        'assert True or captured == "expected"',
+        'assert captured if flag else "expected"',
+        'assert (captured := "expected")',
+    ],
+)
+def test_council2_uncertain_or_rebinding_assertion_blocks_capture(assertion: str) -> None:
+    """Short-circuit, conditional, and rebinding expressions cannot fabricate credit."""
+    mapped = _map_source(
+        "def test_example(capsys, flag=False) -> None:\n"
+        "    example_fn()\n"
+        "    captured = capsys.readouterr().out\n"
+        f"    {assertion}\n",
+        [_make_effect(SideEffectType.StdoutWrite, target="captured")],
+    )
+    assert mapped == [None]
+
+
+@pytest.mark.parametrize(
+    "assertion",
+    [
+        "assert True or result == 1",
+        "assert False and result == 1",
+        "assert 1 if flag else result",
+    ],
+)
+def test_council3_uncertain_assertion_does_not_credit_skipped_return(assertion: str) -> None:
+    """A return role in a possibly skipped operand remains uncovered."""
+    mapped = _map_source(
+        f"def test_example(flag=False) -> None:\n    result = example_fn()\n    {assertion}\n",
+        [_make_effect(SideEffectType.ReturnValue, target="result")],
+    )
+    assert mapped == [None]
+
+
+@pytest.mark.parametrize(
+    "assertion",
+    [
+        "assert result == 1 or True",
+        "assert result if result else True",
+    ],
+)
+def test_council3_uncertain_assertion_does_not_credit_non_enforcing_return(
+    assertion: str,
+) -> None:
+    """Reading a return cannot earn credit when the assertion is guaranteed to pass."""
+    mapped = _map_source(
+        f"def test_example() -> None:\n    result = example_fn()\n    {assertion}\n",
+        [_make_effect(SideEffectType.ReturnValue, target="result")],
+    )
+    assert mapped == [None]
+
+
+def test_council2_walrus_alias_preserves_live_return_role() -> None:
+    """A definite walrus alias of a live return remains compatible."""
+    mapped = _map_source(
+        """
+        def test_example() -> None:
+            result = example_fn()
+            assert (alias := result).code == 42
+        """,
+        [_make_effect(SideEffectType.ReturnValue, target="result")],
+    )
+    assert mapped == [SideEffectType.ReturnValue]
+
+
+def test_council2_arbitrary_stream_attribute_is_blocked() -> None:
+    """A truthy stream method attribute does not prove emitted content."""
+    mapped = _map_source(
+        """
+        def test_example(capsys) -> None:
+            example_fn()
+            captured = capsys.readouterr()
+            assert captured.out.strip
+        """,
+        [_make_effect(SideEffectType.StdoutWrite, target="out strip")],
+    )
+    assert mapped == [None]
+
+
+def test_council3_arbitrary_json_attribute_is_blocked() -> None:
+    """A truthy method attribute on parsed JSON does not inspect captured content."""
+    mapped = _map_source(
+        """
+        import json
+
+        def test_example(capsys) -> None:
+            example_fn()
+            payload = json.loads(capsys.readouterr().out)
+            assert payload.clear
+        """,
+        [_make_effect(SideEffectType.StdoutWrite, target="payload clear")],
+    )
+    assert mapped == [None]
+
+
+@pytest.mark.parametrize(
+    "scope",
+    ["module", "local", "conditional"],
+)
+def test_council2_json_loads_replacement_revokes_transformer_identity(
+    tmp_path: Path,
+    scope: str,
+) -> None:
+    """A definite or possible json.loads replacement blocks transformer provenance."""
+    if scope == "module":
+        module_write = "json.loads = replacement\n"
+        local_write = ""
+    elif scope == "local":
+        module_write = ""
+        local_write = "    json.loads = replacement\n"
+    else:
+        module_write = ""
+        local_write = "    if flag:\n        json.loads = replacement\n"
+    mapped = _map_import_source(
+        tmp_path,
+        "import json\n"
+        f"{module_write}"
+        "from pkg.example import example_fn\n\n"
+        "def test_example(capsys, flag=False) -> None:\n"
+        f"{local_write}"
+        "    capsys.readouterr()\n"
+        "    example_fn()\n"
+        "    payload = json.loads(capsys.readouterr().out)\n"
+        '    assert payload == {"ok": True}\n',
+        [_make_effect(SideEffectType.StdoutWrite, target="payload")],
+        target_path=Path("/project/src/pkg/example.py"),
+    )
+    assert mapped == [None]
+
+
+@pytest.mark.parametrize(
+    "write",
+    ["module.setting = 1", "json.dumps = replacement"],
+)
+def test_council2_unrelated_module_member_write_preserves_required_identity(
+    tmp_path: Path,
+    write: str,
+) -> None:
+    """Member invalidation remains precise for target and json transformer aliases."""
+    mapped = _map_import_source(
+        tmp_path,
+        "import json\nimport pkg.example as module\n"
+        f"{write}\n\n"
+        "def test_example(capsys) -> None:\n"
+        "    capsys.readouterr()\n"
+        "    module.example_fn()\n"
+        "    payload = json.loads(capsys.readouterr().out)\n"
+        '    assert payload == {"ok": True}\n',
+        [_make_effect(SideEffectType.StdoutWrite, target="payload")],
+        target_path=Path("/project/src/pkg/example.py"),
+    )
+    assert mapped == [SideEffectType.StdoutWrite]
+
+
+def test_council2_module_target_replacement_revokes_identity(tmp_path: Path) -> None:
+    """A module-scope replacement of the imported target cannot receive stream credit."""
+    mapped = _map_import_source(
+        tmp_path,
+        "import pkg.example as module\n"
+        "module.example_fn = replacement\n\n"
+        "def test_example(capsys) -> None:\n"
+        "    module.example_fn()\n"
+        '    assert "out" in capsys.readouterr().out\n',
+        [_make_effect(SideEffectType.StdoutWrite, target="out")],
+        target_path=Path("/project/src/pkg/example.py"),
+    )
+    assert mapped == [None]
+
+
+@pytest.mark.parametrize("local_reimport", [False, True])
+def test_council3_member_replacement_revokes_all_module_aliases(
+    tmp_path: Path,
+    local_reimport: bool,
+) -> None:
+    """Canonical member replacement survives aliases and later imports."""
+    reimport = "    import pkg.example as second\n" if local_reimport else ""
+    mapped = _map_import_source(
+        tmp_path,
+        "import pkg.example as first\n"
+        "import pkg.example as second\n"
+        "first.example_fn = replacement\n\n"
+        "def test_example(capsys) -> None:\n"
+        "    capsys.readouterr()\n"
+        f"{reimport}"
+        "    second.example_fn()\n"
+        '    assert "out" in capsys.readouterr().out\n',
+        [_make_effect(SideEffectType.StdoutWrite, target="out")],
+        target_path=Path("/project/src/pkg/example.py"),
+    )
+    assert mapped == [None]

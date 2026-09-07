@@ -145,9 +145,14 @@ def map_assertions_to_effects(
         assertions: All assertion sites from detect_assertions().
         target: The production FunctionTarget with its detected side effects.
         call_bindings: Mapping from variable name → role, from build_call_bindings().
-        test_func: Optional AST context for ordered capture provenance.
+        test_func: Optional AST context for ordered return and capture provenance.
+            Capture attribution requires this together with target_path and
+            import_root. Providing incomplete context keeps capture assertions
+            conservatively unmapped.
         target_path: Exact production file path for qualified-call identity.
+            Required with test_func and import_root for capture attribution.
         import_root: Authoritative root for the target's canonical module name.
+            Required with test_func and target_path for capture attribution.
 
     Returns:
         List of (AssertionSite, SideEffectType | None) tuples, one per assertion.

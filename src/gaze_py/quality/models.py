@@ -12,18 +12,20 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
-class ModuleAlias:
-    """Static module import alias retained for qualified-call identity.
+class _ImportBinding:
+    """Static import binding retained for exact callable identity.
 
     Attributes:
         name: Local name used as the qualified call receiver.
         module: Absolute dotted module containing the binding.
         symbol: Imported symbol for a direct ``from`` import, otherwise None.
+        blocked_members: Members that static storage may have replaced.
     """
 
     name: str
     module: str
     symbol: str | None = None
+    blocked_members: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -40,11 +42,11 @@ class TestFunc:
         node: The parsed AST node for this function. Read-only in practice;
             MUST NOT be mutated. Stored as a mutable type, so the dataclass
             cannot be frozen.
-        module_aliases: Static top-level module imports visible to the test.
+        module_aliases: Static top-level import bindings visible to the test.
     """
 
     name: str
     filename: str
     lineno: int
     node: ast.FunctionDef  # read-only; mutable type, so @dataclass (not frozen)
-    module_aliases: tuple[ModuleAlias, ...] = field(default_factory=tuple)
+    module_aliases: tuple[_ImportBinding, ...] = field(default_factory=tuple)

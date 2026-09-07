@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from gaze_py.quality._identity import _ImportBinding, _target_identity, _TargetIdentity
-from gaze_py.quality.models import TestFunc
+from gaze_py.quality._identity import _target_identity, _TargetIdentity
+from gaze_py.quality.models import TestFunc, _ImportBinding
 from gaze_py.taxonomy.effects import SideEffectType
 
 _CAPTURE_FIXTURES = frozenset({"capsys", "capfd"})
@@ -34,6 +34,7 @@ class _State:
     identity: _TargetIdentity
     imports: dict[str, _ImportBinding]
     lexical_locals: set[str]
+    blocked_by_module: dict[str, frozenset[str]]
     values: dict[str, _Value] = field(default_factory=dict)
     related_names: set[str] = field(default_factory=set)
     pending_target: bool = False
@@ -53,9 +54,16 @@ def _map_assertion_evidence(
     parameters = _parameter_names(test_func.node)
     local_names = _function_local_names(test_func.node)
     imports = {
-        alias.name: _ImportBinding(alias.module, alias.symbol)
-        for alias in test_func.module_aliases
-        if alias.name not in local_names
+        alias.name: alias for alias in test_func.module_aliases if alias.name not in local_names
+    }
+    blocked_by_module: dict[str, frozenset[str]] = {}
+    for binding in test_func.module_aliases:
+        blocked_by_module[binding.module] = (
+            blocked_by_module.get(binding.module, frozenset()) | binding.blocked_members
+        )
+    imports = {
+        name: replace(binding, blocked_members=blocked_by_module[binding.module])
+        for name, binding in imports.items()
     }
     state = _State(
         fixtures=parameters & _CAPTURE_FIXTURES,
@@ -64,6 +72,7 @@ def _map_assertion_evidence(
         ),
         imports=imports,
         lexical_locals=local_names,
+        blocked_by_module=blocked_by_module,
     )
     result: dict[tuple[int, int], SideEffectType | None] = {}
     _scan_statements(test_func.node.body, state, result)
@@ -152,12 +161,12 @@ def _scan_assignment(statement: ast.Assign | ast.AnnAssign, state: _State) -> No
             _bind_unsupported_storage(target, blocked, state)
         return
     target = targets[0]
-    if isinstance(value, ast.Call) and _is_legacy_target_call(value, state):
-        evaluated = _Value(role=SideEffectType.ReturnValue)
-    elif isinstance(value, ast.Call) and _has_target_name(value, state):
-        evaluated = _Value(blocked=True)
     if isinstance(target, ast.Tuple) and _is_capture_read(value, state):
         _bind_capture_tuple(target, evaluated, state)
+    elif isinstance(value, ast.Call) and _is_legacy_target_call(value, state):
+        _bind_target_result(target, state)
+    elif isinstance(value, ast.Call) and _has_target_name(value, state):
+        _bind_unsupported_storage(target, _Value(blocked=True), state)
     elif isinstance(target, ast.Name):
         was_related = target.id in state.related_names
         _invalidate_name(target.id, state)
@@ -176,8 +185,7 @@ def _scan_definition(
     state: _State,
 ) -> None:
     """Taint for executable headers without entering deferred bodies."""
-    state.imports.pop(statement.name, None)
-    state.values.pop(statement.name, None)
+    _invalidate_name(statement.name, state)
     if isinstance(statement, ast.ClassDef):
         state.tainted = True
     elif statement.decorator_list or any(
@@ -192,10 +200,11 @@ def _scan_with(
     result: dict[tuple[int, int], SideEffectType | None],
 ) -> bool:
     """Scan a context body while treating entry and exit as possible producers."""
-    state.tainted = True
     for item in statement.items:
+        _observe_expression(item.context_expr, state)
         if item.optional_vars is not None:
             _invalidate_storage(item.optional_vars, state)
+    state.tainted = True
     if _scan_statements(statement.body, state, result):
         return True
     state.tainted = True
@@ -218,11 +227,17 @@ def _scan_unsupported(
             _invalidate_referenced_families(node, state)
         elif isinstance(node, ast.Assert):
             result[(node.lineno, node.col_offset)] = None
+        elif isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(
+            node.ctx, (ast.Store, ast.Del)
+        ):
+            _invalidate_storage(node, state)
         elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
             existing = state.values.get(node.id)
             if existing is not None:
                 _invalidate_families(existing, state)
             _invalidate_name(node.id, state)
+        elif isinstance(node, ast.alias) and node.name != "*":
+            _invalidate_name(node.asname or node.name.split(".", maxsplit=1)[0], state)
         elif isinstance(node, ast.ImportFrom) and any(
             imported.name == "*" for imported in node.names
         ):
@@ -248,8 +263,12 @@ def _evaluate(node: ast.AST, state: _State) -> _Value | None:
         return _evaluate_attribute(node, state)
     if isinstance(node, ast.Subscript):
         return _evaluate_subscript(node, state)
-    if isinstance(node, ast.Call):
-        return _evaluate_call(node, state)
+    if isinstance(node, (ast.Call, ast.NamedExpr)):
+        return (
+            _evaluate_call(node, state)
+            if isinstance(node, ast.Call)
+            else _evaluate_named_expr(node, state)
+        )
     if isinstance(node, ast.Lambda):
         return _Value(blocked=True) if _capture_related_syntax(node.body, state) else None
     return _evaluate_children(node, state)
@@ -264,7 +283,14 @@ def _evaluate_attribute(node: ast.Attribute, state: _State) -> _Value | None:
         if base.blocked:
             return _Value(blocked=True)
         return _Value(streams=frozenset({_STREAM_TYPES[node.attr]}))
-    return _Value(streams=base.streams, blocked=base.blocked, family=base.family)
+    if base.streams:
+        return _blocked_value(base)
+    return _Value(
+        streams=base.streams,
+        role=base.role,
+        blocked=base.blocked,
+        family=base.family,
+    )
 
 
 def _evaluate_subscript(node: ast.Subscript, state: _State) -> _Value | None:
@@ -299,15 +325,36 @@ def _evaluate_call(node: ast.Call, state: _State) -> _Value | None:
     related = _combine_values(evaluated_inputs)
     if related is not None:
         _invalidate_families(related, state)
+        if related.role is not None and not related.streams and related.family is None:
+            return related
         return _blocked_value(related)
+    return None
+
+
+def _evaluate_named_expr(node: ast.NamedExpr, state: _State) -> _Value | None:
+    """Evaluate a walrus RHS before replacing its destination binding."""
+    value = _evaluate(node.value, state)
+    was_related = isinstance(node.target, ast.Name) and node.target.id in state.related_names
+    _invalidate_storage(node.target, state)
+    if not isinstance(node.target, ast.Name):
+        return _blocked_value(value) if value is not None else None
+    if value is not None:
+        state.values[node.target.id] = value
+        state.related_names.add(node.target.id)
+        return value
+    if was_related:
+        blocked = _Value(blocked=True)
+        state.values[node.target.id] = blocked
+        state.related_names.add(node.target.id)
+        return blocked
     return None
 
 
 def _evaluate_children(node: ast.AST, state: _State) -> _Value | None:
     """Combine child provenance and block expressions with unknown calls."""
-    if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)) or (
-        isinstance(node, (ast.BoolOp, ast.IfExp))
-        and any(isinstance(item, ast.Call) for item in _walk_without_nested_bodies(node))
+    if isinstance(
+        node,
+        (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.BoolOp, ast.IfExp),
     ):
         return _evaluate_uncertain_expression(node, state)
     combined = _combine_values(_evaluate(child, state) for child in ast.iter_child_nodes(node))
@@ -317,21 +364,44 @@ def _evaluate_children(node: ast.AST, state: _State) -> _Value | None:
         and not (isinstance(item, ast.Call) and _is_json_loads(item, state))
         for item in _walk_without_nested_bodies(node)
     ):
+        if combined.role is not None and not combined.streams and combined.family is None:
+            return combined
         return _blocked_value(combined)
     return combined
 
 
 def _evaluate_uncertain_expression(node: ast.AST, state: _State) -> _Value | None:
     """Quarantine calls whose execution depends on expression control flow."""
+    definite_node: ast.AST | None = None
+    if isinstance(node, ast.BoolOp):
+        definite_node = node.values[0]
+    elif isinstance(node, ast.IfExp):
+        definite_node = node.test
+    definite = _evaluate(definite_node, state) if definite_node is not None else None
     nodes = _walk_without_nested_bodies(node)
     if any(isinstance(item, ast.Call) and _is_capture_read(item, state) for item in nodes):
         state.pending_target = False
     if any(isinstance(item, ast.Call) for item in nodes):
         state.tainted = True
     _invalidate_referenced_families(node, state)
-    related = _combine_values(
-        state.values.get(item.id) for item in nodes if isinstance(item, ast.Name)
+    related_values = [state.values.get(item.id) for item in nodes if isinstance(item, ast.Name)]
+    related = _combine_values(related_values)
+    has_supported_capture = any(
+        value is not None
+        and not value.blocked
+        and (bool(value.streams) or value.capture_result or value.family is not None)
+        for value in related_values
     )
+    if (
+        definite is not None
+        and definite.role is not None
+        and not definite.blocked
+        and (related is None or not related.blocked)
+        and isinstance(node, ast.BoolOp)
+        and isinstance(node.op, ast.And)
+        and has_supported_capture
+    ):
+        return definite
     if related is not None or _capture_related_syntax(node, state):
         return _blocked_value(related)
     return None
@@ -403,6 +473,11 @@ def _is_capture_read(node: ast.AST, state: _State) -> bool:
 
 def _is_json_loads(node: ast.Call, state: _State) -> bool:
     """Return whether node is the supported unshadowed json.loads form."""
+    binding = (
+        state.imports.get(node.func.value.id)
+        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
+        else None
+    )
     return (
         isinstance(node.func, ast.Attribute)
         and isinstance(node.func.value, ast.Name)
@@ -410,7 +485,10 @@ def _is_json_loads(node: ast.Call, state: _State) -> bool:
         and node.func.attr == "loads"
         and len(node.args) == 1
         and not node.keywords
-        and state.imports.get(node.func.value.id) == _ImportBinding("json")
+        and binding is not None
+        and binding.module == "json"
+        and binding.symbol is None
+        and "loads" not in binding.blocked_members
     )
 
 
@@ -421,8 +499,12 @@ def _apply_import(statement: ast.Import | ast.ImportFrom, state: _State) -> None
         for imported in statement.names:
             local = imported.asname or imported.name.split(".", maxsplit=1)[0]
             module = imported.name if imported.asname is not None else local
-            state.imports[local] = _ImportBinding(module)
-            state.values.pop(local, None)
+            _invalidate_name(local, state)
+            state.imports[local] = _ImportBinding(
+                local,
+                module,
+                blocked_members=state.blocked_by_module.get(module, frozenset()),
+            )
         return
     if statement.level != 0 or statement.module is None:
         state.imports.clear()
@@ -432,8 +514,31 @@ def _apply_import(statement: ast.Import | ast.ImportFrom, state: _State) -> None
             state.imports.clear()
         else:
             local = imported.asname or imported.name
-            state.imports[local] = _ImportBinding(statement.module, imported.name)
-            state.values.pop(local, None)
+            _invalidate_name(local, state)
+            state.imports[local] = _ImportBinding(
+                local,
+                statement.module,
+                imported.name,
+                state.blocked_by_module.get(statement.module, frozenset()),
+            )
+
+
+def _bind_target_result(target: ast.expr, state: _State) -> None:
+    """Bind supported return and error roles from one target call."""
+    if isinstance(target, ast.Name):
+        _invalidate_name(target.id, state)
+        state.values[target.id] = _Value(role=SideEffectType.ReturnValue)
+        state.related_names.add(target.id)
+        return
+    if isinstance(target, (ast.Tuple, ast.List)):
+        roles = (SideEffectType.ReturnValue, SideEffectType.ErrorReturn)
+        for index, item in enumerate(target.elts):
+            _invalidate_storage(item, state)
+            if index < len(roles) and isinstance(item, ast.Name):
+                state.values[item.id] = _Value(role=roles[index])
+                state.related_names.add(item.id)
+        return
+    _bind_unsupported_storage(target, _Value(blocked=True), state)
 
 
 def _bind_capture_tuple(target: ast.Tuple, value: _Value | None, state: _State) -> None:
@@ -470,8 +575,7 @@ def _bind_unsupported_storage(target: ast.expr, value: _Value, state: _State) ->
                 state.values[node.id] = value
                 state.related_names.add(node.id)
     if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
-        if target.attr == state.identity.function:
-            state.imports.pop(target.value.id, None)
+        _invalidate_import_member(target.value.id, target.attr, state)
 
 
 def _invalidate_storage(target: ast.expr, state: _State) -> None:
@@ -481,9 +585,22 @@ def _invalidate_storage(target: ast.expr, state: _State) -> None:
     elif isinstance(target, (ast.Tuple, ast.List)):
         for item in target.elts:
             _invalidate_storage(item, state)
-    elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
-        if target.attr == state.identity.function:
-            state.imports.pop(target.value.id, None)
+    else:
+        _invalidate_referenced_families(target, state)
+        if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+            _invalidate_import_member(target.value.id, target.attr, state)
+
+
+def _invalidate_import_member(name: str, member: str, state: _State) -> None:
+    """Record replacement of one member while preserving its module binding."""
+    binding = state.imports.get(name)
+    if binding is None or binding.symbol is not None:
+        return
+    blocked = state.blocked_by_module.get(binding.module, frozenset()) | {member}
+    state.blocked_by_module[binding.module] = blocked
+    for alias_name, alias in tuple(state.imports.items()):
+        if alias.module == binding.module and alias.symbol is None:
+            state.imports[alias_name] = replace(alias, blocked_members=blocked)
 
 
 def _invalidate_name(name: str, state: _State) -> None:

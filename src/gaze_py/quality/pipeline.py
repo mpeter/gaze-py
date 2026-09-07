@@ -3,8 +3,8 @@
 Orchestrates the full pipeline:
   1. Detect and classify side effects in the source path.
   2. Discover test functions in the tests path.
-  3. For each test function: pair → detect assertions → build bindings →
-     map assertions → compute coverage → build QualityReport.
+  3. For each test function: pair → detect assertions → map assertions →
+     compute coverage → build QualityReport.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from gaze_py.config.loader import GazeConfig
 from gaze_py.quality._identity import _import_root
 from gaze_py.quality.assertions import detect_assertions
 from gaze_py.quality.coverage import compute_contract_coverage
-from gaze_py.quality.mapper import build_call_bindings, map_assertions_to_effects
+from gaze_py.quality.mapper import map_assertions_to_effects
 from gaze_py.quality.models import TestFunc
 from gaze_py.quality.pairing import _build_astroid_graph, find_test_functions, pair_to_targets
 from gaze_py.taxonomy.models import (
@@ -271,15 +271,12 @@ def _process_test_func(
             test_location=f"{test_func.filename}:{test_func.lineno}",
         )
 
-    # Build call bindings (which variable holds the return value).
-    bindings = build_call_bindings(test_func, pair.target_name)
-
     # Map assertions to effects.
     resolved_target_path = _target_path(source_path, production_target)
     mapped = map_assertions_to_effects(
         assertions,
         production_target,
-        bindings,
+        {},
         test_func=test_func,
         target_path=resolved_target_path,
         import_root=_capture_import_root(source_path, resolved_target_path),

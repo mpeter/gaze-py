@@ -37,6 +37,10 @@ output. Delete the superseded capture traversal when replacing it.
 
 For assertions with context, consult that record before any mapping pass. A valid
 live return role retains precedence over a supported stream in a mixed assertion.
+For uncertain expression syntax, evaluation alone is not verification: a return
+role may retain that precedence only in a supported conjunction with attributable
+capture evidence. Guaranteed-true fallbacks and conditional expressions remain
+unmapped because the return value cannot make the assertion fail.
 `blocked_capture` overrides every legacy pass, including an otherwise live return
 role in the same assertion; this deliberate false negative prevents unsupported
 capture syntax from acquiring credit. A stale
@@ -176,7 +180,7 @@ tests must use tempting target/effect names so semantic fallback is exercised.
 | Identity | Accept exact direct/local/module imports; reject wrong direct imports, parameters, local definitions, later local assignments, conditional imports and suffix collisions. |
 | Mutation | Preserve module alias after unrelated attribute write; reject overwritten target attribute, chained/attribute capture storage, arbitrary methods and mutable alias changes. |
 | Headers | Reject polluted windows from positional-only, vararg and kwarg annotations as well as defaults/decorators. |
-| Lifetime | Reassigned return becomes stream evidence; live return precedes a supported stream, but blocked capture overrides live return; stale capture cannot regain semantic credit. |
+| Lifetime | Reassigned return becomes stream evidence; live return precedes a supported stream conjunction, but skipped or non-enforcing operands and blocked capture remain unmapped; stale capture cannot regain semantic credit. |
 | Context | Preserve explicit drain/call/snapshot isolation inside patch contexts and reject unsupported paths or uncertain drains. |
 | JSON | Accept the documented loads/indexing form; reject shadowed json, hooks/keywords, methods, mutation through nested aliases and mixed-stream expressions. |
 | Compatibility | Preserve no-context mapper behavior, non-capture exception/helper behavior, output cardinality, taxonomy, schemas, formulas and frozen gates. |

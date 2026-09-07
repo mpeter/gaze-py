@@ -8,6 +8,10 @@ The mapper MUST apply valid return binding, exception, captured stream and seman
 - **WHEN** an assertion references a live bound return value and a supported attributable captured stream
 - **THEN** the return binding keeps precedence and the assertion is not counted twice
 
+#### Scenario: uncertain return does not establish verification
+- **WHEN** a Boolean or conditional assertion can pass through a guaranteed-true path regardless of a live return value
+- **THEN** reading or evaluating that return value MUST NOT establish return coverage
+
 #### Scenario: blocked capture overrides return precedence
 - **WHEN** an assertion references both a live return value and unsupported capture provenance
 - **THEN** the assertion MUST remain unmapped rather than bypass the blocked capture through return matching
