@@ -1,5 +1,8 @@
 # Conservative invocation attribution — implementation evidence
 
+Historical evidence for d95352f. Independent Python review subsequently returned
+four HIGH blockers; the bounded follow-up is recorded in [review-repair.md](review-repair.md).
+
 ## Status and provenance
 
 Implemented and locally verified; independent Python review remains pending with

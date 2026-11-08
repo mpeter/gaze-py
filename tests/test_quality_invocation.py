@@ -156,10 +156,13 @@ def test_from_package_patch_owner_and_arbitrary_record_names(tmp_path: Path) -> 
     ],
 )
 def test_missing_or_ambiguous_invocation_is_unmapped(tmp_path: Path, old: str, new: str) -> None:
-    """Missing causal evidence must not grant spawn coverage."""
+    """Missing causal evidence cannot cover spawn; separate return roles survive."""
     mapped = _map_invocation(tmp_path, _TEST.replace(old, new))
     if old == 'result = run_worker(["list"])' and new.startswith("assert"):
         assert mapped[0] is None
+    elif new == 'received = run_worker(["list"])':
+        # Review blocker 4: rebinding to a return is not invocation provenance.
+        assert mapped[-1] == SideEffectType.ReturnValue
     else:
         assert mapped[-1] is None
 
@@ -250,3 +253,104 @@ def test_from_package_owner_replaced_at_module_scope_is_unmapped(tmp_path: Path)
     ).replace("from client import", "from pkg.client import")
     mapped = _map_invocation(tmp_path, source, package=True)
     assert mapped[-1] is None
+
+
+@pytest.mark.parametrize("yield_statement", ["yield result.stdout", "yield from result.stdout"])
+def test_review_generator_body_is_not_exercised(tmp_path: Path, yield_statement: str) -> None:
+    """Creating a generator does not execute its subprocess boundary."""
+    source = _TEST.replace('assert result == "payload"', "assert result is not None")
+    source = source[: source.index("    assert received ==")] + "    assert received == {}\n"
+    production = _PRODUCTION.replace("return result.stdout", yield_statement)
+    mapped = _map_invocation(tmp_path, source, production)
+    assert mapped[-1] is None
+
+
+@pytest.mark.parametrize(
+    "exercise",
+    [
+        "run_worker(received)",
+        "run_worker(record=received)",
+        "run_worker(*(received,))",
+        'run_worker(**{"record": received})',
+    ],
+)
+def test_review_record_cannot_escape_through_target(tmp_path: Path, exercise: str) -> None:
+    """Production mutation of the escaped record is not invocation evidence."""
+    production = """
+import subprocess
+
+def run_worker(record):
+    result = subprocess.run(["worker"], check=False)
+    record["args"] = ["forged"]
+    return result.stdout
+"""
+    source = _TEST.replace('run_worker(["list"])', exercise)
+    source = source[: source.index("    assert received ==")] + (
+        '    assert received == {"args": ["forged"], "check": False}\n'
+    )
+    mapped = _map_invocation(tmp_path, source, production)
+    assert mapped[-1] is None
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "def replacement(argv: (monkeypatch := decoy), **options):",
+        "def replacement(argv, **options: (monkeypatch := decoy)):",
+        "def replacement(argv, **options) -> (monkeypatch := decoy):",
+        "def replacement(argv: decoy.Annotation[monkeypatch], **options):",
+        "def replacement(argv: decoy.Annotation, **options):",
+        "def replacement(argv: decoy.Annotation | str, **options):",
+    ],
+    ids=[
+        "argument-walrus",
+        "kwargs-walrus",
+        "return-walrus",
+        "dynamic-subscript",
+        "dynamic-attribute",
+        "overloaded-union",
+    ],
+)
+def test_review_fake_annotation_cannot_replace_patch_fixture(tmp_path: Path, header: str) -> None:
+    """A walrus in an evaluated fake annotation can prevent installation."""
+    source = _TEST.replace("import subprocess", "import subprocess\nimport decoy")
+    source = source.replace("def replacement(argv, **options):", header)
+    source = source[: source.index("    assert received ==")] + "    assert received == {}\n"
+    mapped = _map_invocation(tmp_path, source)
+    assert mapped[-1] is None
+
+
+def test_review_standard_fake_annotations_preserve_invocation_mapping(tmp_path: Path) -> None:
+    """The bounded annotation grammar retains the original typed fake shape."""
+    source = _TEST.replace(
+        "def replacement(argv, **options):",
+        (
+            "def replacement(argv: list[str], **options: object)"
+            " -> subprocess.CompletedProcess[str]:"
+        ),
+    )
+    mapped = _map_invocation(tmp_path, source)
+    assert mapped == [SideEffectType.ReturnValue, SideEffectType.GoroutineSpawn]
+
+
+def test_review_shadowed_builtin_annotation_is_not_inert(tmp_path: Path) -> None:
+    """A fixture named list can execute custom subscription in an annotation."""
+    source = _TEST.replace("def test_worker(monkeypatch):", "def test_worker(monkeypatch, list):")
+    source = source.replace(
+        "def replacement(argv, **options):", "def replacement(argv: list[str], **options):"
+    )
+    mapped = _map_invocation(tmp_path, source)
+    assert mapped[-1] is None
+
+
+def test_review_rebound_record_preserves_return_evidence(tmp_path: Path) -> None:
+    """The previous recorder name may independently hold the target's return."""
+    source = (
+        _TEST[: _TEST.index('    result = run_worker(["list"])')]
+        + """
+    received = run_worker(["list"])
+    assert received == "payload"
+"""
+    )
+    mapped = _map_invocation(tmp_path, source)
+    assert mapped == [SideEffectType.ReturnValue]

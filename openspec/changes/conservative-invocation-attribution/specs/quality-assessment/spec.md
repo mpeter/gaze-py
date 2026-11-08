@@ -14,6 +14,18 @@ require an exact selected-target call followed by direct record equality.
 - **THEN** the return assertion MUST map to ReturnValue and the record assertion
   MUST map to GoroutineSpawn
 
+#### Scenario: Deferred body, escaped record or state-changing annotation
+- **GIVEN** a generator production function, a record passed into the selected
+  target, or a fake header outside the bounded inert annotation grammar
+- **WHEN** the test constructs the target result and asserts the record
+- **THEN** the invocation matcher MUST NOT grant GoroutineSpawn coverage
+
+#### Scenario: Record name rebound to the target return
+- **GIVEN** an earlier record/fake/patch setup
+- **WHEN** the record name is rebound to the selected target's return and asserted
+- **THEN** independent ReturnValue evidence MUST remain mapped and the invocation
+  matcher MUST NOT override it with either spawn evidence or an unmapped entry
+
 #### Scenario: Missing or ambiguous provenance
 - **GIVEN** an unrelated target or record, unused fake, overwritten or rebound
   record, wrong or shadowed patch target, or multiple calls sharing a fake

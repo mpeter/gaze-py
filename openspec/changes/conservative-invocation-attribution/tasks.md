@@ -9,3 +9,8 @@
 ## 3. Verification
 - [x] 3.1 Run focused tests, lint, format, strict source typing and full coverage gate.
 - [x] 3.2 Prepare exact base, changed paths and evidence for independent review (verification.md).
+
+## 4. Independent review repair
+- [x] 4.1 Reproduce all four HIGH review blockers as red regressions on d95352f.
+- [x] 4.2 Reject generator bodies, escaped records and state-changing fake headers; preserve independent return evidence.
+- [x] 4.3 Run focused regressions, mutation checks, lint, types and stable-source full suite; prepare a follow-up commit for re-review.

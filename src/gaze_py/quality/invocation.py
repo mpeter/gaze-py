@@ -69,6 +69,7 @@ class _InvocationEvidence:
             and _supported_exercise_storage(statement, self.record)
             and not any(
                 isinstance(node, (ast.Call, ast.NamedExpr))
+                or (isinstance(node, ast.Name) and node.id == self.record)
                 for arg in (*value.args, *value.keywords)
                 for node in ast.walk(arg)
             )
@@ -168,16 +169,6 @@ def _recorded_fake(node: ast.FunctionDef, imports: dict[str, _ImportBinding]) ->
         or args.kwarg is None
         or args.vararg is not None
         or len(node.body) != 2
-        or any(
-            isinstance(item, ast.Call)
-            for arg in (*args.args, args.kwarg)
-            if arg is not None and arg.annotation is not None
-            for item in ast.walk(arg.annotation)
-        )
-        or (
-            node.returns is not None
-            and any(isinstance(item, ast.Call) for item in ast.walk(node.returns))
-        )
     ):
         return None
     update, returned = node.body
@@ -223,6 +214,7 @@ def _invocation_evidence(
     identity: _TargetIdentity,
     imports: dict[str, _ImportBinding],
     test_path: Path,
+    lexical_locals: set[str],
 ) -> _InvocationEvidence | None:
     """Prepare a narrow candidate; the existing scanner owns live ordering."""
     fakes = [
@@ -237,7 +229,9 @@ def _invocation_evidence(
         or not target_path.is_file()
         or identity.module is None
         or not test_path.is_file()
-        or not _imports_and_definitions_only(ast.parse(test_path.read_text(encoding="utf-8")))
+        or not _supported_test_headers(
+            test_path, fake=fakes[0][0], imports=imports, lexical_locals=lexical_locals
+        )
     ):
         return None
     module = ast.parse(target_path.read_text(encoding="utf-8"))
@@ -287,6 +281,8 @@ def _invocation_evidence(
                 ast.ImportFrom,
                 ast.Global,
                 ast.Nonlocal,
+                ast.Yield,
+                ast.YieldFrom,
             ),
         )
         for stmt in function.body
@@ -314,6 +310,68 @@ def _invocation_evidence(
     return _InvocationEvidence(record, fake, calls[0].func.value.id)
 
 
+def _supported_test_headers(
+    test_path: Path,
+    *,
+    fake: ast.FunctionDef,
+    imports: dict[str, _ImportBinding],
+    lexical_locals: set[str],
+) -> bool:
+    """Require inert fake annotations, not arbitrary evaluated expressions."""
+    module = ast.parse(test_path.read_text(encoding="utf-8"))
+    shadowed = (
+        lexical_locals
+        | set(imports)
+        | {statement.name for statement in module.body if isinstance(statement, ast.FunctionDef)}
+    )
+    annotations = [
+        arg.annotation
+        for arg in (*fake.args.args, fake.args.kwarg)
+        if arg is not None and arg.annotation is not None
+    ]
+    if fake.returns is not None:
+        annotations.append(fake.returns)
+    return _imports_and_definitions_only(module) and all(
+        _inert_annotation(annotation, imports, shadowed) for annotation in annotations
+    )
+
+
+def _inert_annotation(
+    node: ast.expr, imports: dict[str, _ImportBinding], shadowed: set[str]
+) -> bool:
+    """Accept literal forward references and a bounded standard-type grammar."""
+    if isinstance(node, ast.Constant):
+        return node.value is None or isinstance(node.value, str)
+    if isinstance(node, ast.Name):
+        return node.id not in shadowed and node.id in {
+            "bool",
+            "bytes",
+            "dict",
+            "float",
+            "int",
+            "list",
+            "object",
+            "set",
+            "str",
+            "tuple",
+            "type",
+        }
+    completed_process = _TargetIdentity("subprocess", "CompletedProcess", None)
+    if isinstance(node, ast.Attribute):
+        return completed_process.matches(ast.Call(func=node, args=[], keywords=[]), imports)
+    if isinstance(node, ast.Subscript):
+        generic = (
+            isinstance(node.value, ast.Name)
+            and node.value.id not in shadowed
+            and node.value.id in {"dict", "list", "set", "tuple", "type"}
+        ) or completed_process.matches(ast.Call(func=node.value, args=[], keywords=[]), imports)
+        parameters = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        return generic and all(
+            _inert_annotation(parameter, imports, shadowed) for parameter in parameters
+        )
+    return False
+
+
 def _imports_and_definitions_only(module: ast.Module) -> bool:
     """Reject untracked module-object mutations for from-package imports."""
     return all(
@@ -321,10 +379,15 @@ def _imports_and_definitions_only(module: ast.Module) -> bool:
         or (
             isinstance(statement, ast.FunctionDef)
             and not statement.decorator_list
-            and not any(isinstance(node, ast.Call) for node in ast.walk(statement.args))
+            and not any(
+                isinstance(node, (ast.Call, ast.NamedExpr)) for node in ast.walk(statement.args)
+            )
             and (
                 statement.returns is None
-                or not any(isinstance(node, ast.Call) for node in ast.walk(statement.returns))
+                or not any(
+                    isinstance(node, (ast.Call, ast.NamedExpr))
+                    for node in ast.walk(statement.returns)
+                )
             )
         )
         or (

@@ -84,6 +84,7 @@ def _map_assertion_evidence(
         identity=state.identity,
         imports=imports,
         test_path=Path(test_func.filename),
+        lexical_locals=local_names,
     )
     result: dict[tuple[int, int], SideEffectType | None] = {}
     _scan_statements(test_func.node.body, state, result)
@@ -125,13 +126,16 @@ def _scan_statement(
     )
     if isinstance(statement, ast.Assert):
         _scan_assertion(statement, state, result)
-        if state.invocation is not None and any(
-            isinstance(node, ast.Name) and node.id == state.invocation.record
-            for node in ast.walk(statement.test)
-        ):
-            result[(statement.lineno, statement.col_offset)] = (
-                SideEffectType.GoroutineSpawn if invocation_match else None
+        position = (statement.lineno, statement.col_offset)
+        if (
+            position not in result
+            and state.invocation is not None
+            and any(
+                isinstance(node, ast.Name) and node.id == state.invocation.record
+                for node in ast.walk(statement.test)
             )
+        ):
+            result[position] = SideEffectType.GoroutineSpawn if invocation_match else None
     elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
         _scan_assignment(statement, state)
     elif isinstance(statement, ast.Expr):
