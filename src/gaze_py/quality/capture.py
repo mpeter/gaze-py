@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from gaze_py.quality._identity import _target_identity, _TargetIdentity
+from gaze_py.quality.invocation import _invocation_evidence, _InvocationEvidence
 from gaze_py.quality.models import TestFunc, _ImportBinding
 from gaze_py.taxonomy.effects import SideEffectType
 
@@ -40,6 +41,8 @@ class _State:
     pending_target: bool = False
     tainted: bool = False
     next_family: int = 1
+    invocation: _InvocationEvidence | None = None
+    monkeypatch_live: bool = False
 
 
 def _map_assertion_evidence(
@@ -73,6 +76,14 @@ def _map_assertion_evidence(
         imports=imports,
         lexical_locals=local_names,
         blocked_by_module=blocked_by_module,
+        monkeypatch_live="monkeypatch" in parameters,
+    )
+    state.invocation = _invocation_evidence(
+        test_func.node,
+        target_path=target_path,
+        identity=state.identity,
+        imports=imports,
+        test_path=Path(test_func.filename),
     )
     result: dict[tuple[int, int], SideEffectType | None] = {}
     _scan_statements(test_func.node.body, state, result)
@@ -106,8 +117,21 @@ def _scan_statement(
     result: dict[tuple[int, int], SideEffectType | None],
 ) -> bool:
     """Apply one supported transition or quarantine unsupported control flow."""
+    invocation_match = state.invocation is not None and state.invocation.observe(
+        statement,
+        identity=state.identity,
+        imports=state.imports,
+        monkeypatch_live=state.monkeypatch_live,
+    )
     if isinstance(statement, ast.Assert):
         _scan_assertion(statement, state, result)
+        if state.invocation is not None and any(
+            isinstance(node, ast.Name) and node.id == state.invocation.record
+            for node in ast.walk(statement.test)
+        ):
+            result[(statement.lineno, statement.col_offset)] = (
+                SideEffectType.GoroutineSpawn if invocation_match else None
+            )
     elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
         _scan_assignment(statement, state)
     elif isinstance(statement, ast.Expr):
@@ -608,6 +632,8 @@ def _invalidate_name(name: str, state: _State) -> None:
     state.values.pop(name, None)
     state.imports.pop(name, None)
     state.fixtures.discard(name)
+    if name == "monkeypatch":
+        state.monkeypatch_live = False
 
 
 def _invalidate_families(value: _Value, state: _State) -> None:
