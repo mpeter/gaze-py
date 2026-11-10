@@ -26,7 +26,7 @@ Your job is to find where tests are shallow, brittle, or missing; where coverage
 Before reviewing, read:
 
 1. `AGENTS.md` — Testing Conventions, Coding Conventions, Build & Test Commands
-2. `.specify/memory/constitution.md` — Core Principles (especially Principle IV: Testability)
+2. `openspec/constitution.md` — Core Principles (especially Principle IV: Testability)
 3. The `python-conventions` skill — folds `default.md`, `python.md` (TC-001 through
    TC-014), and `python-custom.md` (CR-001 through CR-007, including CR-007
    gaze-visibility — the direct-assertion binding-chain rule that determines
@@ -93,11 +93,11 @@ Evaluate all recent changes (staged, unstaged, and untracked files). Use `git di
 
 ## Spec Review Mode
 
-Use this mode when the caller instructs you to review SpecKit artifacts instead of code.
+Use this mode when the caller instructs you to review OpenSpec artifacts instead of code.
 
 ### Review Scope
 
-Read **all files** under `specs/` recursively (every feature directory and every artifact: `spec.md`, `plan.md`, `tasks.md`, `data-model.md`, `research.md`, `quickstart.md`, and `checklists/`). Also read `.specify/memory/constitution.md` and `AGENTS.md` for constraint context.
+Read **all files** under `openspec/changes/` and `openspec/specs/` recursively (every change's `proposal.md`, `design.md`, `tasks.md`, capability spec deltas, and canonical specs), excluding `openspec/changes/archive/`. Also read `openspec/constitution.md` and `AGENTS.md` for constraint context.
 
 Do NOT use `git diff` or review code files. Your scope is exclusively the specification artifacts.
 
@@ -140,7 +140,7 @@ Do NOT use `git diff` or review code files. Your scope is exclusively the specif
 
 #### 6. Constitution Alignment
 
-- Does the plan comply with `.specify/memory/constitution.md` Principle IV: Testability — are functions testable in isolation without external services or shared mutable state?
+- Does the plan comply with `openspec/constitution.md` Principle IV: Testability — are functions testable in isolation without external services or shared mutable state?
 - Does the coverage strategy satisfy Principle IV's MUST requirements: coverage strategy specified in the plan, ratchet enforcement in CI (`--cov-fail-under=85`), conformance tests referencing porting contract IDs (EC-001, CC-001, SC-001, OC-001)?
 - Is missing coverage strategy flagged as CRITICAL in the spec or plan? (It should be.)
 - Are the other active principles (Accuracy, Minimal Assumptions, Actionable Output, Porting Contract Supremacy, Composability, Supply Chain Integrity) also addressed?

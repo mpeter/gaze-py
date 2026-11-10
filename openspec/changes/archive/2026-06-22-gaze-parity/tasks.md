@@ -150,12 +150,13 @@ task text and prior states are retained above, with evidence appended; only T402
 has newly sufficient evidence. No historical requirements are merged into the
 current canonical specs by this archival move.
 
-There is no `.backlog/` convention in this repository. All GitHub issues were
-searched and later OpenSpec changes checked; no GitHub issues were created.
+All GitHub issues were searched and later OpenSpec changes checked; no GitHub
+issues were created. The untracked follow-ups are now `.backlog/` items.
 
 - **C.3 — untracked follow-up:** `.coverage` binary profile reuse and optional
   internal `coverage run pytest` remain listed only in the old deferred registry.
   A new proposal or issue is still needed before implementing this capability.
+  Tracked in `.backlog/2026-11-10-coverage-profile-reuse.md`.
 - **G.1 — tracked/resolved:** `../return-none-annotation/` records the evaluation;
   `../../../specs/effect-detection/spec.md` carries the current behavior. An
   unannotated `return None` is treated as void.
@@ -164,3 +165,4 @@ searched and later OpenSpec changes checked; no GitHub issues were created.
   No new issue/change or evidence of the requested Go-maintainer confirmation
   was found. Revisit only if reconciling upstream taxonomy history is necessary;
   do not reopen the current 48-type contract merely to close this old checkbox.
+  Tracked in `.backlog/2026-11-10-confirm-side-effect-type-count.md`.
