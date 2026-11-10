@@ -35,8 +35,8 @@ informational note and proceed with the standard review.
 Before reviewing, read:
 
 1. `AGENTS.md` -- Project overview, behavioral constraints, and conventions
-2. `.specify/memory/constitution.md` -- Project constitution (core principles)
-3. The relevant `spec.md`, `plan.md`, and `tasks.md` under `specs/` for the current work
+2. `openspec/constitution.md` -- Project constitution (core principles)
+3. The relevant `proposal.md`, `design.md`, `tasks.md`, and capability specs under `openspec/changes/`, plus canonical specs under `openspec/specs/`, for the current work
 4. `.opencode/uf/packs/severity.md` -- Shared severity definitions (MUST load for consistent severity classification per Spec 019 FR-006)
 5. All `*.md` files from `.opencode/uf/packs/` -- active convention pack. If no pack files are found, note this in your findings and proceed with universal checks only.
 6. **Knowledge graph** (optional) — If Dewey MCP tools are available, use `dewey_semantic_search` to find cross-repo review patterns, recurring intent drift findings, and convention violations. Use `dewey_search` and `dewey_traverse` for structured queries. If only graph tools are available (no embedding model), use `dewey_search` and `dewey_traverse` only. If Dewey is unavailable, rely on reading files directly and using Grep for keyword search.
@@ -63,7 +63,7 @@ Evaluate all recent changes (staged, unstaged, and untracked files). Use `git di
 
 #### 2. Constitution Alignment
 
-- Review each principle declared in `.specify/memory/constitution.md`.
+- Review each principle declared in `openspec/constitution.md`.
 - Does the change comply with every stated principle?
 - Are there trade-offs that implicitly weaken a constitutional principle without acknowledging the trade-off?
 - If the constitution defines artifact or communication standards, are they followed?
@@ -121,7 +121,7 @@ Use this mode when the caller instructs you to review spec artifacts instead of 
 
 ### Review Scope
 
-Read **all files** under `specs/` recursively (every feature directory and every artifact: `spec.md`, `plan.md`, `tasks.md`, `data-model.md`, `research.md`, `quickstart.md`, and `checklists/`). Also read `.specify/memory/constitution.md` and `AGENTS.md` for constraint context.
+Read **all files** under `openspec/changes/` and `openspec/specs/` recursively (every change's `proposal.md`, `design.md`, `tasks.md`, capability spec deltas, and canonical capability specs). Also read `openspec/constitution.md` and `AGENTS.md` for constraint context.
 
 Do NOT use `git diff` or review code files. Your scope is exclusively the specification artifacts.
 
@@ -129,9 +129,9 @@ Do NOT use `git diff` or review code files. Your scope is exclusively the specif
 
 #### 1. Intent Fidelity
 
-- Does each spec's Problem Statement clearly articulate the user's actual pain point?
+- Does each change proposal's Why section clearly articulate the user's actual pain point?
 - Does the spec's solution address the stated problem directly, or has it drifted toward a different (possibly adjacent) problem during planning?
-- Do the plan and tasks remain aligned with the spec's original intent, or has scope shifted during the planning process?
+- Do the design and tasks remain aligned with the proposal and spec's original intent, or has scope shifted during the planning process?
 - Are acceptance criteria written from the user's perspective (what they experience) rather than the developer's perspective (what they build)?
 - Could a non-technical stakeholder read the spec and confirm it captures their intent?
 
@@ -153,9 +153,9 @@ Do NOT use `git diff` or review code files. Your scope is exclusively the specif
 
 #### 4. Status and Metadata Accuracy
 
-- Do spec status fields reflect reality? (A completed feature should not be "Draft")
+- Does each change's artifact and archive state reflect reality?
 - Are prerequisite lists in tasks.md accurate? Do they reference artifacts that actually exist?
-- Are branch names in spec metadata consistent with actual git branches?
+- Where artifacts reference branch names, are they consistent with actual git branches?
 - Do task completion markers (`[x]` / `[ ]`) reflect the actual state of implementation?
 
 #### 5. User Value Assessment
@@ -168,7 +168,7 @@ Do NOT use `git diff` or review code files. Your scope is exclusively the specif
 #### 6. Constitution Alignment
 
 - Do all specs comply with the project constitution's core principles?
-- Do plans respect the constitution's governance model?
+- Do proposals, designs, and tasks respect the constitution's governance model?
 - Are there any specs that implicitly weaken a constitutional principle without acknowledging the trade-off?
 
 #### 7. Gatekeeping Integrity
@@ -186,7 +186,7 @@ For each finding, provide:
 ```
 ### [SEVERITY] Finding Title
 
-**File**: `path/to/file:line` (or `specs/NNN-feature/artifact.md` in spec review mode)
+**File**: `path/to/file:line` (or `openspec/changes/<change-name>/artifact.md` / `openspec/specs/<capability>/spec.md` in spec review mode)
 **Spec Reference**: Which spec/acceptance criterion is affected
 **Constraint**: Which behavioral constraint is violated (Intent Drift, Zero-Waste, Constitution Alignment, Neighborhood Rule)
 **Description**: What drifted and why it matters to the user

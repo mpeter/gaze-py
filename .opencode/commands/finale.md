@@ -20,8 +20,8 @@ $ARGUMENTS
 Automate the end-of-branch workflow. Stages all changes,
 generates a conventional commit message, pushes, creates
 a PR, watches CI checks, and returns to `main`. The PR
-stays open for human review. Works with both Speckit
-(`NNN-*`) and OpenSpec (`opsx/*`) branches.
+stays open for human review. Works with OpenSpec
+(`opsx/*`) branches.
 
 ## Usage
 
@@ -42,7 +42,7 @@ git rev-parse --abbrev-ref HEAD
 
 - If on `main`: **STOP** with error:
   > "Cannot run /finale on main. Switch to a feature
-  > branch (e.g., `opsx/*` or `NNN-*`) first."
+  > branch (e.g., `opsx/*`) first."
 - Otherwise: proceed. Note the branch name for the
   summary.
 
@@ -266,7 +266,7 @@ approval with: gh pr merge --rebase --delete-branch
 ## Branch Safety
 
 This command inherits the branch safety guardrails from
-the OpenSpec and Speckit workflows:
+the OpenSpec workflow:
 
 - Checks `git status` before any destructive operation
 - All changes are committed before any branch switch

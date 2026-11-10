@@ -35,8 +35,8 @@ informational note and proceed with the standard review.
 Before reviewing, read:
 
 1. `AGENTS.md` -- Project Structure, Active Technologies, conventions
-2. `.specify/memory/constitution.md` -- Constitution principles
-3. The relevant spec, plan, and tasks files under `specs/` for the current work
+2. `openspec/constitution.md` -- Constitution principles
+3. The relevant `proposal.md`, `design.md`, `tasks.md`, and capability specs under `openspec/changes/`, plus canonical specs under `openspec/specs/`, for the current work
 4. `.opencode/uf/packs/severity.md` -- Shared severity definitions (MUST load for consistent severity classification per Spec 019 FR-006)
 5. Read all `*.md` files from `.opencode/uf/packs/` to load the active convention pack. If no pack files are found, note this and proceed with universal checks only.
 6. **Knowledge graph** (optional) — If Dewey MCP tools are available, use `dewey_semantic_search` to find architectural patterns from specs, cross-repo structural decisions, and convention violations. Use `dewey_search` and `dewey_traverse` for structured queries. If only graph tools are available (no embedding model), use `dewey_search` and `dewey_traverse` only. If Dewey is unavailable, rely on reading files directly and using Grep for keyword search.
@@ -115,7 +115,7 @@ Use this mode when the caller instructs you to review specification artifacts in
 
 ### Review Scope
 
-Read **all files** under `specs/` recursively (every feature directory and every artifact). Also read `.specify/memory/constitution.md` and `AGENTS.md` for constraint context.
+Read **all files** under `openspec/changes/` and `openspec/specs/` recursively (every change's proposal, design, tasks, capability spec deltas, and canonical capability specs). Also read `openspec/constitution.md` and `AGENTS.md` for constraint context.
 
 Do NOT use `git diff` or review code files. Your scope is exclusively the specification artifacts.
 
@@ -125,44 +125,44 @@ Do NOT use `git diff` or review code files. Your scope is exclusively the specif
 
 - Do all specs follow the same structural template?
 - Are sections ordered consistently across specs?
-- Do all specs have the required metadata fields?
-- Are plan files structured with consistent phase/milestone organization?
-- Are task files formatted with consistent ID schemes, phase grouping, and parallel markers?
+- Do changes contain the artifacts required by the active OpenSpec schema?
+- Are design files structured with clear decisions, trade-offs, and risks?
+- Are task files formatted with consistent numbered checkbox tasks and logical grouping?
 
-#### 2. Spec-to-Plan Alignment
+#### 2. Spec-to-Design Alignment
 
-- Does each plan faithfully derive from its spec? Are there plan decisions not grounded in spec requirements?
-- Does the plan's architecture align with the project's existing structure as documented in AGENTS.md?
-- Are technology choices in plans compatible with the active technologies listed in AGENTS.md?
-- Are plan phases sequenced logically? Do dependencies between phases make sense?
-- Does research documentation provide evidence for the plan's key decisions, or are there unresearched assumptions?
+- Does each design faithfully derive from its proposal and specs? Are there design decisions not grounded in spec requirements?
+- Does the design's architecture align with the project's existing structure as documented in AGENTS.md?
+- Are technology choices in designs compatible with the active technologies listed in AGENTS.md?
+- Are implementation task groups sequenced logically? Do dependencies between groups make sense?
+- Does supporting research provide evidence for the design's key decisions, or are there unresearched assumptions?
 
-#### 3. Tasks-to-Plan Coverage
+#### 3. Tasks-to-Design Coverage
 
-- Does every task trace back to a specific plan phase or requirement?
-- Are there plan phases with zero corresponding tasks (coverage gap)?
-- Are there tasks that don't map to any plan item (orphan tasks)?
-- Are task dependencies and parallel markers correct? Could parallelized tasks actually conflict?
+- Does every task trace back to a specific design decision or requirement?
+- Are there design changes with zero corresponding tasks (coverage gap)?
+- Are there tasks that don't map to any design item or requirement (orphan tasks)?
+- Are task dependencies correct? Could tasks proposed for parallel execution actually conflict?
 
 #### 4. Data Model Coherence
 
-- Does the data model define all entities referenced in the spec and plan?
+- Does the design's data model define all entities referenced in the proposal and specs?
 - Are entity relationships, field types, and constraints consistent between the data model and the spec?
-- Are there entities in the data model that no spec requirement or plan phase uses (orphan entities)?
+- Are there entities in the data model that no spec requirement or design decision uses (orphan entities)?
 
 #### 5. Inter-Spec Architecture
 
 - Do specs compose cleanly within the project's dependency structure?
-- Does a newer spec's plan conflict with an older spec's design?
+- Does a change's design conflict with canonical specs or another change's design?
 - Are cross-spec dependencies documented?
 - Are shared concepts used consistently across specs?
 - Is CHANGELOG.md up to date with change entries? Is AGENTS.md up to date with structural changes?
 
-#### 6. Quickstart and Research Quality
+#### 6. Supporting Documentation Quality
 
-- Does quickstart documentation provide a realistic getting-started path for the feature?
-- Does research documentation cover the key technical unknowns identified in the spec?
-- Are research findings referenced in the plan where they inform decisions?
+- Where included or required, does quickstart documentation provide a realistic getting-started path for the feature?
+- Does the design or supporting research cover the key technical unknowns identified in the spec?
+- Are research findings referenced in the design where they inform decisions?
 
 ---
 
@@ -173,7 +173,7 @@ For each finding, provide:
 ```
 ### [SEVERITY] Finding Title
 
-**File**: `path/to/file:line` (or `specs/NNN-feature/artifact.md` in spec review mode)
+**File**: `path/to/file:line` (or `openspec/changes/<change-name>/artifact.md` / `openspec/specs/<capability>/spec.md` in spec review mode)
 **Convention**: Which architectural pattern or convention is violated
 **Description**: What the issue is and why it matters
 **Recommendation**: How to fix it

@@ -26,7 +26,7 @@
 
   Clarification (PATCH):
     No principle content changed. Template propagation pass applied
-    corrections discovered during /speckit.constitution run:
+    corrections discovered during the constitution template propagation run:
 
     plan-template.md:
       - Constitution Check gate now includes Principles VI and VII.
@@ -78,8 +78,8 @@
        principle is not applicable and is intentionally omitted. If gaze-py
        ever gains a service mode or participates in a hero pipeline, this
        decision MUST be revisited.
-       Org constitution location: ../unbound-force/.specify/memory/constitution.md
-       (or https://github.com/unbound-force/unbound-force if available externally)
+       Org constitution authority: https://github.com/unbound-force/unbound-force
+       (consult that repository for its current constitution location)
 
   Updated sections:
     Governance — parent_constitution field added; compliance review updated
@@ -269,10 +269,9 @@ and reproducible builds possible.
 
 - **Spec-First**: All changes that modify production code, test code, agent
   prompts, embedded assets, or CI configuration MUST be preceded by a spec.
-  Use the Speckit pipeline (`specs/`) for strategic changes (multiple stories
-  or cross-repo scope). Use the OpenSpec pipeline (`openspec/changes/`) for
-  tactical changes (single story, single repo). Spec artifacts MUST exist
-  before implementation begins.
+  Use the OpenSpec pipeline (`openspec/changes/`) for all requirements:
+  `/opsx-propose` → `/opsx-apply` → `/opsx-archive`. Spec artifacts MUST
+  exist before implementation begins.
   Exempt: constitution amendments *(the content edits themselves; the PR and
   review-council process still applies per the Governance section)*, typo
   fixes, single-line formatting fixes, emergency hotfixes (retroactively

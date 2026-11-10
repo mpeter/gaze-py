@@ -12,9 +12,9 @@ ENABLE_LINTERS:
   - REPOSITORY_GIT_DIFF
 
 # Exclude spec templates, opencode config, and testdata from linting
-FILTER_REGEX_EXCLUDE: '(\.specify/templates/|\.opencode/|testdata/)'
+FILTER_REGEX_EXCLUDE: '(\.opencode/|testdata/)'
 
 # Exclude spec markdown files from markdownlint (they use non-standard formatting)
-MARKDOWN_MARKDOWNLINT_FILTER_REGEX_EXCLUDE: '(\.specify/|\.opencode/|specs/)'
+MARKDOWN_MARKDOWNLINT_FILTER_REGEX_EXCLUDE: '(\.opencode/|openspec/)'
 
 SHOW_ELAPSED_TIME: true

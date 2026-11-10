@@ -270,12 +270,12 @@ prohibited.
 
 ### 6. Locate Associated Specification
 
-Search for a specification that matches this PR across all spec directories:
+Search for OpenSpec artifacts that match this PR:
 
-- Check if the PR branch name matches a spec directory:
-  - `specs/<branch-name>/spec.md` (Speckit output)
-  - `openspec/specs/<branch-name>/spec.md` (OpenSpec specs)
-  - `openspec/changes/<branch-name>/proposal.md` (OpenSpec changes)
+- For a PR branch named `opsx/<name>`, check
+  `openspec/changes/<name>/proposal.md` and requirement specs
+  under `openspec/changes/<name>/specs/`. Follow references to
+  main requirements under `openspec/specs/<capability>/spec.md`.
 - Check if the PR description references a spec
 - If not found locally, check the PR's changed file
   list (from Step 2 metadata) for spec artifacts. The
@@ -283,7 +283,7 @@ Search for a specification that matches this PR across all spec directories:
   in the changed file list, read the spec content from
   the saved diff (Step 5) rather than from the
   filesystem.
-- If a Speckit spec is found, read only the **Functional Requirements** and **User Stories** sections (not the entire spec) to minimize token usage
+- If OpenSpec requirement specs are found, read the requirements and scenarios relevant to the PR to minimize token usage
 - If an OpenSpec proposal is found, read only the **Capabilities** and **Impact** sections
 - If no spec is found in any directory or in the PR's changed files, note this and use the PR title and description as the intent source
 
@@ -534,7 +534,7 @@ unvalidated input.
 
 #### 8c. Constitution Compliance (AI-only items)
 
-Read `.specify/memory/constitution.md` if it exists. Extract all principles and their MUST/SHOULD rules. For each principle, check whether the PR's changes comply. **Only check items that local tools and CI did NOT already verify.**
+Read `openspec/constitution.md` if it exists. Extract all principles and their MUST/SHOULD rules. For each principle, check whether the PR's changes comply. **Only check items that local tools and CI did NOT already verify.**
 
 If no constitution file exists, note this and review against general software engineering best practices. Do NOT hardcode specific principle names or numbers — each project defines its own constitution.
 

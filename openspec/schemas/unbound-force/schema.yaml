@@ -16,7 +16,7 @@ artifacts:
       Constitution Alignment section assessing this
       change against all three org constitution
       principles. Read the constitution from
-      .specify/memory/constitution.md for the full
+      openspec/constitution.md for the full
       principle definitions.
     requires: []
 

@@ -62,7 +62,7 @@
 
 - [x] 7.1 CHANGELOG entry describing the correction and warning that saved baselines MUST be regenerated
 - [x] 7.2 Bump `pyproject.toml`, `src/gaze_py/__init__.py`, refresh `uv.lock` — separate commit, mirroring 0.8.2's release commit (31b0fd7)
-- [x] 7.3 **MINOR, not PATCH.** The constitution's Releases rule (`.specify/memory/constitution.md:307-309`) requires a MAJOR bump for "breaking changes to public APIs, JSON output schemas, or analysis behavior". This changes analysis behavior for essentially every consumer and invalidates every saved baseline. It was initially cut as 0.8.3; the Guard council review flagged the conflict. Resolved as **0.9.0**: pre-1.0, MINOR is the conventional slot for consumer-visible behavior change, and it makes automated patch-pinning surface the change rather than silently absorbing it. MAJOR (1.0.0) was rejected as an unintended statement about API stability. Operator decision, recorded here rather than left implicit.
+- [x] 7.3 **MINOR, not PATCH.** The constitution's Releases rule (`openspec/constitution.md:306-308`) requires a MAJOR bump for "breaking changes to public APIs, JSON output schemas, or analysis behavior". This changes analysis behavior for essentially every consumer and invalidates every saved baseline. It was initially cut as 0.8.3; the Guard council review flagged the conflict. Resolved as **0.9.0**: pre-1.0, MINOR is the conventional slot for consumer-visible behavior change, and it makes automated patch-pinning surface the change rather than silently absorbing it. MAJOR (1.0.0) was rejected as an unintended statement about API stability. Operator decision, recorded here rather than left implicit.
 - [ ] 7.4 PR, green CI, merge, tag
 
 ## 8. Findings for follow-up (not fixed here)

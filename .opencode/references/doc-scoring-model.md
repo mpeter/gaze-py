@@ -14,7 +14,7 @@ Extract signals from the documentation content and assign weights:
 |--------|-------------|---------|
 | `readme` | ±5 to ±15 | Module README explicitly names the function or its behavior (positive) or describes it as internal (negative) |
 | `architecture_doc` | ±5 to ±20 | Architecture/design doc declares this function's contract (positive) or marks it as implementation detail (negative) |
-| `specify_file` | ±5 to ±25 | `specs/` files document this as required behavior (positive) or mark it as optional (negative) |
+| `specify_file` | ±5 to ±25 | `openspec/changes/` and `openspec/specs/` files document this as required behavior (positive) or mark it as optional (negative) |
 | `api_doc` | ±5 to ±20 | API reference doc lists this function's return values or mutations (positive) or marks as non-public (negative) |
 | `other_md` | ±2 to ±10 | Other markdown files reference this function (positive) or describe it as debug/internal (negative) |
 
