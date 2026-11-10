@@ -114,7 +114,7 @@
 ### Phase 2.6: Docs + CI
 
 - [x] T229 Update `docs/reference/cli/crap.md`: document `--baseline` as implemented; add auto-discovery behavior; add `.gaze.yaml` config keys table (`baseline.file: str|null`, `baseline.epsilon: float`, `baseline.new_function_threshold: float|null`); add baseline edge cases (file-rename false positives, corrupt file behavior)
-- [ ] T230 Open PR `opsx/baseline` → CI green → merge
+- [ ] T230 Open PR `opsx/baseline` → CI green → merge (unverified: no merged PR with that head; implementation instead merged in [PR #50](https://github.com/mpeter/gaze-py/pull/50), merge e5f3599d75200acc71d01e0106e3d275cea01f62, with all three Test matrix checks SUCCESS)
 
 ---
 
@@ -127,7 +127,7 @@
 - [x] T305 Bump `src/gaze_py/__init__.py` `__version__` → `0.7.0`
 - [x] T306 Remove `pip` ecosystem entry from `.github/dependabot.yml` (retain `github-actions`); per constitution v1.1.3 SYNC IMPACT REPORT
 - [x] T307 Run `uv run ruff check . && uv run ruff format --check . && uv run mypy src/` — all clean
-- [ ] T308 Open PR `opsx/parity-cleanup` → CI green → merge
+- [ ] T308 Open PR `opsx/parity-cleanup` → CI green → merge (unverified: [PR #49](https://github.com/mpeter/gaze-py/pull/49) closed without merging; cleanup instead included in merged PR #50)
 
 ---
 
@@ -135,10 +135,32 @@
 
 - [x] T300.5 Verify PyPI history: `curl -sf https://pypi.org/pypi/gaze-py/json | python3 -c "import sys,json; vers=json.load(sys.stdin)['releases']; print(sorted(vers.keys()))"` (use `-f` to fail on HTTP error; if curl fails treat as "no versions published" and document); confirm no version ≥ 0.5.0 published; if found, escalate to 1.0.0 and update all version references
 - [x] T401 Update `release.yml`: (a) add a `test` job that runs `uv run pytest --cov=gaze_py --cov-fail-under=85` using `astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0` with `version: "0.11.21"` — identical pin to existing jobs; (b) make `publish` job `needs: [preflight, test]`; (c) **reorder `publish` job steps**: run PyPI publish BEFORE pushing the git tag (swap current steps 2 and 3) so a failed publish does not leave an orphaned tag that permanently blocks retry via the tag-uniqueness preflight check; (d) verify with `yq '.jobs.publish.needs' .github/workflows/release.yml` that both `preflight` and `test` are listed; (e) add `gh release create` step after smoke test using CHANGELOG section for notes
-- [ ] T402 Confirm `main` has S1 + S2 + S3 all merged; confirm `pyproject.toml` = `0.7.0`, `__init__.py` `__version__` = `0.7.0`; **T403 is blocked by T401 — do not trigger the release workflow until T401 is merged to main**
-- [ ] T403 Trigger `release.yml` (blocked by T401): GitHub Actions → Release → Run workflow → tag `v0.7.0`
-- [ ] T404 Approve `pypi` environment gate when prompted
-- [ ] T405 Confirm smoke test passes in workflow: `gazepy --version` outputs `0.7.0`
-- [ ] T406 Confirm PyPI listing: `https://pypi.org/project/gaze-py/0.7.0/`
-- [ ] T407 Install locally: `uv tool install --force "gaze-py==0.7.0" && gazepy --version`
-- [ ] T408 Verify `openspec/changes/archive/002-deferred-capabilities/` is correctly archived (already done). Confirm open items C.3 (O6 full — `.coverage` binary format), G.1 (return-None annotation evaluation), G.2 (37 vs 38 type count verification with Go maintainers) are tracked in a new spec or issue. This task does NOT gate T403 — it is post-release housekeeping.
+- [x] T402 Confirm `main` has S1 + S2 + S3 all merged; confirm `pyproject.toml` = `0.7.0`, `__init__.py` `__version__` = `0.7.0`; **T403 is blocked by T401 — do not trigger the release workflow until T401 is merged to main** (evidence: merged PR #50 consolidates Stories 1–3 and T401; tag v0.7.0 points to its merge e5f3599d75200acc71d01e0106e3d275cea01f62; both version files at that tag say 0.7.0 and release.yml has needs: [preflight, test]; historical confirmation, not the current 0.9.3 versions)
+- [ ] T403 Trigger `release.yml` (blocked by T401): GitHub Actions → Release → Run workflow → tag `v0.7.0` (unverified: available release workflow runs do not establish a v0.7.0 dispatch; the tag alone does not prove this operation)
+- [ ] T404 Approve `pypi` environment gate when prompted (unverified: no v0.7.0 approval evidence found; later successful releases do not prove this approval)
+- [ ] T405 Confirm smoke test passes in workflow: `gazepy --version` outputs `0.7.0` (unverified: no v0.7.0 smoke-test evidence; successful [run 34147464522](https://github.com/mpeter/gaze-py/actions/runs/34147464522) smoke-tests 0.9.3, not 0.7.0)
+- [ ] T406 Confirm PyPI listing: `https://pypi.org/project/gaze-py/0.7.0/` (unverified: https://pypi.org/pypi/gaze-py/0.7.0/json returns HTTP 404 on 2026-11-10; current publication does not prove 0.7.0 was published)
+- [ ] T407 Install locally: `uv tool install --force "gaze-py==0.7.0" && gazepy --version` (unverified: historical local install is not reproducible now; superseded by 0.9.3; no local tool replacement attempted)
+- [ ] T408 Verify `openspec/changes/archive/002-deferred-capabilities/` is correctly archived (already done). Confirm open items C.3 (O6 full — `.coverage` binary format), G.1 (return-None annotation evaluation), G.2 (37 vs 38 type count verification with Go maintainers) are tracked in a new spec or issue. This task does NOT gate T403 — it is post-release housekeeping. (unverified: archive exists, but not all follow-ups have a new spec or issue; reconciliation below)
+
+## Archive reconciliation — 2026-11-10
+
+The implementation effort is finished and superseded by later releases. Original
+task text and prior states are retained above, with evidence appended; only T402
+has newly sufficient evidence. No historical requirements are merged into the
+current canonical specs by this archival move.
+
+There is no `.backlog/` convention in this repository. All GitHub issues were
+searched and later OpenSpec changes checked; no GitHub issues were created.
+
+- **C.3 — untracked follow-up:** `.coverage` binary profile reuse and optional
+  internal `coverage run pytest` remain listed only in the old deferred registry.
+  A new proposal or issue is still needed before implementing this capability.
+- **G.1 — tracked/resolved:** `../return-none-annotation/` records the evaluation;
+  `../../../specs/effect-detection/spec.md` carries the current behavior. An
+  unannotated `return None` is treated as void.
+- **G.2 — untracked upstream follow-up:** the constitution's v1.1.1 history
+  documents the 37→38 correction, and current contracts now enumerate 48 types.
+  No new issue/change or evidence of the requested Go-maintainer confirmation
+  was found. Revisit only if reconciling upstream taxonomy history is necessary;
+  do not reopen the current 48-type contract merely to close this old checkbox.
