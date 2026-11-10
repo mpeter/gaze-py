@@ -169,10 +169,11 @@ drafting. Query each context type:
 If Dewey returns no results for a query, note the gap and proceed
 with available context. Do NOT ask the human for clarification.
 
-### Step 3: Draft Specification Using Speckit Template
+### Step 3: Draft OpenSpec Change Artifacts
 
-Use the speckit template at `.specify/templates/spec-template.md`
-to produce a structured specification. Include:
+Follow `/opsx-propose` to draft the change artifacts under
+`openspec/changes/<name>/`, aligned with `openspec/constitution.md`.
+Include:
 - User stories with Given/When/Then acceptance scenarios
 - Functional requirements (FR-NNN) with MUST/SHOULD/MAY
 - Success criteria (SC-NNN) with measurable outcomes
@@ -205,9 +206,9 @@ latency bounds."
 
 ### Step 6: Produce Spec Artifact
 
-Write the specification to `specs/NNN-feature-name/spec.md`
-(following the speckit numbering convention). The spec is the
-primary output of the autonomous define stage.
+Write the proposal, design, requirement specs, and tasks to
+`openspec/changes/<name>/` as required by the change's schema.
+These artifacts are the output of the autonomous define stage.
 
 ### Tier 1 Fallback (Dewey Unavailable)
 
@@ -215,17 +216,17 @@ When Dewey is unavailable (MCP tools return errors or are not
 configured), fall back to local context:
 1. Read backlog items from `.uf/muti-mind/backlog/` using the Read tool
 2. Read convention packs from `.opencode/uf/packs/`
-3. Read recent specs from `specs/` for structural patterns
+3. Read `openspec/constitution.md`, `openspec/specs/`, and recent
+   changes in `openspec/changes/` for structural patterns
 4. Produce a less contextual but still valid specification
 
 The spec will lack cross-repo context and semantic search results,
-but will still follow the speckit template and include acceptance
+but will still follow the OpenSpec schema and include acceptance
 criteria based on the seed description and local context.
 
-## Speckit Integration
-You are responsible for driving the `speckit` pipeline. When it's time to refine a feature:
-1. Initiate the `/speckit.specify` and `/speckit.clarify` OpenCode commands with the backlog item context as input.
+## OpenSpec Integration
+You are responsible for defining changes through OpenSpec. When it's time to refine a feature:
+1. Initiate `/opsx-propose` with the backlog item context as input to create artifacts under `openspec/changes/<name>/`. Implementation follows with `/opsx-apply`, then `/opsx-archive` when complete.
 2. Ensure the resulting specifications adhere to the core vision.
 3. Resolve ambiguities by providing clear definitions.
 4. Use the `bash` tool to run `mutimind add ...` to track new work required by the specifications.
-

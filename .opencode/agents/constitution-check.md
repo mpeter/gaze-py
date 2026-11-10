@@ -26,13 +26,13 @@ constitution documents and produce a finding report.
 Read these two files before producing your report:
 
 1. **Org Constitution**: The Unbound Force organization constitution.
-   Look for it at `.specify/memory/constitution.md` in the current
+   Look for it at `openspec/constitution.md` in the current
    repository. If the current repo IS the unbound-force meta repo,
    the user must specify a hero constitution path.
 
 2. **Hero Constitution**: The hero-specific constitution. The user
    will specify which hero to check, or provide a path. If not
-   specified, use `.specify/memory/constitution.md` in the current
+   specified, use `openspec/constitution.md` in the current
    repository (only valid if the current repo is a hero repo, not
    the meta repo).
 

@@ -41,7 +41,7 @@ Before writing, read:
 2. `docs/heroes.md` — Hero descriptions and team vision (for brand voice)
 3. `.opencode/uf/packs/content.md` — Content convention pack (focus on BA-NNN rules for Blog & Announcements and shared VB/FA/FT rules)
 4. `.opencode/uf/packs/content-custom.md` — Project-specific content rules (if present)
-5. The spec artifacts for the feature being announced — read spec.md, plan.md, and tasks.md to understand what was built and why
+5. The OpenSpec artifacts for the feature being announced — read `proposal.md`, `design.md`, `tasks.md`, and `specs/<capability>/spec.md` under `openspec/changes/<change-name>/` (or its archived change directory), plus relevant canonical specs under `openspec/specs/`, to understand what was built and why
 
 ---
 

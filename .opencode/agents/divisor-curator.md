@@ -53,8 +53,8 @@ informational note and proceed with the standard review.
 Before reviewing, read:
 
 1. `AGENTS.md` -- Project overview, behavioral constraints, project structure
-2. `.specify/memory/constitution.md` -- Constitution (if present)
-3. The relevant spec, plan, and tasks files under `specs/` for the current work
+2. `openspec/constitution.md` -- Constitution (if present)
+3. The relevant `proposal.md`, `design.md`, `tasks.md`, and capability specs under `openspec/changes/`, plus canonical specs under `openspec/specs/`, for the current work
 4. `.opencode/uf/packs/severity.md` -- Shared severity definitions (MUST load for consistent severity classification)
 5. `.opencode/uf/packs/content.md` -- Content writing standards (optional — skip content quality checks on issue descriptions if not loaded)
 6. `README.md` -- Project description and installation steps
@@ -88,8 +88,8 @@ Classify files as user-facing or internal based on path patterns:
 - `internal/` (excluding `scaffold/`) — business logic
 - `*_test.go` — test files
 - `.github/` — CI/CD configuration
-- `specs/` — specification artifacts
-- `openspec/` — tactical change artifacts
+- `openspec/changes/` and `openspec/specs/` — change artifacts and canonical capability specs
+- `openspec/` — specification workflow artifacts
 
 **If all changed files are internal-only, skip all audit checklist items and APPROVE with no findings.**
 
@@ -154,7 +154,7 @@ Classify files as user-facing or internal based on path patterns:
 - Does this change introduce a new workflow that engineers need to learn? Significance thresholds:
   - New slash command with multi-step workflow
   - New tool integration requiring setup steps
-  - New workflow pattern (e.g., new speckit stage)
+  - New workflow pattern (e.g., a change to the OpenSpec workflow)
 - If yes, check whether a tutorial issue exists in `unbound-force/website` with label `tutorial`.
 - If no matching tutorial issue exists, file one:
   ```bash
@@ -172,7 +172,7 @@ Changes that are purely internal MUST NOT trigger any documentation or content f
 - Refactoring with no user-facing behavior change
 - Test-only changes (`*_test.go`)
 - CI/CD pipeline changes (`.github/`)
-- Spec artifacts (`specs/`, `openspec/`)
+- Spec artifacts (`openspec/changes/`, `openspec/specs/`)
 - Dependency management (`go.mod`, `go.sum`)
 
 If all changed files fall into internal-only paths, produce no findings and APPROVE.
@@ -185,7 +185,7 @@ Use this mode when the caller instructs you to review specification artifacts in
 
 ### Review Scope
 
-Read **all files** under `specs/` recursively. Focus on documentation completeness within the specs themselves.
+Read **all files** under `openspec/changes/` and `openspec/specs/` recursively. Focus on documentation completeness within the proposals, designs, tasks, capability spec deltas, and canonical capability specs.
 
 ### Audit Checklist
 
@@ -210,7 +210,7 @@ For each finding, provide:
 ```
 ### [SEVERITY] Finding Title
 
-**File**: `path/to/file:line` (or `specs/NNN-feature/artifact.md` in spec review mode)
+**File**: `path/to/file:line` (or `openspec/changes/<change-name>/artifact.md` / `openspec/specs/<capability>/spec.md` in spec review mode)
 **Constraint**: Documentation Completeness / Content Pipeline
 **Description**: What documentation is missing and why it matters
 **Recommendation**: What to update or what issue to file

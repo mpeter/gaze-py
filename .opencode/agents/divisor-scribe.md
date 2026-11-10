@@ -38,7 +38,7 @@ informational note and proceed with standard workflows.
 Before writing, read:
 
 1. `AGENTS.md` — Project overview, conventions, structure
-2. `.specify/memory/constitution.md` — Constitution (if present)
+2. `openspec/constitution.md` — Constitution (if present)
 3. `.opencode/uf/packs/content.md` — Content convention pack (focus on TD-NNN rules for Technical Documentation and shared VB/FA/FT rules)
 4. `.opencode/uf/packs/content-custom.md` — Project-specific content rules (if present)
 5. Existing documentation in the target area — read what already exists before writing or editing
@@ -67,7 +67,7 @@ When asked to add change entries to CHANGELOG.md:
 2. Entries MUST follow this format:
    - Line 1: `- <change-name>: <summary of what changed>`
    - Line 2+: `  - Spec: \`openspec/specs/<capability>/spec.md\`` (one per capability)
-   - Every entry MUST include at least one Spec path pointing to the canonical spec under `openspec/specs/`. This applies to both OpenSpec and SpecKit workflows.
+   - Every entry MUST include at least one Spec path pointing to the canonical spec under `openspec/specs/`.
    - If the change has no spec (e.g., pure chore/infra), use `  - Spec: _(none — <reason>)_`
 3. Follow the existing format precisely — match indentation, bullet style
 4. Verify all spec paths against the actual codebase
@@ -85,7 +85,7 @@ When asked to update AGENTS.md:
 
 When asked to write or improve spec descriptions:
 
-1. Read the spec's existing artifacts (spec.md, plan.md, tasks.md)
+1. Read the change's existing artifacts under `openspec/changes/<change-name>/` (`proposal.md`, `design.md`, `tasks.md`, and `specs/<capability>/spec.md`) and relevant canonical specs under `openspec/specs/`
 2. Write user stories in Given/When/Then format
 3. Use RFC 2119 language (MUST/SHOULD/MAY) for requirements
 4. Keep specs focused on WHAT and WHY, not HOW

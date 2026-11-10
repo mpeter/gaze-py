@@ -5,11 +5,6 @@
 `python.md` + `python-custom.md` convention packs into one artifact-triggered read
 — see the Convention Packs section below for what it does and does not cover.
 
-<!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
-<!-- SPECKIT END -->
-
 ## Project Overview
 
 gaze-py is the Python-native companion to [gaze](https://github.com/unbound-force/gaze),
@@ -102,11 +97,8 @@ gaze-py/
 │   └── testdata/         # Static source fixtures for AST analysis
 │       ├── analysis/     # Fixture source files for effect detection
 │       └── quality/      # Fixture test files for assertion mapping
-├── specs/                # Speckit strategic specs
-├── openspec/             # OpenSpec tactical changes
-├── .specify/             # Speckit configuration and templates
-│   └── memory/
-│       └── constitution.md  # Highest-authority governance document
+├── openspec/             # Requirements, changes, and archived features
+│   └── constitution.md   # Highest-authority governance document
 ├── .opencode/            # OpenCode agents, commands, skills, packs
 ├── pyproject.toml        # Build config, ruff/mypy/pytest settings
 └── AGENTS.md             # This file
@@ -154,10 +146,9 @@ uv tool install --force dist/gaze_py-*.whl
 
 All changes to production code, tests, agents, or CI MUST be preceded by a spec:
 
-- **Strategic** (multiple stories, cross-repo): Speckit pipeline under `specs/`
-  → `/speckit.specify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.implement`
-- **Tactical** (single story, this repo only): OpenSpec pipeline under `openspec/changes/`
-  → `/opsx-propose` → `/opsx-apply` → `/opsx-archive`
+OpenSpec is the only requirements pipeline: `openspec/changes/`
+→ `/opsx-propose` → `/opsx-apply` → `/opsx-archive`.
+Governance lives in `openspec/constitution.md`.
 
 Exempt: constitution amendments, typo fixes, emergency hotfixes (retroactively documented).
 
@@ -176,8 +167,7 @@ porting contract alignment check (constitution Principle V).
 ## Branch Protection
 
 - `main` — protected; no direct commits
-- `opsx/<name>` — OpenSpec tactical changes
-- `NNN-<feature-name>` — Speckit strategic features
+- `opsx/<name>` — OpenSpec changes
 
 ## Testdata Fixtures
 

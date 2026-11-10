@@ -35,8 +35,8 @@ informational note and proceed with the standard review.
 Before reviewing, read:
 
 1. `AGENTS.md` -- Project overview, active technologies, build & test commands, git & workflow
-2. `.specify/memory/constitution.md` -- Project constitution (core principles)
-3. The relevant spec, plan, and tasks files under `specs/` for the current work
+2. `openspec/constitution.md` -- Project constitution (core principles)
+3. The relevant `proposal.md`, `design.md`, `tasks.md`, and capability specs under `openspec/changes/`, plus canonical specs under `openspec/specs/`, for the current work
 4. `.opencode/uf/packs/severity.md` -- Shared severity definitions (MUST load for consistent severity classification per Spec 019 FR-006)
 5. Release pipeline configs if they exist (e.g., `.goreleaser.yaml`, `.github/workflows/`, `Makefile`, CI configs)
 6. Dependency manifests if they exist (e.g., `go.mod`, `package.json`, `requirements.txt`, `Cargo.toml`)
@@ -135,7 +135,7 @@ Use this mode when the caller instructs you to review spec artifacts instead of 
 
 ### Review Scope
 
-Read **all files** under `specs/` recursively (every feature directory and every artifact: `spec.md`, `plan.md`, `tasks.md`, `data-model.md`, `research.md`, `quickstart.md`, and `checklists/`). Also read `.specify/memory/constitution.md` and `AGENTS.md` for constraint context.
+Read **all files** under `openspec/changes/` and `openspec/specs/` recursively (every change's `proposal.md`, `design.md`, `tasks.md`, capability spec deltas, and canonical capability specs). Also read `openspec/constitution.md` and `AGENTS.md` for constraint context.
 
 Do NOT use `git diff` or review code files. Your scope is exclusively the specification artifacts.
 
@@ -195,7 +195,7 @@ For each finding, provide:
 ```
 ### [SEVERITY] Finding Title
 
-**File**: `path/to/file:line` (or `specs/NNN-feature/artifact.md` in spec review mode)
+**File**: `path/to/file:line` (or `openspec/changes/<change-name>/artifact.md` / `openspec/specs/<capability>/spec.md` in spec review mode)
 **Constraint**: Which operational concern is violated
 **Description**: What the issue is and why it matters for deployment or maintenance
 **Recommendation**: How to fix it

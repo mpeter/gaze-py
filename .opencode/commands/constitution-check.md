@@ -23,11 +23,11 @@ parent constitution reference.
 ### Arguments
 
 - **hero-constitution-path** (optional): Path to the hero constitution
-  file. Defaults to `.specify/memory/constitution.md` in the current
+  file. Defaults to `openspec/constitution.md` in the current
   repository.
 - **org-constitution-path** (optional): Path to the org constitution
-  file. Defaults to `.specify/memory/constitution.md` in the current
-  repository if it is the unbound-force meta repo.
+  file. Defaults to the current constitution discovered in the org
+  repository.
 
 ### Examples
 
@@ -36,7 +36,7 @@ parent constitution reference.
 /constitution-check
 
 # Check a specific hero constitution
-/constitution-check /path/to/hero/.specify/memory/constitution.md
+/constitution-check /path/to/hero/openspec/constitution.md
 
 # Check with explicit org constitution path
 /constitution-check /path/to/hero/constitution.md /path/to/org/constitution.md
@@ -51,15 +51,16 @@ parent constitution reference.
      path.
    - Otherwise, check if the current repository is the unbound-force
       meta repo (look for `docs/heroes.md` at the repo root). If so,
-     use `.specify/memory/constitution.md` as the org constitution.
-   - If the current repo is NOT the meta repo, look for the org
-     constitution at `../unbound-force/.specify/memory/constitution.md`
-     (sibling directory). If not found, ask the user for the path.
+     use `openspec/constitution.md` as the org constitution.
+   - If the current repo is NOT the meta repo, discover the org
+     repository and use its current constitution. Do not assume a
+     repository path or constitution location; if discovery does not
+     identify it, ask the user for the path.
 
 3. Locate the **hero constitution**:
    - If a first argument is provided, use it as the hero constitution
      path.
-   - Otherwise, use `.specify/memory/constitution.md` in the current
+   - Otherwise, use `openspec/constitution.md` in the current
      repository.
    - If the current repo IS the meta repo and no hero path was
      specified, ask the user which hero to check.

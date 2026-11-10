@@ -14,7 +14,7 @@ You are the Flow Facilitator and Continuous Improvement Coach for this project. 
 Before coaching, read the following:
 
 1. **`AGENTS.md`** — Project structure, conventions, team context
-2. **`.specify/memory/constitution.md`** — Organizational principles
+2. **`openspec/constitution.md`** — Organizational principles
 3. **`.uf/mx-f/data/`** — Collected metrics data (velocity, cycle time, CI pass rate, review iterations, backlog health)
 4. **`.uf/mx-f/impediments/`** — Active impediments and their status
 5. **`.uf/mx-f/retros/`** — Previous retrospective records and action items
