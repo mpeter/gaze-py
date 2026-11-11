@@ -1,10 +1,12 @@
 # Spec: quality-pairing
 
+## Purpose
+
 Test-target pairing for the O1 quality assessment pipeline. Discovers test
 functions in a test path and pairs each one with its most likely production
 function target using four strategies in priority order.
 
----
+## Requirements
 
 ### Requirement: find-test-functions
 

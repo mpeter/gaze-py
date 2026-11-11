@@ -1,10 +1,12 @@
 # Spec: effect-detection
 
+## Purpose
+
 Authoritative requirements for AST-based side-effect detection in gaze-py.
 Sources: porting contracts EC-001 through EC-005, taxonomy-reference.md,
 and the current `analysis/detector.py` implementation.
 
----
+## Requirements
 
 ### Requirement: EC-001 Tier Membership
 
@@ -391,6 +393,10 @@ The following Python-native patterns are planned for future detection:
 | `atexit.register(...)` | GlobalMutation | Registers a process-exit callback |
 | `warnings.warn(...)` | LogWrite + GlobalMutation | Emits a warning (dual effect) |
 | `@functools.lru_cache` / `@functools.cache` | GlobalMutation | Mutates module-level cache |
+
+#### Scenario: planned patterns not yet implemented
+- **WHEN** a pattern in the table above has not been merged into `main`
+- **THEN** no test for that pattern is added to the main test suite
 
 ---
 

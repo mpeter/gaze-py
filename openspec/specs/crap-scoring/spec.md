@@ -1,11 +1,13 @@
 # Spec: crap-scoring
 
+## Purpose
+
 Authoritative requirements for CRAP and GazeCRAP scoring in gaze-py.
 Sources: porting contracts SC-001 through SC-006, taxonomy-reference.md
 scoring formulas and reference values, and the current `crap/scorer.py`
 implementation.
 
----
+## Requirements
 
 ### Requirement: SC-001 CRAP Formula
 

@@ -1,10 +1,12 @@
 # Spec: init-command
 
+## Purpose
+
 `gazepy init` — scaffold OpenCode agent and command assets into the current
 project's `.opencode/` directory. Idempotent by default; `--force` overwrites
 user-owned files.
 
----
+## Requirements
 
 ### Requirement: asset-deployment
 `gazepy init` SHALL deploy the following assets into `.opencode/` of the

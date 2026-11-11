@@ -1,5 +1,7 @@
 # Spec: quality-gap-hints
 
+## Purpose
+
 Gap hints for the O1 quality assessment pipeline. Identifies which
 contractual effects have no mapped assertion (gaps) and generates a parallel
 list of Python assertion snippets suggesting how to cover each gap.
@@ -7,7 +9,7 @@ list of Python assertion snippets suggesting how to cover each gap.
 Port of Go gaze `internal/quality/hints.go` and the `Gaps`/`GapHints` fields
 in `ContractCoverage`.
 
----
+## Requirements
 
 ### Requirement: gaps-and-gap-hints-fields
 

@@ -1,12 +1,14 @@
 # Spec: report-command
 
+## Purpose
+
 Capability: `gazepy report` — AI-powered narrative reports and JSON payload emission.
 
 Sources: `openspec/changes/archive/2026-06-18-report-command/proposal.md`,
 `openspec/changes/archive/2026-06-18-report-command/design.md`,
 `src/gaze_py/report/ai.py`, `src/gaze_py/cli/main.py`, `CHANGELOG.md`.
 
----
+## Requirements
 
 ### Requirement: JSON-only mode (no --ai)
 

@@ -1,11 +1,13 @@
 # Spec: docscan-command
 
+## Purpose
+
 Capability: Document scanning (`gazepy docscan`) and Signal 5 augmentation.
 
 Sources: DS-001 through DS-008 (`openspec/changes/archive/o3-docscan/specs.md`),
 `src/gaze_py/analysis/docscan.py`, `src/gaze_py/cli/main.py`.
 
----
+## Requirements
 
 ### Requirement: DocEntry model
 
@@ -150,6 +152,11 @@ CONTRIBUTING.md
 
 These defaults are applied when no `.gaze.yaml` is present and when the
 config file does not specify `classification.doc_scan.exclude`.
+
+#### Scenario: no exclude configured
+- **WHEN** no `.gaze.yaml` exists, or it does not specify
+  `classification.doc_scan.exclude`
+- **THEN** the default exclude list above is applied
 
 ---
 

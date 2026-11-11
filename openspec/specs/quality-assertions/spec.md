@@ -1,10 +1,12 @@
 # Spec: quality-assertions
 
+## Purpose
+
 Assertion detection for the O1 quality assessment pipeline. Walks the body
 of a test function using AST-only analysis and classifies each assertion site
 by kind, location, depth, and the variable names it references.
 
----
+## Requirements
 
 ### Requirement: ast-only-analysis
 
