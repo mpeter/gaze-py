@@ -7,7 +7,7 @@ Note: although the constitution's Development Workflow section exempts "constitu
 ## What Changes
 
 - Create feature branch `opsx/constitution-v1.1.0` from current `main`
-- Commit exactly three files: `.specify/memory/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` — no other files
+- Commit exactly three files: `openspec/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` — no other files
 - Run `/review-council` to obtain APPROVE from all applicable Divisor reviewers (Guard, Architect, SRE, Adversary)
 - Resolve any REQUEST CHANGES findings
 - Open and merge the PR against `main` using a merge commit (not squash, not rebase)
@@ -29,7 +29,7 @@ Note: although the constitution's Development Workflow section exempts "constitu
 
 ## Impact
 
-- `.specify/memory/constitution.md` — bumped to v1.1.1 (MINOR v1.1.0: two new principles, parent constitution reference; PATCH v1.1.1: taxonomy count clarification 37→38)
+- `openspec/constitution.md` — bumped to v1.1.1 (MINOR v1.1.0: two new principles, parent constitution reference; PATCH v1.1.1: taxonomy count clarification 37→38)
 - `.github/workflows/test.yml` — floating action tags replaced with commit-SHA pins per Principle VII. Note: `uv sync --frozen` is deferred until `pyproject.toml` + `uv.lock` land in `001-initial-port`.
 - `.github/dependabot.yml` — new: weekly github-actions updates with Conventional Commits prefix
 - No production code, APIs, or test behavior is affected
@@ -37,7 +37,7 @@ Note: although the constitution's Development Workflow section exempts "constitu
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` v1.1.1 (the version being ratified by this change).
+Assessed against `openspec/constitution.md` v1.1.1 (the version being ratified by this change).
 
 **Org Constitution (Unbound Force v1.2.0)**
 

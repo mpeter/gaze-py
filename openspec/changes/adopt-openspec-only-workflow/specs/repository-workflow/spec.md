@@ -4,18 +4,18 @@
 
 Requirements and acceptance criteria for this repository SHALL live in OpenSpec
 changes under `openspec/changes/` and canonical specs under `openspec/specs/`.
-The repository SHALL NOT carry a second pipeline of its own (`specs/`,
-`.specify/`, `speckit.*` commands or skills used for this repository's work).
+The repository SHALL NOT carry a second pipeline of its own (a `specs/` tree
+or the commands, skills and tooling directory that served it).
 
-#### Scenario: No Spec Kit workflow remains
+#### Scenario: No second pipeline remains
 
-- **WHEN** the repository is searched for `speckit`, `.specify` and `Spec Kit`
-- **THEN** every hit is archived history, this change, or a file that `gazepy init` ships to users
+- **WHEN** the repository is searched for the second pipeline's commands, tooling directory and name
+- **THEN** no tracked file or file name matches
 
 #### Scenario: Workflow guidance names OpenSpec
 
 - **WHEN** AGENTS.md describes the specification workflow
-- **THEN** it names `/opsx-propose`, `/opsx-apply` and `/opsx-archive` and does not name Spec Kit
+- **THEN** it names `/opsx-propose`, `/opsx-apply` and `/opsx-archive` and names no other pipeline
 
 ### Requirement: Governance lives in the OpenSpec tree
 
@@ -23,12 +23,12 @@ The constitution SHALL live at `openspec/constitution.md`. Every agent and comma
 
 #### Scenario: Constitution references resolve
 
-- **WHEN** agents and commands outside archived history are searched for `.specify/memory/constitution.md`
-- **THEN** only files that `gazepy init` ships to users match
+- **WHEN** agents and commands are searched for the constitution's old location
+- **THEN** none match
 
 ### Requirement: Historical specs are preserved
 
-Finished Spec Kit specs SHALL be kept under `openspec/changes/archive/` with their original content. Task state SHALL change only where evidence supports it, cited in the task, and unconfirmed items SHALL be marked `(unverified: …)`.
+Finished strategic specs SHALL be kept under `openspec/changes/archive/` with their original content. Task state SHALL change only where evidence supports it, cited in the task, and unconfirmed items SHALL be marked `(unverified: …)`.
 
 #### Scenario: Archive content is intact
 

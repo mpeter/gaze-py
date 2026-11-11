@@ -6,7 +6,7 @@
 ## 2. Retire the repository workflow
 
 - [x] 2.1 Move the constitution to `openspec/constitution.md` and update every reader (commit 549c658; testing reviewer fixed in ee34131).
-- [x] 2.2 Remove the Spec Kit commands, skill and `.specify/` tree used by this repository (commit 549c658).
+- [x] 2.2 Remove the old pipeline's commands, skill and tooling tree used by this repository (commit 549c658).
 - [x] 2.3 Rewrite the AGENTS.md workflow section and add `openspec/config.yaml` (commit 549c658).
 
 ## 3. Verify

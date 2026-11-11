@@ -1,17 +1,17 @@
 ## ADDED Requirements
 
 ### Requirement: Amendment committed on dedicated branch
-The implementation SHALL create a dedicated branch `opsx/constitution-v1.1.0` and commit only the files directly related to the constitution amendment (`.specify/memory/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml`). No unrelated session changes SHALL be included in the commit. The commit MUST use a merge-commit-compatible message with a body containing the SYNC IMPACT REPORT summary.
+The implementation SHALL create a dedicated branch `opsx/constitution-v1.1.0` and commit only the files directly related to the constitution amendment (`openspec/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml`). No unrelated session changes SHALL be included in the commit. The commit MUST use a merge-commit-compatible message with a body containing the SYNC IMPACT REPORT summary.
 
 #### Scenario: Clean branch and commit
 - **GIVEN** the working tree contains modifications to both amendment files and unrelated session files (e.g., `AGENTS.md`, `python-custom.md`, `agent-file-template.md`)
-- **WHEN** the branch is created and amendment files are staged explicitly by path using `git add .specify/memory/constitution.md .github/workflows/test.yml .github/dependabot.yml`
-- **THEN** `git diff --cached --name-only` shows exactly `.specify/memory/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` — and no other files
+- **WHEN** the branch is created and amendment files are staged explicitly by path using `git add openspec/constitution.md .github/workflows/test.yml .github/dependabot.yml`
+- **THEN** `git diff --cached --name-only` shows exactly `openspec/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` — and no other files
 
 #### Scenario: Unrelated files excluded after commit
 - **GIVEN** the branch has been committed
 - **WHEN** `git show --name-only HEAD` is run
-- **THEN** exactly `.specify/memory/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` appear; `AGENTS.md`, `python-custom.md`, and `agent-file-template.md` do NOT appear
+- **THEN** exactly `openspec/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` appear; `AGENTS.md`, `python-custom.md`, and `agent-file-template.md` do NOT appear
 
 #### Scenario: Commit body contains SYNC IMPACT REPORT
 - **GIVEN** the commit has been made
@@ -53,7 +53,7 @@ The implementation SHALL open a PR from `opsx/constitution-v1.1.0` to `main` wit
 - **THEN** it contains all of the following:
   - Summary of v1.1.1 changes (MINOR v1.1.0: two new principles, parent constitution reference; PATCH v1.1.1: taxonomy count clarification 37→38)
   - Names and brief descriptions of Principle VI (Composability First) and Principle VII (Supply Chain Integrity)
-  - Autonomous Collaboration scope-out rationale consistent with the SYNC IMPACT REPORT in `.specify/memory/constitution.md` (lines 14–22 of the v1.1.0 header)
+  - Autonomous Collaboration scope-out rationale consistent with the SYNC IMPACT REPORT in `openspec/constitution.md` (lines 14–22 of the v1.1.0 header)
   - Review-council sign-off checklist naming each of the four applicable reviewers (Guard, Architect, SRE, Adversary) with their final verdict and review date
 
 #### Scenario: PR merged with merge commit

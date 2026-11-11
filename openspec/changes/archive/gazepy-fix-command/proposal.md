@@ -22,9 +22,9 @@ equivalent of `/gaze fix`, closing that gap.
 ### New Capabilities
 
 - `gazepy-fix-command`: An OpenCode agent command that operates in two modes:
-  1. **No-args mode** — detects the active Speckit or OpenSpec workflow
+  1. **No-args mode** — detects the active strategic-spec or OpenSpec workflow
      (identical detection logic to `/gaze fix`) and delegates to the
-     appropriate implementation command (`/speckit.implement` or `/opsx-apply`).
+     appropriate implementation command (the strategic-spec implement command or `/opsx-apply`).
   2. **Batch remediation mode** — accepts a Python source path, runs
      `gazepy crap` and `gazepy quality`, builds a prioritised target list,
      delegates to the `gazepy-test-generator` agent for each function, and

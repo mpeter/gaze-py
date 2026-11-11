@@ -63,7 +63,7 @@ new functions are added. Coverage strategy is minimal:
 specs/001-gazepy-init-deploys/
 ├── spec.md
 ├── plan.md              ← this file
-└── tasks.md             ← created by /speckit.tasks
+└── tasks.md             ← created when tasks are generated
 ```
 
 ### Source Code — two repos

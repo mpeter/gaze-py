@@ -16,7 +16,7 @@ remain unmodified.
 - Provide a `/gazepy fix` command that is structurally equivalent to `/gaze fix`
   while using Python-specific tooling (`uv run gazepy`, `uv run pytest`).
 - Preserve the language-agnostic no-args workflow detection logic verbatim
-  from `/gaze fix`: check for Speckit feature branch → check for OpenSpec
+  from `/gaze fix`: check for a strategic-spec feature branch → check for OpenSpec
   active change → ask user.
 - Replace all Go-specific elements with Python equivalents:
   - `gaze` binary → `uv run gazepy` (or `which gazepy`)

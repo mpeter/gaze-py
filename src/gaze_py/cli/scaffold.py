@@ -29,7 +29,6 @@ _ASSET_MAP: tuple[tuple[str, str], ...] = (
     ("agents/reviewer-testing.md", "agents/reviewer-testing.md"),
     ("commands/gaze.md", "commands/gaze.md"),
     ("commands/gaze-fix.md", "commands/gaze-fix.md"),
-    ("commands/speckit.testreview.md", "commands/speckit.testreview.md"),
     ("references/doc-scoring-model.md", "references/doc-scoring-model.md"),
     ("references/example-report.md", "references/example-report.md"),
 )
@@ -45,7 +44,6 @@ _TOOL_OWNED: frozenset[str] = frozenset(
     {
         "agents/gaze-test-generator.md",
         "commands/gaze-fix.md",
-        "commands/speckit.testreview.md",
         "references/doc-scoring-model.md",
         "references/example-report.md",
     }
@@ -116,10 +114,9 @@ def run(
     containment, not str.startswith — guards against path-prefix siblings such
     as .opencode_extra/).
 
-    Tool-owned files (gaze-test-generator.md, gaze-fix.md,
-    speckit.testreview.md, references/) use overwrite-on-diff: they are
-    replaced when their content differs from the embedded version even without
-    --force. User-owned files (gaze-reporter.md, reviewer-testing.md,
+    Tool-owned files (gaze-test-generator.md, gaze-fix.md, references/) use
+    overwrite-on-diff: they are replaced when their content differs from the
+    embedded version even without --force. User-owned files (gaze-reporter.md, reviewer-testing.md,
     gaze.md) retain skip-if-present behavior.
 
     Args:

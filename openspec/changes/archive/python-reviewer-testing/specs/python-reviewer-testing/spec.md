@@ -26,16 +26,16 @@ The agent SHALL audit test files using Python/pytest conventions throughout its 
 
 ### Requirement: Python-aware Spec Review Mode checklist
 
-The agent SHALL audit SpecKit artifacts using Python/pytest conventions throughout its Spec Review Mode checklist. Section 6 (Constitution Alignment) SHALL reference `.specify/memory/constitution.md` and Principle IV (Testability) in Python context.
+The agent SHALL audit strategic-spec artifacts using Python/pytest conventions throughout its Spec Review Mode checklist. Section 6 (Constitution Alignment) SHALL reference `openspec/constitution.md` and Principle IV (Testability) in Python context.
 
 #### Scenario: Constitution Alignment section references Python constitution
 
 - **WHEN** the agent reviews a spec for constitution alignment
-- **THEN** it verifies compliance with `.specify/memory/constitution.md` Principle IV (Testability), checking that functions are testable in isolation, coverage strategy is specified, and conformance test IDs reference porting contract IDs (EC-001, CC-001, SC-001, etc.)
+- **THEN** it verifies compliance with `openspec/constitution.md` Principle IV (Testability), checking that functions are testable in isolation, coverage strategy is specified, and conformance test IDs reference porting contract IDs (EC-001, CC-001, SC-001, etc.)
 
 ### Requirement: Source Documents updated for Python context
 
-The agent SHALL instruct reviewers to read Python-specific source documents before reviewing: `AGENTS.md`, `.specify/memory/constitution.md`, `.opencode/uf/packs/python.md`, and `python-custom.md`.
+The agent SHALL instruct reviewers to read Python-specific source documents before reviewing: `AGENTS.md`, `openspec/constitution.md`, `.opencode/uf/packs/python.md`, and `python-custom.md`.
 
 #### Scenario: Agent reads Python convention packs before reviewing
 

@@ -23,9 +23,10 @@ Warns when no `pyproject.toml` is found in the current directory (assets are sti
 | `.opencode/commands/gaze.md` | User-owned | Skipped when it already exists (unless `--force`) |
 | `.opencode/agents/gaze-test-generator.md` | Tool-owned | Updated when content changes |
 | `.opencode/commands/gaze-fix.md` | Tool-owned | Updated when content changes |
-| `.opencode/commands/speckit.testreview.md` | Tool-owned | Updated when content changes |
 | `.opencode/references/doc-scoring-model.md` | Tool-owned | Updated when content changes |
 | `.opencode/references/example-report.md` | Tool-owned | Updated when content changes |
+
+Files in `.opencode/` that are not listed above, such as a command deployed by an earlier release, are never modified or removed, with or without `--force`.
 
 User-owned files are configuration entry points you customize for your project. Tool-owned files are updated automatically by gaze-py when their content changes — local edits will be overwritten.
 

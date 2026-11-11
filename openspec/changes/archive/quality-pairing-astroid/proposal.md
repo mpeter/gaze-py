@@ -103,7 +103,7 @@ None.
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md`.
+Assessed against `openspec/constitution.md`.
 
 ### I. Accuracy
 

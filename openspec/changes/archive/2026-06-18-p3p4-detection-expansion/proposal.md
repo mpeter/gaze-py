@@ -73,7 +73,7 @@ This closes deferred item D.3 from `openspec/changes/002-deferred-capabilities`.
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` (v1.1.3).
+Assessed against `openspec/constitution.md` (v1.1.3).
 
 ### I. Accuracy
 

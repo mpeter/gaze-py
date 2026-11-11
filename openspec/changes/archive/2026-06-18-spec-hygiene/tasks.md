@@ -12,7 +12,7 @@
 ## 3. CHANGELOG Traceability
 
 - [x] 3.1 Add `- Spec: openspec/changes/archive/quality-pairing-astroid/` to CHANGELOG `[Unreleased]` section
-- [x] 3.2 Add `- Spec: specs/001-gazepy-init-deploys/` to CHANGELOG `[0.4.1]` section (Speckit strategic spec for the init rename)
+- [x] 3.2 Add `- Spec: specs/001-gazepy-init-deploys/` to CHANGELOG `[0.4.1]` section (strategic spec for the init rename)
 - [x] 3.3 Add `- Spec: openspec/changes/archive/o3-docscan/` to CHANGELOG `[0.4.0]` section
 - [x] 3.4 Add `- Spec: openspec/changes/archive/effect-confidence-range/` to CHANGELOG `[0.3.1]` section
 - [x] 3.5 Add `- Spec: openspec/changes/archive/o1-quality-pipeline/` to CHANGELOG `[0.3.0]` section (O1 quality assessment pipeline)

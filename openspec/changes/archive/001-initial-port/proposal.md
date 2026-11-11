@@ -60,7 +60,7 @@ None.
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` (v1.1.1).
+Assessed against `openspec/constitution.md` (v1.1.1).
 
 ### I. Accuracy (Porting Contract Supremacy)
 

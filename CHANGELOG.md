@@ -4,6 +4,19 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking for projects that used it:** `gazepy init` no longer deploys the
+  `testreview` command under `.opencode/commands/`, and `gaze-fix.md` no longer
+  detects any workflow other than an active OpenSpec change. `reviewer-testing.md`
+  now reads `openspec/constitution.md` and reviews OpenSpec change artifacts.
+  Existing copies of the removed command are left in place; delete them if you
+  no longer want them.
+
+### Changed
+
+- `gazepy init` closing hint now points at `/gaze` and `/gaze-fix`.
+
 ## [0.9.3] — 2026-09-07
 
 ### Fixed

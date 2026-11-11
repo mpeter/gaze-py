@@ -58,7 +58,7 @@ Complete mapping used during implementation:
 | Go content | Python replacement |
 |---|---|
 | Role description | gaze-py Python-native port; AST-only static analysis; five-signal confidence engine; CRAP and GazeCRAP scores |
-| Source Documents | AGENTS.md, `.specify/memory/constitution.md`, `.opencode/uf/packs/python.md`, `python-custom.md` |
+| Source Documents | AGENTS.md, `openspec/constitution.md`, `.opencode/uf/packs/python.md`, `python-custom.md` |
 | Review Scope (code) | `tests/test_*.py` and production code under `src/gaze_py/` |
 | Test Architecture | `@pytest.mark.parametrize`; `tests/testdata/` static `.py` fixtures; `pytest` only; `test_<function>_<scenario>` names; tests under `tests/` directory; no benchmark convention |
 | Coverage Strategy | `test_ec001_taxonomy_count` acceptance naming |
@@ -66,7 +66,7 @@ Complete mapping used during implementation:
 | Test Isolation | Add: "Tests MUST NOT import from `tests/testdata/` — fixtures are analyzed via AST, never executed" |
 | Regression Protection | Add: "JSON schema validation tests for `gazepy schema` output" |
 | Convention Compliance | `uv run pytest -x --tb=short`; `@pytest.mark.slow`; remove 80-column check; `uv run ruff check` + `uv run mypy --strict src/`; add AST-only isolation rule |
-| Spec Review — Constitution | `.specify/memory/constitution.md`; Principle IV (Testability) in Python context |
+| Spec Review — Constitution | `openspec/constitution.md`; Principle IV (Testability) in Python context |
 | Version marker | `<!-- scaffolded by gazepy 0.4.0 -->` |
 
 ### Decision 4: No new sections
