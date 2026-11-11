@@ -12,5 +12,5 @@
 ## 3. History and verification
 
 - [x] 3.1 Reword archived specs and changes so they name one workflow; keep content and task state.
-- [ ] 3.2 Run ruff, mypy, pytest with coverage and openspec validation at the committed HEAD.
-- [ ] 3.3 Case-insensitive search of tracked files and file names for the retired workflow's names returns nothing.
+- [x] 3.2 Run ruff, mypy, pytest with coverage and openspec validation at the committed HEAD.
+- [x] 3.3 Case-insensitive search of tracked files and file names for the retired workflow's names returns nothing.
