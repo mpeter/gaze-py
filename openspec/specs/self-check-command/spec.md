@@ -1,11 +1,13 @@
 # Spec: self-check-command
 
+## Purpose
+
 `gazepy self-check` — run CRAP analysis on gaze-py's own source code
 (dogfooding). Walks up from cwd to locate the project root, then runs the
 `crap` pipeline on `src/gaze_py/`. Supports the same CI gate flags as
 `gazepy crap`.
 
----
+## Requirements
 
 ### Requirement: project-root-discovery
 `gazepy self-check` SHALL walk up from the current working directory,

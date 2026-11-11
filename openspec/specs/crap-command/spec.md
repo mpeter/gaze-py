@@ -1,10 +1,12 @@
 # Spec: crap-command
 
+## Purpose
+
 `gazepy crap <path>` — detect side effects, classify them, and compute CRAP
 and GazeCRAP scores. Optionally runs pytest automatically for coverage
 collection. Supports CI threshold gates.
 
----
+## Requirements
 
 ### Requirement: path-argument
 `gazepy crap` SHALL accept a single positional `PATH` argument (file or

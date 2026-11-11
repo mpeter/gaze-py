@@ -1,10 +1,12 @@
 # Spec: quality-command
 
+## Purpose
+
 `gazepy quality <path>` — run the O1 quality assessment pipeline on Python
 source files paired with their tests. Computes contract coverage, GazeCRAP
 scores, gap hints, and reason codes per function.
 
----
+## Requirements
 
 ### Requirement: path-argument
 `gazepy quality` SHALL accept a single positional `PATH` argument (file or

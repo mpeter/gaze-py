@@ -83,7 +83,7 @@ from EC-005 semantics and Python ecosystem conventions.
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` (v1.1.3).
+Assessed against `openspec/constitution.md` (v1.1.3).
 
 ### I. Accuracy
 

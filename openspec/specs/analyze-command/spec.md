@@ -1,10 +1,12 @@
 # Spec: analyze-command
 
+## Purpose
+
 `gazepy analyze <path>` — detect side effects in Python source files and
 optionally classify them. CRAP scoring is not performed by this command;
 all CRAP-derived output fields are `null`. Use `gazepy crap` for scoring.
 
----
+## Requirements
 
 ### Requirement: path-argument
 `gazepy analyze` SHALL accept a single positional `PATH` argument that

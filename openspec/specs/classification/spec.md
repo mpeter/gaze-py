@@ -1,10 +1,12 @@
 # Spec: classification
 
+## Purpose
+
 Authoritative requirements for the side-effect classification engine in
 gaze-py. Sources: porting contracts CC-001 through CC-006, and the current
 `classify/engine.py` implementation.
 
----
+## Requirements
 
 ### Requirement: CC-001 Confidence Scoring Formula
 

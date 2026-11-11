@@ -1,11 +1,13 @@
 # Spec: quality-assessment
 
+## Purpose
+
 Capability: `gazepy quality` and `assess()` — contract coverage assessment
 with private-function inclusion by default.
 
 Sources: `src/gaze_py/cli/main.py` (quality command), `CHANGELOG.md`.
 
----
+## Requirements
 
 ### Requirement: Private functions included by default
 
@@ -183,3 +185,8 @@ The following limitations are documented and deferred to future changes:
 
 These limitations SHALL be documented in the CHANGELOG and SHALL NOT be
 treated as bugs requiring immediate resolution.
+
+#### Scenario: documented limitation is observed
+- **WHEN** behavior matches one of the documented limitations
+- **THEN** it is recorded in the CHANGELOG and is not treated as a bug
+  requiring immediate resolution

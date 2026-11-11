@@ -1,10 +1,12 @@
 # Spec: quality-output
 
+## Purpose
+
 JSON serialization and CLI output wiring for the O1 quality assessment
 pipeline. Covers how quality data flows from `assess()` into JSON output,
 the `crap` command, and summary fields.
 
----
+## Requirements
 
 ### Requirement: quality-json-structure
 

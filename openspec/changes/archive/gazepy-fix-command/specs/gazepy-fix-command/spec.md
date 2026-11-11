@@ -3,15 +3,15 @@
 ### Requirement: No-args workflow detection
 
 When `/gazepy fix` is invoked with no arguments, it SHALL detect the active
-implementation workflow (Speckit or OpenSpec) and delegate to the corresponding
+implementation workflow (strategic spec or OpenSpec) and delegate to the corresponding
 implementation command. The detection logic is identical to `/gaze fix`:
-Speckit check → OpenSpec check → ask user.
+Strategic-spec check → OpenSpec check → ask user.
 
-#### Scenario: Speckit branch detected
+#### Scenario: Strategic-spec branch detected
 
-- **WHEN** `.specify/scripts/bash/check-prerequisites.sh --json --paths-only`
+- **WHEN** the feature-branch prerequisites script
   succeeds and returns a `FEATURE_DIR` containing `tasks.md`
-- **THEN** the command reads and executes `.opencode/command/speckit.implement.md`
+- **THEN** the command reads and executes the strategic-spec implement command
 
 #### Scenario: OpenSpec change detected on correct branch
 
@@ -27,8 +27,8 @@ Speckit check → OpenSpec check → ask user.
 
 #### Scenario: No workflow detected
 
-- **WHEN** neither a Speckit branch nor an OpenSpec change is found
-- **THEN** the command asks the user to choose between `/speckit.implement`,
+- **WHEN** neither a strategic-spec branch nor an OpenSpec change is found
+- **THEN** the command asks the user to choose between the strategic-spec implement command,
   `/opsx-apply`, or `/gazepy fix src/` (batch mode)
 
 ### Requirement: Batch remediation with gazepy analysis

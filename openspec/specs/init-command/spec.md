@@ -1,10 +1,12 @@
 # Spec: init-command
 
+## Purpose
+
 `gazepy init` — scaffold OpenCode agent and command assets into the current
 project's `.opencode/` directory. Idempotent by default; `--force` overwrites
 user-owned files.
 
----
+## Requirements
 
 ### Requirement: asset-deployment
 `gazepy init` SHALL deploy the following assets into `.opencode/` of the
@@ -18,7 +20,6 @@ current working directory:
 **Tool-owned assets** (overwritten automatically when content changes):
 - `.opencode/agents/gaze-test-generator.md`
 - `.opencode/commands/gaze-fix.md`
-- `.opencode/commands/speckit.testreview.md`
 - `.opencode/references/doc-scoring-model.md`
 - `.opencode/references/example-report.md`
 
@@ -41,7 +42,12 @@ current working directory:
 - **THEN** the file is overwritten with the new content
 - **AND** the command reports `updated: .opencode/<path> (content changed)`
 
----
+#### Scenario: file not in the asset list
+- **WHEN** `gazepy init` or `gazepy init --force` is invoked and `.opencode/`
+  contains a file that is not in the asset list above, such as a command
+  deployed by an earlier release
+- **THEN** that file is not modified, removed or reported
+- **AND** the command exits 0
 
 ### Requirement: idempotency
 Running `gazepy init` multiple times SHALL produce the same result as
@@ -141,7 +147,7 @@ when the package is installed as a wheel.
 `gazepy init` SHALL emit a summary of actions taken to stdout using
 `click.echo()`. The summary SHALL distinguish between created, skipped,
 overwritten, and updated files. A closing hint SHALL be emitted directing
-users to run `/gaze` and `/speckit.testreview`.
+users to run `/gaze` and `/gaze-fix`.
 
 #### Scenario: output on first run
 - **WHEN** all assets are created
@@ -157,7 +163,9 @@ users to run `/gaze` and `/speckit.testreview`.
 - **THEN** stdout includes a message indicating the count of skipped files
   and suggesting `--force` to overwrite
 
----
+#### Scenario: closing hint
+- **WHEN** the command completes
+- **THEN** stdout includes a hint to run `/gaze` and `/gaze-fix`
 
 ### Requirement: exit-codes
 `gazepy init` SHALL exit 0 on success and 1 when a symlink escape is

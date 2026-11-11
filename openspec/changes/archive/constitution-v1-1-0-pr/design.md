@@ -2,13 +2,13 @@
 
 The gaze-py constitution was amended from v1.0.0 to v1.1.1 across two increments authored in-session on `main`. Three files contain the amendment changes:
 
-- `.specify/memory/constitution.md` — v1.0.0 → v1.1.1:
+- `openspec/constitution.md` — v1.0.0 → v1.1.1:
   - MINOR v1.1.0: Principles VI and VII added; parent constitution reference; updated compliance review clause; Principle VI graceful-degradation definition; Principle VII SHA verification and Dependabot requirements; exemption clause clarification
   - PATCH v1.1.1: taxonomy count corrected from 37 to 38 (documentation bug; enumeration yields P0=5 + P1=8 + P2=10 + P3=9 + P4=6 = 38)
 - `.github/workflows/test.yml` — floating action tags replaced with commit-SHA pins (SHA-pinned per Principle VII). Note: `uv sync --frozen` is NOT included; it is deferred until `pyproject.toml` + `uv.lock` land in `001-initial-port`.
 - `.github/dependabot.yml` — new file: weekly `github-actions` ecosystem updates with `commit-message.prefix: chore`, `open-pull-requests-limit: 5`, `labels: [dependencies]`, scheduled Mondays.
 
-The session also modified `.opencode/uf/packs/python-custom.md`, `.specify/templates/agent-file-template.md`, and `AGENTS.md` as part of unrelated convention-pack and template updates. These belong to separate changes and MUST NOT be included in the constitution amendment commit.
+The session also modified `.opencode/uf/packs/python-custom.md`, an agent-file template, and `AGENTS.md` as part of unrelated convention-pack and template updates. These belong to separate changes and MUST NOT be included in the constitution amendment commit.
 
 The constitution's own Governance section requires all amendments go through a PR with review-council approval. This design covers the mechanical steps to satisfy that requirement.
 
@@ -28,7 +28,7 @@ The constitution's own Governance section requires all amendments go through a P
 
 **Decision: Which files to stage**
 
-Only `.specify/memory/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` belong in this commit. Use `git add <path>` for each file explicitly rather than `git add .`. Verify with `git diff --cached --name-only` before committing. After the commit, run `git show --name-only HEAD` to confirm exactly the three expected files.
+Only `openspec/constitution.md`, `.github/workflows/test.yml`, and `.github/dependabot.yml` belong in this commit. Use `git add <path>` for each file explicitly rather than `git add .`. Verify with `git diff --cached --name-only` before committing. After the commit, run `git show --name-only HEAD` to confirm exactly the three expected files.
 
 **Decision: Branch name**
 
@@ -83,7 +83,7 @@ Dependabot: .github/dependabot.yml added (github-actions, weekly, Conventional C
 
 ## Risks / Trade-offs
 
-[Risk] Review-council raises REQUEST CHANGES on principle wording → Resolve by editing `.specify/memory/constitution.md` on the branch, re-running review-council, then adding a fixup commit before the PR.
+[Risk] Review-council raises REQUEST CHANGES on principle wording → Resolve by editing `openspec/constitution.md` on the branch, re-running review-council, then adding a fixup commit before the PR.
 
 [Risk] `git add` accidentally stages unrelated session changes → Mitigation: explicitly name each file path in the `git add` command; verify with `git diff --cached --name-only` before committing. After the commit, run `git show --name-only HEAD` to confirm exactly the three expected files.
 

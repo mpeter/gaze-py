@@ -1,10 +1,12 @@
 # Spec: config-loading
 
+## Purpose
+
 Capability: `.gaze.yaml` configuration loading and `GazeConfig` defaults.
 
 Sources: `src/gaze_py/config/loader.py`, `CHANGELOG.md`.
 
----
+## Requirements
 
 ### Requirement: Config file discovery
 

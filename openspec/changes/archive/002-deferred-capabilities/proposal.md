@@ -10,7 +10,7 @@ the time comes.
 
 This is a **tracking and scaffolding change only**. It contains no
 implementation tasks. Implementation of each item requires its own OpenSpec
-change (or a Speckit feature if it involves cross-repo work such as the
+change (or a strategic spec if it involves cross-repo work such as the
 unbound-force integration or PyPI publication).
 
 ## What Changes
@@ -63,7 +63,7 @@ The one exception is PyPI publication, which changes the install path.
 
 ## Constitution Alignment
 
-Assessed against `.specify/memory/constitution.md` (v1.1.3).
+Assessed against `openspec/constitution.md` (v1.1.3).
 
 ### I. Accuracy
 

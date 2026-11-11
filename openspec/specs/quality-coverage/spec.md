@@ -1,11 +1,13 @@
 # Spec: quality-coverage
 
+## Purpose
+
 Contract coverage computation for the O1 quality assessment pipeline.
 Classifies each side effect individually using `ClassificationEngine`, then
 computes what fraction of contractual effects have at least one mapped
 assertion.
 
----
+## Requirements
 
 ### Requirement: per-effect-classification
 

@@ -1,11 +1,13 @@
 # Spec: complexity-algorithm
 
+## Purpose
+
 Authoritative requirements for the McCabe cyclomatic complexity algorithm
 in gaze-py. Sources: porting contracts (CX-001, CX-002 from the
 effect-confidence-range change), and the current `analysis/complexity.py`
 implementation.
 
----
+## Requirements
 
 ### Requirement: CX-001 Complexity Node Specification
 

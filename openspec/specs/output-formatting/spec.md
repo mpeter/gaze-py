@@ -1,11 +1,13 @@
 # Spec: output-formatting
 
+## Purpose
+
 Authoritative requirements for JSON and text output formatting in gaze-py.
 Sources: porting contracts OC-001 through OC-003, ECR-001 through ECR-004
 (effect-confidence-range change), taxonomy-reference.md JSON field name
 reference, and the current `report/json_formatter.py` implementation.
 
----
+## Requirements
 
 ### Requirement: OC-001 Dual Format
 

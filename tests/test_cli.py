@@ -1840,7 +1840,7 @@ def test_insert_marker_after_frontmatter_position() -> None:
 
 
 def test_init_creates_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init creates all 8 asset files on first run."""
+    """init creates all 7 asset files on first run."""
     (tmp_path / "pyproject.toml").write_text("[project]\n")
     monkeypatch.chdir(tmp_path)
 
@@ -1854,7 +1854,6 @@ def test_init_creates_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         ".opencode/agents/reviewer-testing.md",
         ".opencode/commands/gaze.md",
         ".opencode/commands/gaze-fix.md",
-        ".opencode/commands/speckit.testreview.md",
         ".opencode/references/doc-scoring-model.md",
         ".opencode/references/example-report.md",
     ]
@@ -1862,6 +1861,25 @@ def test_init_creates_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         assert (tmp_path / rel).exists(), f"missing: {rel}"
     assert "created" in result.output
     assert "Run /gaze for quality reports" in result.output
+
+
+@pytest.mark.parametrize("args", [["init"], ["init", "--force"]], ids=["default", "force"])
+def test_init_leaves_unmanaged_files_untouched(
+    args: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """init and init --force never modify, remove or report a file outside the asset list."""
+    (tmp_path / "pyproject.toml").write_text("[project]\n")
+    commands = tmp_path / ".opencode" / "commands"
+    commands.mkdir(parents=True)
+    stale = commands / "old-command.md"
+    stale.write_bytes(b"deployed by an earlier release\n")
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(cli, args)
+
+    assert result.exit_code == 0, result.output
+    assert stale.read_bytes() == b"deployed by an earlier release\n"
+    assert "old-command" not in result.output
 
 
 def test_init_idempotent_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

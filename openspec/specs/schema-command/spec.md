@@ -1,9 +1,11 @@
 # Spec: schema-command
 
+## Purpose
+
 `gazepy schema` — print the JSON output schema for the `AnalysisResult`
 envelope used by `gazepy analyze` and `gazepy crap --format=json`.
 
----
+## Requirements
 
 ### Requirement: no-arguments
 `gazepy schema` SHALL accept no positional arguments and no flags (other

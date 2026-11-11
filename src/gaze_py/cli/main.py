@@ -2164,14 +2164,14 @@ def init(force: bool) -> None:
       .opencode/agents/reviewer-testing.md
       .opencode/commands/gaze.md
       .opencode/commands/gaze-fix.md
-      .opencode/commands/speckit.testreview.md
       .opencode/references/doc-scoring-model.md
       .opencode/references/example-report.md
 
     User-owned files (gaze-reporter.md, reviewer-testing.md, gaze.md) are
     skipped when they already exist unless --force is given. Tool-owned files
-    (gaze-test-generator.md, gaze-fix.md, speckit.testreview.md, references/)
-    are updated automatically when their content changes (overwrite-on-diff).
+    (gaze-test-generator.md, gaze-fix.md, references/) are updated
+    automatically when their content changes (overwrite-on-diff). Files in
+    .opencode/ that are not listed above are never modified or removed.
 
     Warns when no pyproject.toml is found in cwd (assets are still written).
     """
@@ -2198,7 +2198,7 @@ def init(force: bool) -> None:
         click.echo(f"  updated: .opencode/{path} (content changed)")
 
     click.echo()
-    click.echo("Run /gaze for quality reports and /speckit.testreview for testability analysis.")
+    click.echo("Run /gaze for quality reports and /gaze-fix for remediation.")
 
     # Count only user-owned skipped files for the --force hint.
     from gaze_py.cli.scaffold import _TOOL_OWNED
