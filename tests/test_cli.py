@@ -1863,8 +1863,9 @@ def test_init_creates_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert "Run /gaze for quality reports" in result.output
 
 
+@pytest.mark.parametrize("args", [["init"], ["init", "--force"]], ids=["default", "force"])
 def test_init_leaves_unmanaged_files_untouched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    args: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """init and init --force never modify, remove or report a file outside the asset list."""
     (tmp_path / "pyproject.toml").write_text("[project]\n")
@@ -1874,12 +1875,11 @@ def test_init_leaves_unmanaged_files_untouched(
     stale.write_bytes(b"deployed by an earlier release\n")
     monkeypatch.chdir(tmp_path)
 
-    runner = CliRunner()
-    for args in (["init"], ["init", "--force"]):
-        result = runner.invoke(cli, args)
-        assert result.exit_code == 0, result.output
-        assert stale.read_bytes() == b"deployed by an earlier release\n"
-        assert "old-command" not in result.output
+    result = CliRunner().invoke(cli, args)
+
+    assert result.exit_code == 0, result.output
+    assert stale.read_bytes() == b"deployed by an earlier release\n"
+    assert "old-command" not in result.output
 
 
 def test_init_idempotent_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
