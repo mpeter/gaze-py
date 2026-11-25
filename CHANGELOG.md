@@ -4,6 +4,8 @@ All notable changes to gaze-py are documented here.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-13
+
 ### Removed
 
 - **Breaking for projects that used it:** `gazepy init` no longer deploys the
